@@ -2,16 +2,18 @@ FROM python:3.10.6-slim
 
 WORKDIR /app
 
-# Copy all project files first
-COPY . .
+# Copy only dependency files first
+COPY pyproject.toml poetry.lock ./
 
-# Install poetry and dependencies
+# Install poetry and dependencies (excluding the project itself)
 # Copying files first ensures README.md is present for project installation
 RUN pip install --no-cache-dir poetry && \
     poetry config virtualenvs.create false && \
-    poetry install --no-interaction --no-ansi # Install project + dependencies
+    # poetry install --no-interaction --no-ansi # Install project + dependencies
+    poetry install --no-root --no-interaction --no-ansi # Reverted to --no-root
 
-# No need for a second COPY . . as it's done above
+# Copy the rest of the application code
+COPY . .
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1

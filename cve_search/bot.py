@@ -48,15 +48,6 @@ class SecurityBot(commands.Bot):
     async def on_ready(self):
         logging.info(f'Logged in as {self.user.name} ({self.user.id})')
         
-        # Log Bot Version on startup
-        try:
-            version = importlib.metadata.version('cve-search')
-            logging.info(f"cve-search version: {version}")
-        except importlib.metadata.PackageNotFoundError:
-            logging.warning("Could not determine application version. Package metadata not found.")
-        except Exception as e:
-             logging.warning(f"Could not determine application version: {e}")
-
         logging.info(f'Command prefix: {self.command_prefix}')
         logging.info(f'Ready! Listening for CVEs...')
         logging.info('------')

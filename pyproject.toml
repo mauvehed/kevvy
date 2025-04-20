@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "cve-search"
-version = "0.1.4"
+version = "0.1.5"
 description = "A Discord bot for manually and automatically searching the Common Vulnerabilities and Exposures (CVE) list"
 authors = ["mauvehed <mh@mvh.dev>"]
 license = "MIT"
