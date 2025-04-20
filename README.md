@@ -1,9 +1,7 @@
 <div align="center">
 <br />
 
-[![Deployment](https://github.com/mauvehed/cve-search-discord/actions/workflows/main.yml/badge.svg)](https://github.com/mauvehed/cve-search-discord/actions/workflows/main.yml)
 [![CodeQL](https://github.com/mauvehed/cve-search-discord/actions/workflows/codeql-analysis.yml/badge.svg?branch=main)](https://github.com/mauvehed/cve-search-discord/actions/workflows/codeql-analysis.yml)
-
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/4ec1fc69d8a14048a80124167f6f7664)](https://www.codacy.com/gh/mauvehed/cve-search-discord/dashboard)
 [![Project license](https://img.shields.io/github/license/mauvehed/cve-search-discord.svg?style=flat-square)](LICENSE)
 
