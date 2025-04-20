@@ -6,17 +6,10 @@
 </h1>
 
 <div align="center">
-  **cve-search-discord**
+  <h2>cve-search-discord</h2>
   <br />
   A Discord bot for automatically searching CVE details using the NVD API.
   <br />
-
-  <a href="https://github.com/mauvehed/cve-search-discord/issues/new?assignees=&labels=bug&template=01_BUG_REPORT.md&title=bug%3A+">Report a Bug</a>
-  -
-  <a href="https://github.com/mauvehed/cve-search-discord/issues/new?assignees=&labels=enhancement&template=02_FEATURE_REQUEST.md&title=feat%3A+">Request a Feature</a>
-  -
-  <a href="https://github.com/mauvehed/cve-search-discord/issues/new?assignees=&labels=enhancement&template=03_CODEBASE_IMPROVEMENT.md&title=dev%3A+">Suggest Improvement</a>
-
 </div>
 
 <div align="center">
