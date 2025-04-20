@@ -1,0 +1,9 @@
+version: '3.8'
+
+services:
+  cve-bot:
+    build: .
+    container_name: cve_search_discord_bot
+    env_file:
+      - .env
+    restart: unless-stopped 

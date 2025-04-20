@@ -1,20 +1,20 @@
 import discord
 from discord.ext import commands
 from .cve_monitor import CVEMonitor
-from .vulners_client import VulnersClient
+from .nvd_client import NVDClient
 import logging
 import os
 
 class SecurityBot(commands.Bot):
-    def __init__(self, vulners_api_key: str):
+    def __init__(self, nvd_api_key: str | None):
         intents = discord.Intents.default()
         intents.message_content = True
         
         prefix = os.getenv('DISCORD_COMMAND_PREFIX', '!')
         super().__init__(command_prefix=prefix, intents=intents)
         
-        self.vulners_client = VulnersClient(vulners_api_key)
-        self.cve_monitor = CVEMonitor(self.vulners_client)
+        self.nvd_client = NVDClient(api_key=nvd_api_key)
+        self.cve_monitor = CVEMonitor(self.nvd_client)
 
     async def setup_hook(self):
         # Add any additional setup here
@@ -35,7 +35,7 @@ class SecurityBot(commands.Bot):
         # If CVEs are found, look up and send details
         for cve in cves:
             try:
-                cve_data = self.vulners_client.get_cve_details(cve)
+                cve_data = self.nvd_client.get_cve_details(cve)
                 if cve_data:
                     embed = self.cve_monitor.create_cve_embed(cve_data)
                     await message.channel.send(embed=embed)

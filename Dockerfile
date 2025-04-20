@@ -16,7 +16,7 @@ COPY . .
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV DISCORD_TOKEN=""
-ENV VULNERS_API_KEY=""
+ENV NVD_API_KEY=""
 ENV DISCORD_COMMAND_PREFIX="!"
 
 # Run the application
