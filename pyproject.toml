@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "cve-search"
+version = "0.1.0"
+description = "A Discord bot for manually and automatically searching the Common Vulnerabilities and Exposures (CVE) list"
+authors = ["mauvehed <mh@mvh.dev>"]
+license = "MIT"
+readme = "README.md"
+packages = [{ include = "cve_search" }]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+discord-py = "^2.5.2"
+python-dotenv = "^1.1.0"
+vulners = "^2.3.6"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
