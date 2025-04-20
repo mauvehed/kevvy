@@ -15,6 +15,7 @@ def main():
     token = os.getenv('DISCORD_TOKEN')
     # vulners_api_key = os.getenv('VULNERS_API_KEY') # Removed Vulners key
     nvd_api_key = os.getenv('NVD_API_KEY') # Added optional NVD key
+    vulncheck_api_token = os.getenv('VULNCHECK_API_TOKEN') # Added VulnCheck token
     
     # if not token or not vulners_api_key: # Updated check
     #     raise ValueError("Missing required environment variables")
@@ -23,7 +24,7 @@ def main():
 
     # Create and run the bot
     # bot = SecurityBot(vulners_api_key) # Updated instantiation
-    bot = SecurityBot(nvd_api_key=nvd_api_key)
+    bot = SecurityBot(nvd_api_key=nvd_api_key, vulncheck_api_token=vulncheck_api_token)
     bot.run(token)
 
 if __name__ == "__main__":

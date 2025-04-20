@@ -46,11 +46,11 @@
 
 ## About
 
-**cve-search-discord** is a Discord bot that automatically monitors chat messages for CVE (Common Vulnerabilities and Exposures) identifiers (e.g., `CVE-2023-12345`). When a CVE is detected, the bot fetches detailed information from the [NIST National Vulnerability Database (NVD) API v2.0](https://nvd.nist.gov/developers/vulnerabilities) and presents it in an informative embed directly in the channel.
+**cve-search-discord** is a Discord bot that automatically monitors chat messages for CVE (Common Vulnerabilities and Exposures) identifiers (e.g., `CVE-2023-12345`). When a CVE is detected, the bot fetches detailed information primarily from the [NIST National Vulnerability Database (NVD) API v2.0](https://nvd.nist.gov/developers/vulnerabilities). If NVD data is unavailable, it attempts to fall back to the [VulnCheck API](https://vulncheck.com/) (requires API key). The details are then presented in an informative embed directly in the channel.
 
 Key features:
 *   Automatic detection of CVE IDs in messages.
-*   Fetches details from the official NVD API.
+*   Fetches details primarily from the NVD API, with VulnCheck as a fallback.
 *   Displays CVSS score (v3.1/v3.0/v2.0), vector string, description, publication dates, CWEs, and reference links.
 *   Consolidates responses for messages containing multiple CVEs (max 5 embeds per message by default) to prevent spam.
 *   Includes a `/version` slash command to check the running bot version.
@@ -83,6 +83,7 @@ Then, edit the `.env` file:
 
 *   `DISCORD_TOKEN` (Required): Your Discord bot token.
 *   `NVD_API_KEY` (Optional): Your NVD API key. Request one [here](https://nvd.nist.gov/developers/request-an-api-key) for significantly higher request rate limits. Highly recommended for active bots.
+*   `VULNCHECK_API_TOKEN` (Optional): Your VulnCheck API key. Get one from [VulnCheck](https://vulncheck.com/). Required for the fallback data source to function.
 *   `DISCORD_COMMAND_PREFIX` (Optional): The prefix for traditional commands (if any are added later). Defaults to `!`. The primary interaction is automatic detection and slash commands.
 
 ### Running with Docker (Recommended)
@@ -170,5 +171,7 @@ See [LICENSE](LICENSE) for more information.
 
 ## Acknowledgements
 
-Thanks to all contributors and users who have helped make this project better!
+*   Data sourced primarily from the [NVD](https://nvd.nist.gov).
+*   Fallback data lookup provided by [VulnCheck](https://vulncheck.com/).
+*   Thanks to all contributors and users who have helped make this project better!
 
