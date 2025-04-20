@@ -1,31 +1,53 @@
 import discord
 from discord.ext import commands
+from discord import app_commands # Import app_commands
 from .cve_monitor import CVEMonitor
 from .nvd_client import NVDClient
 import logging
 import os
 import asyncio # Import asyncio for sleep
+import importlib.metadata # Import for version reading
 
 # Limit the number of embeds sent for a single message
 MAX_EMBEDS_PER_MESSAGE = 5
+
+# Define the slash command function globally or as a static method
+@app_commands.command(name="version", description="Displays the current version of the bot.")
+async def version_command(interaction: discord.Interaction):
+    try:
+        # Use the package name defined in pyproject.toml
+        version = importlib.metadata.version('cve-search')
+        await interaction.response.send_message(f"cve-search version: `{version}`")
+    except importlib.metadata.PackageNotFoundError:
+        logging.error("Could not find package metadata for 'cve-search'. Is it installed correctly?")
+        await interaction.response.send_message("Error: Could not determine application version.", ephemeral=True)
+    except Exception as e:
+        logging.error(f"Error retrieving version: {e}", exc_info=True)
+        await interaction.response.send_message("An unexpected error occurred while retrieving the version.", ephemeral=True)
 
 class SecurityBot(commands.Bot):
     def __init__(self, nvd_api_key: str | None):
         intents = discord.Intents.default()
         intents.message_content = True
-        
         prefix = os.getenv('DISCORD_COMMAND_PREFIX', '!')
+        # Initialize the bot with the command tree capability
         super().__init__(command_prefix=prefix, intents=intents)
         
         self.nvd_client = NVDClient(api_key=nvd_api_key)
         self.cve_monitor = CVEMonitor(self.nvd_client)
 
     async def setup_hook(self):
-        # Add any additional setup here
-        pass
+        # Add the globally defined command to the bot's command tree
+        self.tree.add_command(version_command)
+        # Sync the commands (globally in this case)
+        # Consider syncing to specific guilds for faster updates during development
+        # await self.tree.sync(guild=discord.Object(id=YOUR_GUILD_ID))
+        await self.tree.sync() 
+        logging.info(f"Synced application commands.")
 
     async def on_ready(self):
         logging.info(f'Logged in as {self.user.name} ({self.user.id})')
+        logging.info(f'Command prefix: {self.command_prefix}')
         logging.info('------')
 
     async def on_message(self, message: discord.Message):
@@ -33,15 +55,11 @@ class SecurityBot(commands.Bot):
         if message.author == self.user:
             return
 
-        # Always process commands if applicable (e.g., for help command)
-        # We will process commands *after* handling potential CVEs
-        # await self.process_commands(message) # Moved this call lower
-
         # Look for CVEs in the message
         cves_found = self.cve_monitor.find_cves(message.content)
         
         if not cves_found:
-            await self.process_commands(message) # Process commands if no CVEs found
+            await self.process_commands(message) # Process traditional commands if no CVEs found
             return
 
         # Use a set to avoid processing the same CVE ID multiple times if it appears repeatedly
@@ -63,23 +81,18 @@ class SecurityBot(commands.Bot):
                     processed_count += 1
             except Exception as e:
                 logging.error(f"Failed to process CVE {cve}: {e}", exc_info=True)
-            # Add a small delay between API calls if processing multiple CVEs
-            # This helps stay within potential rate limits even with retries
-            await asyncio.sleep(0.1) # 100ms delay
+            await asyncio.sleep(0.1) # Delay between API calls
 
         # Send the collected embeds
         if embeds_to_send:
             logging.info(f"Sending {len(embeds_to_send)} embeds for message {message.id}")
-            # Send embeds one by one
             for i, embed in enumerate(embeds_to_send):
                 await message.channel.send(embed=embed)
-                # Small delay between sending messages to avoid Discord rate limits
                 if i < len(embeds_to_send) - 1:
-                    await asyncio.sleep(0.5) 
+                    await asyncio.sleep(0.5) # Delay between message sends
             
-            # If more CVEs were found than processed, add a note
             if len(unique_cves) > MAX_EMBEDS_PER_MESSAGE:
                 await message.channel.send(f"*Found {len(unique_cves)} unique CVEs, showing details for the first {MAX_EMBEDS_PER_MESSAGE}.*", allowed_mentions=discord.AllowedMentions.none())
 
-        # Process commands after handling CVEs
+        # Process traditional commands after handling CVEs
         await self.process_commands(message) 
