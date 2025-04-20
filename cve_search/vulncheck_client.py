@@ -62,62 +62,85 @@ class VulnCheckClient:
         retries = 0
         while retries <= self.MAX_RETRIES:
             try:
-                # Use the index_vulncheck_nvd2_get method as per VulnCheck SDK examples
-                api_response = self.indices_client.index_vulncheck_nvd2_get(cve=cve_id)
+                # Use the index_nist_nvd2_get method for NIST NVD data
+                api_response = self.indices_client.index_nist_nvd2_get(cve=cve_id)
 
                 if not api_response or not api_response.data:
-                    logger.warning(f"No vulnerability data found for {cve_id} in VulnCheck NVD2 response.")
+                    logger.warning(f"No vulnerability data found for {cve_id} using VulnCheck's NIST NVD2 endpoint.")
                     return None
                 
                 # Assuming the first result is the most relevant
+                # Note: Verify if the structure of api_response.data[0] from index_nist_nvd2_get
+                # matches the expected fields below. Adjust mapping if necessary.
                 vc_data = api_response.data[0] 
 
-                # --- Map VulnCheck fields to our common format --- 
-                # Mapping requires inspecting the actual structure of vc_data 
-                # (which corresponds to V3IndexVulncheckNvd2 models in the SDK) 
-                # This is a likely structure based on common vulnerability data models
+                # --- Map NIST NVD 2.0 fields to our common format ---
+                # Based on standard NVD CVE JSON 2.0 Schema
+                # Reference: https://csrc.nist.gov/schema/nvd/api/2.0/cve_api_json_2.0.schema
                 
                 cvss_score = None
                 cvss_version = None
                 cvss_vector = None
-                # VulnCheck SDK might structure metrics differently. Need to inspect vc_data attributes.
-                # Example hypothetical access:
-                if hasattr(vc_data, 'cvssv3_score') and vc_data.cvssv3_score:
-                    cvss_score = vc_data.cvssv3_score
-                    cvss_version = '3.x' # Version might be more specific
-                    if hasattr(vc_data, 'cvssv3_vector'):
-                        cvss_vector = vc_data.cvssv3_vector
-                elif hasattr(vc_data, 'cvssv2_score') and vc_data.cvssv2_score:
-                    cvss_score = vc_data.cvssv2_score
-                    cvss_version = '2.0'
-                    if hasattr(vc_data, 'cvssv2_vector'):
-                        cvss_vector = vc_data.cvssv2_vector
                 
+                # Check for CVSS v3.x metrics
+                if hasattr(vc_data, 'metrics') and hasattr(vc_data.metrics, 'cvss_metric_v31') and vc_data.metrics.cvss_metric_v31:
+                    # Take the first CVSS v3.1 metric found (assuming it's primary)
+                    metric_v3 = vc_data.metrics.cvss_metric_v31[0]
+                    if hasattr(metric_v3, 'cvss_data') and metric_v3.cvss_data:
+                        cvss_score = getattr(metric_v3.cvss_data, 'base_score', None)
+                        cvss_version = f"3.1 ({getattr(metric_v3.cvss_data, 'base_severity', 'Unknown')})" # Include severity
+                        cvss_vector = getattr(metric_v3.cvss_data, 'vector_string', None)
+                # Fallback to CVSS v2.0 metrics if v3.x not found
+                elif hasattr(vc_data, 'metrics') and hasattr(vc_data.metrics, 'cvss_metric_v2') and vc_data.metrics.cvss_metric_v2:
+                     # Take the first CVSS v2.0 metric found
+                    metric_v2 = vc_data.metrics.cvss_metric_v2[0]
+                    if hasattr(metric_v2, 'cvss_data') and metric_v2.cvss_data:
+                        cvss_score = getattr(metric_v2.cvss_data, 'base_score', None)
+                        cvss_version = f"2.0 ({getattr(metric_v2, 'base_severity', 'Unknown')})" # Severity might be top-level in v2 metric
+                        cvss_vector = getattr(metric_v2.cvss_data, 'vector_string', None)
+
                 cwe_ids = []
-                if hasattr(vc_data, 'cwe') and vc_data.cwe:
-                    # Assuming vc_data.cwe is a list of strings
-                    cwe_ids = sorted(list(set(vc_data.cwe)))
+                # Check for weaknesses structure
+                if hasattr(vc_data, 'weaknesses') and vc_data.weaknesses:
+                    for weakness in vc_data.weaknesses:
+                        if hasattr(weakness, 'description') and weakness.description:
+                            for desc in weakness.description:
+                                # Check if the description is in English and contains a CWE ID
+                                if getattr(desc, 'lang', '') == 'en' and 'CWE-' in getattr(desc, 'value', ''):
+                                    cwe_id = desc.value.split('CWE-')[-1].split(' ')[0].split('<')[0].split(')')[0].strip()
+                                    if cwe_id.isdigit(): # Basic validation
+                                         cwe_ids.append(f"CWE-{cwe_id}")
+                    cwe_ids = sorted(list(set(cwe_ids))) # Deduplicate and sort
 
                 references = []
                 if hasattr(vc_data, 'references') and vc_data.references:
                     for ref in vc_data.references:
-                         # Assuming ref is a dictionary-like object or has url attribute
                          url = getattr(ref, 'url', None) 
                          if url:
                              references.append({
                                  'url': url,
-                                 'source': getattr(ref, 'source', 'VulnCheck'), # Guessing field names
-                                 'tags': getattr(ref, 'tags', [])
+                                 # Use NVD as source if not specified, tags might exist
+                                 'source': getattr(ref, 'source', 'NIST NVD'), 
+                                 'tags': getattr(ref, 'tags', []) 
                              })
 
-                description = getattr(vc_data, 'summary', "No description available.") # Guessing field name
-                published = self._parse_date(getattr(vc_data, 'published_date', None)) # Guessing
-                modified = self._parse_date(getattr(vc_data, 'modified_date', None)) # Guessing
+                description = "No description available."
+                # Check for descriptions structure (list, filter by lang='en')
+                if hasattr(vc_data, 'descriptions') and vc_data.descriptions:
+                    for desc in vc_data.descriptions:
+                        if getattr(desc, 'lang', '') == 'en':
+                            description = getattr(desc, 'value', description)
+                            break # Take the first English description
+
+                # Access top-level date fields common in NVD 2.0
+                published = self._parse_date(getattr(vc_data, 'published', None)) 
+                modified = self._parse_date(getattr(vc_data, 'last_modified', None)) 
 
                 # Construct the common dictionary
+                cve_from_data = getattr(vc_data, 'id', cve_id) # NVD 2.0 uses 'id'
                 return {
-                    'id': getattr(vc_data, 'cve', cve_id), # Use actual CVE from response
-                    'title': f"VulnCheck Details for {getattr(vc_data, 'cve', cve_id)}", # Generic title
+                    'id': cve_from_data, 
+                    'title': f"NIST NVD Details for {cve_from_data} (via VulnCheck)", # Updated title
                     'description': description,
                     'published': published,
                     'modified': modified,
@@ -126,8 +149,8 @@ class VulnCheckClient:
                     'cvss_vector': cvss_vector,
                     'cwe_ids': cwe_ids,
                     'references': references,
-                    'link': f"https://vulncheck.com/browse/vulnerabilities/{getattr(vc_data, 'cve', cve_id)}", # Construct link
-                    'source': 'VulnCheck'
+                    'link': f"https://nvd.nist.gov/vuln/detail/{cve_from_data}", # Link to NVD
+                    'source': 'NIST NVD (via VulnCheck)' # Updated source
                 }
 
             except vulncheck_sdk.ApiException as e:
