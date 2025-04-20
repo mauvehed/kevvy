@@ -33,19 +33,6 @@
 
 **cve-search** is a Discord bot for manually and automatically searching the Common Vulnerabilities and Exposures (CVE) list. It will allow you to lookup the CVE itself, the CVSS, or the EPSS. This can be configured to happen only when a Discord slash command is called, or automatically whenever a CVE is posted in chat.
 
-<details>
-<summary>Screenshots</summary>
-<br>
-
-> **[?]**
-> Please provide your screenshots here.
-
-|                               Home Page                               |                               Login Page                               |
-| :-------------------------------------------------------------------: | :--------------------------------------------------------------------: |
-| <img src="docs/images/screenshot.png" title="Home Page" width="100%"> | <img src="docs/images/screenshot.png" title="Login Page" width="100%"> |
-
-</details>
-
 </td></tr></table>
 
 ### Built With
