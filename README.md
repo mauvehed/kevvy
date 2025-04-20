@@ -1,11 +1,11 @@
 <div align="center">
 <br />
 
-[![Deployment](https://github.com/mauvehed/cve-search/actions/workflows/main.yml/badge.svg)](https://github.com/mauvehed/cve-search/actions/workflows/main.yml)
-[![CodeQL](https://github.com/mauvehed/cve-search/actions/workflows/codeql-analysis.yml/badge.svg?branch=main)](https://github.com/mauvehed/cve-search/actions/workflows/codeql-analysis.yml)
+[![Deployment](https://github.com/mauvehed/cve-search-discord/actions/workflows/main.yml/badge.svg)](https://github.com/mauvehed/cve-search-discord/actions/workflows/main.yml)
+[![CodeQL](https://github.com/mauvehed/cve-search-discord/actions/workflows/codeql-analysis.yml/badge.svg?branch=main)](https://github.com/mauvehed/cve-search-discord/actions/workflows/codeql-analysis.yml)
 
-[![Codacy Badge](https://app.codacy.com/project/badge/Grade/4ec1fc69d8a14048a80124167f6f7664)](https://www.codacy.com/gh/mauvehed/cve-search/dashboard)[![Website](https://img.shields.io/website?url=https%3A%2F%2Fcve-search.app)](https://cve-search.app)
-[![Project license](https://img.shields.io/github/license/mauvehed/cve-search.svg?style=flat-square)](LICENSE)
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/4ec1fc69d8a14048a80124167f6f7664)](https://www.codacy.com/gh/mauvehed/cve-search-discord/dashboard)
+[![Project license](https://img.shields.io/github/license/mauvehed/cve-search-discord.svg?style=flat-square)](LICENSE)
 
 </div>
 
@@ -66,11 +66,11 @@ TO BE COMPLETED
 
 ## Roadmap
 
-See the [open issues](https://github.com/mauvehed/cve-search/issues) for a list of proposed features (and known issues).
+See the [open issues](https://github.com/mauvehed/cve-search-discord/issues) for a list of proposed features (and known issues).
 
-- [Top Feature Requests](https://github.com/mauvehed/cve-search/issues?q=label%3Aenhancement+is%3Aopen+sort%3Areactions-%2B1-desc) (Add your votes using the 👍 reaction)
-- [Top Bugs](https://github.com/mauvehed/cve-search/issues?q=is%3Aissue+is%3Aopen+label%3Abug+sort%3Areactions-%2B1-desc) (Add your votes using the 👍 reaction)
-- [Newest Bugs](https://github.com/mauvehed/cve-search/issues?q=is%3Aopen+is%3Aissue+label%3Abug) (Squash Em!)
+- [Top Feature Requests](https://github.com/mauvehed/cve-search-discord/issues?q=label%3Aenhancement+is%3Aopen+sort%3Areactions-%2B1-desc) (Add your votes using the 👍 reaction)
+- [Top Bugs](https://github.com/mauvehed/cve-search-discord/issues?q=is%3Aissue+is%3Aopen+label%3Abug+sort%3Areactions-%2B1-desc) (Add your votes using the 👍 reaction)
+- [Newest Bugs](https://github.com/mauvehed/cve-search-discord/issues?q=is%3Aopen+is%3Aissue+label%3Abug) (Squash Em!)
 
 ## Support
 
@@ -90,7 +90,7 @@ Please read [our contribution guidelines](docs/CONTRIBUTING.md), and thank you f
 
 The original setup of this repository is by [mauvehed](https://github.com/mauvehed).
 
-For a full list of all authors and contributors, see [the contributors page](https://github.com/mauvehed/cve-search/contributors).
+For a full list of all authors and contributors, see [the contributors page](https://github.com/mauvehed/cve-search-discord/contributors).
 
 ## Security
 
