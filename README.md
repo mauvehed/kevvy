@@ -46,14 +46,16 @@
 
 ## About
 
-**cve-search-discord** is a Discord bot that automatically monitors chat messages for CVE (Common Vulnerabilities and Exposures) identifiers (e.g., `CVE-2023-12345`). When a CVE is detected, the bot fetches detailed information primarily from the [NIST National Vulnerability Database (NVD) API v2.0](https://nvd.nist.gov/developers/vulnerabilities). If NVD data is unavailable, it attempts to fall back to the [VulnCheck API](https://vulncheck.com/) (requires API key). The details are then presented in an informative embed directly in the channel.
+**cve-search-discord** is a Discord bot that automatically monitors chat messages for CVE (Common Vulnerabilities and Exposures) identifiers (e.g., `CVE-2023-12345`). When a CVE is detected, the bot fetches detailed information primarily from the [VulnCheck API](https://vulncheck.com/) (if an API key is provided). If VulnCheck is unavailable or doesn't return data, it falls back to the [NIST National Vulnerability Database (NVD) API v2.0](https://nvd.nist.gov/developers/vulnerabilities).
+
+Additionally, the bot can monitor the [CISA Known Exploited Vulnerabilities (KEV) catalog](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) for newly added entries and post alerts to a designated channel.
 
 Key features:
 *   Automatic detection of CVE IDs in messages.
-*   Fetches details primarily from the NVD API, with VulnCheck as a fallback.
+*   Fetches details primarily from VulnCheck (if available), falling back to NVD.
 *   Displays CVSS score (v3.1/v3.0/v2.0), vector string, description, publication dates, CWEs, and reference links.
 *   Consolidates responses for messages containing multiple CVEs (max 5 embeds per message by default) to prevent spam.
-*   Includes a `/version` slash command to check the running bot version.
+*   Periodically checks the CISA KEV catalog and posts alerts for new entries to a specified channel.
 
 ### Built With
 
@@ -82,9 +84,11 @@ cp .env.example .env
 Then, edit the `.env` file:
 
 *   `DISCORD_TOKEN` (Required): Your Discord bot token.
-*   `NVD_API_KEY` (Optional): Your NVD API key. Request one [here](https://nvd.nist.gov/developers/request-an-api-key) for significantly higher request rate limits. Highly recommended for active bots.
-*   `VULNCHECK_API_TOKEN` (Optional): Your VulnCheck API key. Get one from [VulnCheck](https://vulncheck.com/). Required for the fallback data source to function.
+*   `NVD_API_KEY` (Optional): Your NVD API key. Request one [here](https://nvd.nist.gov/developers/request-an-api-key) for significantly higher request rate limits. Used as a fallback data source if VulnCheck is unavailable or fails.
+*   `VULNCHECK_API_TOKEN` (Optional): Your VulnCheck API key. Get one from [VulnCheck](https://vulncheck.com/). If provided, VulnCheck becomes the *primary* data source for CVE details.
 *   `DISCORD_COMMAND_PREFIX` (Optional): The prefix for traditional commands (if any are added later). Defaults to `!`. The primary interaction is automatic detection and slash commands.
+*   `CISA_KEV_CHANNEL_ID` (Optional): The Discord channel ID where new CISA KEV entries should be posted. If not set, KEV monitoring is disabled.
+*   `CISA_KEV_INTERVAL_SECONDS` (Optional): How often (in seconds) to check the CISA KEV feed. Defaults to `3600` (1 hour).
 
 ### Running with Docker (Recommended)
 
@@ -127,6 +131,7 @@ Then, edit the `.env` file:
 2.  **Automatic Detection:** Simply type or paste a message containing one or more CVE IDs (e.g., `Check out CVE-2024-1234 and CVE-2024-5678`). The bot will automatically detect them and post embed(s) with the details.
     *   If multiple unique CVEs are in one message, the bot will post details for up to 5 of them (by default) and indicate if more were found.
 3.  **Version Check:** Use the slash command `/version` to see the current running version of the bot.
+4.  **CISA KEV Alerts (if configured):** If `CISA_KEV_CHANNEL_ID` is set, the bot will automatically post embeds to that channel whenever a new vulnerability is added to the CISA KEV catalog.
 
 ## Roadmap
 
@@ -171,7 +176,8 @@ See [LICENSE](LICENSE) for more information.
 
 ## Acknowledgements
 
-*   Data sourced primarily from the [NVD](https://nvd.nist.gov).
-*   Fallback data lookup provided by [VulnCheck](https://vulncheck.com/).
+*   Data sourced primarily from [VulnCheck](https://vulncheck.com/) (when configured).
+*   Fallback CVE data lookup via [NVD](https://nvd.nist.gov).
+*   Known Exploited Vulnerabilities feed monitored via [CISA](https://www.cisa.gov/known-exploited-vulnerabilities-catalog).
 *   Thanks to all contributors and users who have helped make this project better!
 

@@ -8,7 +8,6 @@ from .cisa_kev_client import CisaKevClient # Import CisaKevClient
 import logging
 import os
 import asyncio # Import asyncio for sleep
-import importlib.metadata # Import for version reading
 import aiohttp # Import aiohttp
 from typing import Dict, Any # Import Dict, Any
 
@@ -19,35 +18,21 @@ DEFAULT_CISA_KEV_INTERVAL = 3600
 
 logger = logging.getLogger(__name__) # Define logger at module level
 
-# Define the slash command function globally or as a static method
-@app_commands.command(name="version", description="Displays the current version of the bot.")
-async def version_command(interaction: discord.Interaction):
-    try:
-        # Use the package name defined in pyproject.toml
-        version = importlib.metadata.version('cve-search')
-        await interaction.response.send_message(f"cve-search version: `{version}`")
-    except importlib.metadata.PackageNotFoundError:
-        logging.error("Could not find package metadata for 'cve-search'. Is it installed correctly?")
-        await interaction.response.send_message("Error: Could not determine application version.", ephemeral=True)
-    except Exception as e:
-        logging.error(f"Error retrieving version: {e}", exc_info=True)
-        await interaction.response.send_message("An unexpected error occurred while retrieving the version.", ephemeral=True)
-
 class SecurityBot(commands.Bot):
     def __init__(self, nvd_api_key: str | None, vulncheck_api_token: str | None):
         intents = discord.Intents.default()
         intents.message_content = True
         prefix = os.getenv('DISCORD_COMMAND_PREFIX', '!')
-        # Initialize the bot with the command tree capability
-        super().__init__(command_prefix=prefix, intents=intents, enable_debug_events=True) # Add enable_debug_events=True
+        super().__init__(command_prefix=prefix, intents=intents, enable_debug_events=True)
         
-        # Initialize HTTP client session (used by CISA KEV client)
-        self.http_session: aiohttp.ClientSession = aiohttp.ClientSession()
+        # Declare session, initialize in setup_hook
+        self.http_session: aiohttp.ClientSession | None = None
+        # Declare CISA client, initialize in setup_hook
+        self.cisa_kev_client: CisaKevClient | None = None
 
-        # Initialize data source clients
+        # Initialize other data source clients that don't need the loop immediately
         self.nvd_client = NVDClient(api_key=nvd_api_key)
-        self.vulncheck_client = VulnCheckClient(api_key=vulncheck_api_token) # Initialize VulnCheck client
-        self.cisa_kev_client = CisaKevClient(session=self.http_session) # Initialize CisaKevClient
+        self.vulncheck_client = VulnCheckClient(api_key=vulncheck_api_token)
         
         # Initialize monitor components
         self.cve_monitor = CVEMonitor(self.nvd_client)
@@ -79,8 +64,14 @@ class SecurityBot(commands.Bot):
         # -----------------------------------------
 
     async def setup_hook(self):
-        # Add the globally defined command to the bot's command tree
-        self.tree.add_command(version_command)
+        # Create the HTTP session now that the loop is running
+        self.http_session = aiohttp.ClientSession()
+        logger.info("Created aiohttp.ClientSession.")
+
+        # Initialize CISA client now that we have a session
+        self.cisa_kev_client = CisaKevClient(session=self.http_session)
+        logger.info("Initialized CisaKevClient.")
+
         # Sync the commands (globally in this case)
         # Consider syncing to specific guilds for faster updates during development
         # await self.tree.sync(guild=discord.Object(id=YOUR_GUILD_ID))
@@ -113,6 +104,11 @@ class SecurityBot(commands.Bot):
     @tasks.loop() # Default interval will be overridden in setup_hook
     async def check_cisa_kev_feed(self):
         """Periodically checks the CISA KEV feed for new entries."""
+        # Ensure client is initialized before running
+        if not self.cisa_kev_client:
+            logger.error("CISA KEV client not initialized, skipping check.")
+            return
+            
         try:
             logger.debug("Running periodic CISA KEV check...")
             new_entries = await self.cisa_kev_client.get_new_kev_entries()
@@ -149,6 +145,11 @@ class SecurityBot(commands.Bot):
         await self.wait_until_ready()
         logger.info("Bot is ready, starting CISA KEV monitoring loop.")
         # Perform initial population without sending messages
+        # Ensure client is initialized before initial population
+        if not self.cisa_kev_client:
+            logger.error("CISA KEV client not initialized, skipping initial population.")
+            return
+            
         try:
             logger.info("Performing initial population of CISA KEV seen list...")
             await self.cisa_kev_client.get_new_kev_entries()
