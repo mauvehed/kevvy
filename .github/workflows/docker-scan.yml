@@ -1,0 +1,52 @@
+name: Docker Image Scan
+
+on:
+  push:
+    branches: [ "main" ]
+    # Only trigger if Dockerfile changes
+    paths:
+      - 'Dockerfile'
+  pull_request:
+    branches: [ "main" ]
+    # Only trigger if Dockerfile changes
+    paths:
+      - 'Dockerfile'
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  scan:
+    name: Scan Docker image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image for scanning
+        id: docker_build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          # Don't push, just load the image into the local Docker daemon
+          load: true
+          # Tag the image for Trivy to find
+          tags: localbuild/cve-search-discord:latest
+          # Use cache for faster builds
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master # Use master for latest features/fixes
+        with:
+          image-ref: 'localbuild/cve-search-discord:latest'
+          format: 'table'
+          # Exit code 1 if vulnerabilities are found
+          exit-code: '1'
+          # Ignore unfixed vulnerabilities, scan for critical and high severity
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH' 

@@ -21,3 +21,11 @@ updates:
     target-branch: "main"
     assignees:
       - "mauvehed"
+  # Maintain dependencies for Docker
+  - package-ecosystem: "docker"
+    directory: "/" # Location of Dockerfile
+    schedule:
+      interval: "daily"
+    target-branch: "main"
+    assignees:
+      - "mauvehed"
