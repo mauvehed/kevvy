@@ -83,7 +83,8 @@ class VulnCheckClient:
                 cvss_vector = None
                 
                 # Check for CVSS v3.x metrics
-                if hasattr(vc_data, 'metrics') and hasattr(vc_data.metrics, 'cvss_metric_v31') and vc_data.metrics.cvss_metric_v31:
+                # Check if metrics exist and is not None before accessing attributes
+                if hasattr(vc_data, 'metrics') and vc_data.metrics is not None and hasattr(vc_data.metrics, 'cvss_metric_v31') and vc_data.metrics.cvss_metric_v31:
                     # Take the first CVSS v3.1 metric found (assuming it's primary)
                     metric_v3 = vc_data.metrics.cvss_metric_v31[0]
                     if hasattr(metric_v3, 'cvss_data') and metric_v3.cvss_data:
@@ -91,7 +92,8 @@ class VulnCheckClient:
                         cvss_version = f"3.1 ({getattr(metric_v3.cvss_data, 'base_severity', 'Unknown')})" # Include severity
                         cvss_vector = getattr(metric_v3.cvss_data, 'vector_string', None)
                 # Fallback to CVSS v2.0 metrics if v3.x not found
-                elif hasattr(vc_data, 'metrics') and hasattr(vc_data.metrics, 'cvss_metric_v2') and vc_data.metrics.cvss_metric_v2:
+                # Check if metrics exist and is not None before accessing attributes
+                elif hasattr(vc_data, 'metrics') and vc_data.metrics is not None and hasattr(vc_data.metrics, 'cvss_metric_v2') and vc_data.metrics.cvss_metric_v2:
                      # Take the first CVSS v2.0 metric found
                     metric_v2 = vc_data.metrics.cvss_metric_v2[0]
                     if hasattr(metric_v2, 'cvss_data') and metric_v2.cvss_data:
@@ -106,8 +108,10 @@ class VulnCheckClient:
                         if hasattr(weakness, 'description') and weakness.description:
                             for desc in weakness.description:
                                 # Check if the description is in English and contains a CWE ID
-                                if getattr(desc, 'lang', '') == 'en' and 'CWE-' in getattr(desc, 'value', ''):
-                                    cwe_id = desc.value.split('CWE-')[-1].split(' ')[0].split('<')[0].split(')')[0].strip()
+                                desc_value = getattr(desc, 'value', None)
+                                if getattr(desc, 'lang', '') == 'en' and desc_value and 'CWE-' in desc_value:
+                                    # Safely split the non-None string
+                                    cwe_id = desc_value.split('CWE-')[-1].split(' ')[0].split('<')[0].split(')')[0].strip()
                                     if cwe_id.isdigit(): # Basic validation
                                          cwe_ids.append(f"CWE-{cwe_id}")
                     cwe_ids = sorted(list(set(cwe_ids))) # Deduplicate and sort
@@ -171,11 +175,13 @@ class VulnCheckClient:
         logger.error(f"Failed to fetch {cve_id} from VulnCheck after {self.MAX_RETRIES} retries.")
         return None
 
-    def close(self):
-        """Closes the API client connection."""
-        if self.api_client:
-            try:
-                self.api_client.close()
-                logger.info("VulnCheck API client closed.")
-            except Exception as e:
-                logger.error(f"Error closing VulnCheck API client: {e}", exc_info=True) 
+    # Removed close method as vulncheck_sdk.ApiClient likely manages its own resources
+    # or doesn't require explicit closing in this usage pattern.
+    # def close(self):
+    #     """Closes the API client connection."""
+    #     if self.api_client:
+    #         try:
+    #             # self.api_client.close() # This was causing AttributeError
+    #             logger.info("VulnCheck API client closed (or assumed closed).")
+    #         except Exception as e:
+    #             logger.error(f"Error closing VulnCheck API client: {e}", exc_info=True) 

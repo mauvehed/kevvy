@@ -48,14 +48,14 @@
 
 **cve-search-discord** is a Discord bot that automatically monitors chat messages for CVE (Common Vulnerabilities and Exposures) identifiers (e.g., `CVE-2023-12345`). When a CVE is detected, the bot fetches detailed information primarily from the [VulnCheck API](https://vulncheck.com/) (if an API key is provided). If VulnCheck is unavailable or doesn't return data, it falls back to the [NIST National Vulnerability Database (NVD) API v2.0](https://nvd.nist.gov/developers/vulnerabilities).
 
-Additionally, the bot can monitor the [CISA Known Exploited Vulnerabilities (KEV) catalog](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) for newly added entries and post alerts to a designated channel.
+Additionally, the bot can monitor the [CISA Known Exploited Vulnerabilities (KEV) catalog](https://www.cisa.gov/known-exploited-vulnerabilities-catalog). Server administrators can enable this feature per server using slash commands, designating a channel for new KEV alerts.
 
 Key features:
 *   Automatic detection of CVE IDs in messages.
 *   Fetches details primarily from VulnCheck (if available), falling back to NVD.
 *   Displays CVSS score (v3.1/v3.0/v2.0), vector string, description, publication dates, CWEs, and reference links.
 *   Consolidates responses for messages containing multiple CVEs (max 5 embeds per message by default) to prevent spam.
-*   Periodically checks the CISA KEV catalog and posts alerts for new entries to a specified channel.
+*   Optionally checks the CISA KEV catalog periodically and posts alerts for new entries to a designated channel (configurable per server).
 
 ### Built With
 
@@ -64,6 +64,10 @@ Key features:
 *   <img src="https://img.shields.io/badge/Poetry-1.8-60A5FA?style=for-the-badge&logo=poetry&logoColor=white" />
 *   <img src="https://img.shields.io/badge/Docker-26.1-0db7ed?style=for-the-badge&logo=docker&logoColor=white" />
 *   NVD API v2.0
+*   `NVD_API_KEY` (Optional): Your NVD API key. Request one [here](https://nvd.nist.gov/developers/request-an-api-key) for significantly higher request rate limits. Used as a fallback data source if VulnCheck is unavailable or fails.
+*   `VULNCHECK_API_TOKEN` (Optional): Your VulnCheck API key. Get one from [VulnCheck](https://vulncheck.com/). If provided, VulnCheck becomes the *primary* data source for CVE details.
+*   `DISCORD_COMMAND_PREFIX` (Optional): The prefix for traditional commands (if any are added later). Defaults to `!`. The primary interaction is automatic detection and slash commands.
+*   `CISA_KEV_INTERVAL_SECONDS` (Optional): How often (in seconds) to check the CISA KEV feed. Defaults to `3600` (1 hour).
 
 ## Getting Started
 
@@ -131,7 +135,11 @@ Then, edit the `.env` file:
 2.  **Automatic Detection:** Simply type or paste a message containing one or more CVE IDs (e.g., `Check out CVE-2024-1234 and CVE-2024-5678`). The bot will automatically detect them and post embed(s) with the details.
     *   If multiple unique CVEs are in one message, the bot will post details for up to 5 of them (by default) and indicate if more were found.
 3.  **Version Check:** Use the slash command `/version` to see the current running version of the bot.
-4.  **CISA KEV Alerts (if configured):** If `CISA_KEV_CHANNEL_ID` is set, the bot will automatically post embeds to that channel whenever a new vulnerability is added to the CISA KEV catalog.
+4.  **CISA KEV Alerts (Optional Setup):**
+    *   `/kev enable channel:<#your-alert-channel>`: A server administrator with 'Manage Server' permissions can run this command to enable KEV monitoring and designate a specific channel for alerts.
+    *   `/kev disable`: Disables KEV monitoring for the server.
+    *   `/kev status`: Checks if KEV monitoring is enabled for the server and shows the configured channel.
+    *   If enabled, the bot will automatically post embeds to the configured channel whenever a new vulnerability is added to the CISA KEV catalog (checks hourly).
 
 ## Roadmap
 

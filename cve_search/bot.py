@@ -5,6 +5,7 @@ from .cve_monitor import CVEMonitor
 from .nvd_client import NVDClient
 from .vulncheck_client import VulnCheckClient # Import VulnCheckClient
 from .cisa_kev_client import CisaKevClient # Import CisaKevClient
+from .db_utils import KEVConfigDB # Import DB utility
 import logging
 import os
 import asyncio # Import asyncio for sleep
@@ -21,68 +22,81 @@ logger = logging.getLogger(__name__) # Define logger at module level
 class SecurityBot(commands.Bot):
     def __init__(self, nvd_api_key: str | None, vulncheck_api_token: str | None):
         intents = discord.Intents.default()
-        intents.message_content = True
+        intents.message_content = True # Needed for message content access
+        intents.guilds = True # Needed for guild information access
         prefix = os.getenv('DISCORD_COMMAND_PREFIX', '!')
         super().__init__(command_prefix=prefix, intents=intents, enable_debug_events=True)
         
-        # Declare session, initialize in setup_hook
+        # Declare session & clients, initialize later
         self.http_session: aiohttp.ClientSession | None = None
-        # Declare CISA client, initialize in setup_hook
         self.cisa_kev_client: CisaKevClient | None = None
+        self.db: KEVConfigDB | None = None # DB Util instance
 
-        # Initialize other data source clients that don't need the loop immediately
+        # Initialize other data source clients 
         self.nvd_client = NVDClient(api_key=nvd_api_key)
         self.vulncheck_client = VulnCheckClient(api_key=vulncheck_api_token)
         
         # Initialize monitor components
         self.cve_monitor = CVEMonitor(self.nvd_client)
         
-        # --- CISA KEV Monitoring Configuration ---
-        self.cisa_kev_channel_id_str = os.getenv('CISA_KEV_CHANNEL_ID')
-        self.cisa_kev_channel_id = None
-        if self.cisa_kev_channel_id_str:
-            try:
-                self.cisa_kev_channel_id = int(self.cisa_kev_channel_id_str)
-                logger.info(f"CISA KEV monitoring enabled. Target channel ID: {self.cisa_kev_channel_id}")
-            except ValueError:
-                logger.error(f"Invalid CISA_KEV_CHANNEL_ID: '{self.cisa_kev_channel_id_str}'. Must be an integer. KEV monitoring disabled.")
-                self.cisa_kev_channel_id = None # Disable if ID is invalid
-        else:
-            logger.warning("CISA_KEV_CHANNEL_ID not set in environment. CISA KEV monitoring will be disabled.")
-
-        try:
-            interval_str = os.getenv('CISA_KEV_INTERVAL_SECONDS', str(DEFAULT_CISA_KEV_INTERVAL))
-            self.cisa_kev_interval = int(interval_str)
-            if self.cisa_kev_interval <= 0:
-                 logger.warning(f"Invalid CISA_KEV_INTERVAL_SECONDS: {self.cisa_kev_interval}. Using default: {DEFAULT_CISA_KEV_INTERVAL} seconds.")
-                 self.cisa_kev_interval = DEFAULT_CISA_KEV_INTERVAL
-            else:
-                 logger.info(f"CISA KEV polling interval set to {self.cisa_kev_interval} seconds.")
-        except ValueError:
-             logger.error(f"Invalid CISA_KEV_INTERVAL_SECONDS: '{interval_str}'. Using default: {DEFAULT_CISA_KEV_INTERVAL} seconds.")
-             self.cisa_kev_interval = DEFAULT_CISA_KEV_INTERVAL
+        # --- CISA KEV Monitoring Configuration --- REMOVED ENV VAR LOGIC
+        # Configuration is now handled per-guild via slash commands and DB
         # -----------------------------------------
+        
+        # Create the main command group - REMOVED (Moved to Cog)
+        # self.kev_group = app_commands.Group(name="kev", description="Manage CISA KEV monitoring for this server.")
 
     async def setup_hook(self):
-        # Create the HTTP session now that the loop is running
+        # Create the HTTP session 
         self.http_session = aiohttp.ClientSession()
         logger.info("Created aiohttp.ClientSession.")
 
-        # Initialize CISA client now that we have a session
+        # Initialize CISA client
         self.cisa_kev_client = CisaKevClient(session=self.http_session)
         logger.info("Initialized CisaKevClient.")
+        
+        # Initialize Database utility
+        try:
+            self.db = KEVConfigDB() # Use default path
+            logger.info("Initialized KEV Configuration Database.")
+        except Exception as e:
+             logger.error(f"Failed to initialize KEV Configuration Database: {e}", exc_info=True)
+             # Bot can continue, but KEV features won't work
+             self.db = None
 
-        # Sync the commands (globally in this case)
-        # Consider syncing to specific guilds for faster updates during development
-        # await self.tree.sync(guild=discord.Object(id=YOUR_GUILD_ID))
+        # Register KEV commands to the group - REMOVED (Handled by Cog loading)
+        # self.kev_group.add_command(self.kev_enable_command)
+        # self.kev_group.add_command(self.kev_disable_command)
+        # self.kev_group.add_command(self.kev_status_command)
+        
+        # Add the command group to the bot's tree - REMOVED (Handled by Cog loading)
+        # self.tree.add_command(self.kev_group)
+
+        # Load Cogs
+        initial_extensions = [
+            'cve_search.cogs.kev_commands' # Path to the new cog file
+        ]
+        for extension in initial_extensions:
+            try:
+                await self.load_extension(extension)
+                logger.info(f"Successfully loaded extension: {extension}")
+            except commands.ExtensionError as e:
+                logger.error(f"Failed to load extension {extension}: {e}", exc_info=True)
+            except Exception as e:
+                 logger.error(f"An unexpected error occurred loading extension {extension}: {e}", exc_info=True)
+
+        # Sync the commands (syncs commands from loaded cogs too)
         await self.tree.sync() 
         logging.info(f"Synced application commands.")
+        
         # Start background tasks
-        if self.cisa_kev_channel_id:
-            self.check_cisa_kev_feed.change_interval(seconds=self.cisa_kev_interval) # Set interval dynamically
-            self.check_cisa_kev_feed.start()
-        else:
-            logger.info("CISA KEV monitoring task not started due to missing/invalid channel ID.")
+        # Start CISA KEV task unconditionally; it will check DB internally
+        self.check_cisa_kev_feed.start()
+        # if self.cisa_kev_channel_id: # OLD LOGIC
+        #     self.check_cisa_kev_feed.change_interval(seconds=self.cisa_kev_interval) 
+        #     self.check_cisa_kev_feed.start()
+        # else:
+        #     logger.info("CISA KEV monitoring task not started due to missing/invalid channel ID.")
 
     async def close(self):
         """Ensure cleanup happens correctly."""
@@ -91,50 +105,78 @@ class SecurityBot(commands.Bot):
             self.check_cisa_kev_feed.cancel()
             logging.info("Cancelled CISA KEV monitoring task.")
         
-        await self.http_session.close() # Close the aiohttp session
-        logging.info("Closed aiohttp session.")
+        if self.http_session:
+            await self.http_session.close() # Close the aiohttp session
+            logging.info("Closed aiohttp session.")
         
-        if self.vulncheck_client:
-            self.vulncheck_client.close() # Close VulnCheck client if initialized
-            logging.info("Closed VulnCheck client.")
+        if self.db:
+            self.db.close() # Close the database connection
+            logging.info("Closed KEV Config Database connection.")
         
         await super().close() # Call the parent class's close method
         logging.info("Bot closed.")
 
-    @tasks.loop() # Default interval will be overridden in setup_hook
+    # --- KEV Slash Commands --- REMOVED (Moved to Cog) 
+    # @app_commands.checks.has_permissions(manage_guild=True)
+    # @kev_group.command(name="enable", description="Enable KEV alerts in the specified channel.")
+    # async def kev_enable_command(self, interaction: discord.Interaction, channel: discord.TextChannel):
+    # ... (rest of command methods removed) ...
+    # --- End KEV Slash Commands ---
+
+    @tasks.loop(hours=1) # Check hourly by default
     async def check_cisa_kev_feed(self):
-        """Periodically checks the CISA KEV feed for new entries."""
-        # Ensure client is initialized before running
-        if not self.cisa_kev_client:
-            logger.error("CISA KEV client not initialized, skipping check.")
+        """Periodically checks the CISA KEV feed for new entries and sends to configured guilds."""
+        if not self.cisa_kev_client or not self.db:
+            logger.debug("CISA KEV client or DB not initialized, skipping check.")
             return
             
         try:
-            logger.debug("Running periodic CISA KEV check...")
+            logger.info("Running periodic CISA KEV check...") # Changed level to INFO
             new_entries = await self.cisa_kev_client.get_new_kev_entries()
 
-            if new_entries and self.cisa_kev_channel_id:
-                target_channel = self.get_channel(self.cisa_kev_channel_id)
-                if not target_channel:
-                    logger.error(f"Could not find CISA KEV target channel with ID: {self.cisa_kev_channel_id}")
-                    return
-                if not isinstance(target_channel, discord.TextChannel):
-                     logger.error(f"CISA KEV target channel {self.cisa_kev_channel_id} is not a TextChannel.")
-                     return
+            if not new_entries:
+                logger.info("No new KEV entries found.")
+                return
 
-                logger.info(f"Sending {len(new_entries)} new CISA KEV entries to channel {target_channel.name} ({target_channel.id})")
+            logger.info(f"Found {len(new_entries)} new KEV entries. Checking configured guilds...")
+            enabled_configs = self.db.get_enabled_kev_configs()
+
+            if not enabled_configs:
+                logger.info("No guilds have KEV monitoring enabled.")
+                return
+
+            for config in enabled_configs:
+                guild_id = config['guild_id']
+                channel_id = config['channel_id']
+                
+                guild = self.get_guild(guild_id)
+                if not guild:
+                    logger.warning(f"Could not find guild {guild_id} from KEV config, skipping.")
+                    continue
+                    
+                target_channel = self.get_channel(channel_id)
+                if not target_channel:
+                    logger.error(f"Could not find CISA KEV target channel with ID: {channel_id} in guild {guild.name} ({guild_id})")
+                    continue # Skip this guild, maybe log to disable it?
+                if not isinstance(target_channel, discord.TextChannel):
+                     logger.error(f"CISA KEV target channel {channel_id} in guild {guild.name} ({guild_id}) is not a TextChannel.")
+                     continue
+
+                logger.info(f"Sending {len(new_entries)} new KEV entries to channel #{target_channel.name} in guild {guild.name}")
                 for entry in new_entries:
                     embed = self._create_kev_embed(entry)
                     try:
                         await target_channel.send(embed=embed)
-                        await asyncio.sleep(0.5) # Prevent rate limiting
+                        await asyncio.sleep(0.75) # Slightly longer delay when sending to potentially multiple channels
                     except discord.Forbidden:
-                         logger.error(f"Missing permissions to send message in CISA KEV channel {target_channel.id}")
-                         break # Stop trying if permissions error occurs
+                         logger.error(f"Missing permissions to send message in CISA KEV channel {channel_id} (Guild: {guild_id})")
+                         # Should we disable config for this guild after repeated failures?
+                         break # Stop trying for this channel on permissions error
                     except discord.HTTPException as e:
-                         logger.error(f"Failed to send CISA KEV embed for {entry.get('cveID', 'Unknown CVE')} to channel {target_channel.id}: {e}")
+                         logger.error(f"Failed to send CISA KEV embed for {entry.get('cveID', 'Unknown CVE')} to channel {channel_id} (Guild: {guild_id}): {e}")
                     except Exception as e:
-                         logger.error(f"Unexpected error sending CISA KEV embed for {entry.get('cveID', 'Unknown CVE')}: {e}", exc_info=True)
+                         logger.error(f"Unexpected error sending KEV embed for {entry.get('cveID', 'Unknown CVE')} (Guild: {guild_id}): {e}", exc_info=True)
+                await asyncio.sleep(2) # Small delay before processing the next guild
 
         except Exception as e:
             logger.error(f"Error during CISA KEV check loop: {e}", exc_info=True)
@@ -147,6 +189,8 @@ class SecurityBot(commands.Bot):
         # Perform initial population without sending messages
         # Ensure client is initialized before initial population
         if not self.cisa_kev_client:
+            # This check might be less critical now as task starts after setup_hook
+            # where client is initialized, but doesn't hurt.
             logger.error("CISA KEV client not initialized, skipping initial population.")
             return
             
