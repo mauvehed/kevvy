@@ -28,7 +28,7 @@ jobs:
 
       - name: Build image for scanning
         id: docker_build
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           # Don't push, just load the image into the local Docker daemon
