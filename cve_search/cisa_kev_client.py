@@ -2,6 +2,7 @@ import logging
 import aiohttp
 from aiohttp import ClientTimeout
 from typing import Set, List, Dict, Any, Optional
+from .db_utils import KEVConfigDB
 
 logger = logging.getLogger(__name__)
 
@@ -15,17 +16,20 @@ class CisaKevClient:
     # Use a reasonable User-Agent
     HEADERS = {'User-Agent': 'cve-search-discord-bot/1.0'}
 
-    def __init__(self, session: aiohttp.ClientSession):
+    def __init__(self, session: aiohttp.ClientSession, db: KEVConfigDB):
         """
         Initializes the CisaKevClient.
 
         Args:
             session: An aiohttp.ClientSession for making HTTP requests.
+            db: An instance of KEVConfigDB for persistence.
         """
         self.session = session
+        self.db = db
         # Store CVE IDs that have been seen/processed to avoid duplicates
-        self.seen_kev_ids: Set[str] = set()
-        self._initial_load_complete = False # Flag to track initial population
+        # Load initial set from database
+        self.seen_kev_ids: Set[str] = self.db.load_seen_kevs()
+        # self._initial_load_complete = False # This flag is less relevant now
 
     async def _fetch_kev_data(self) -> Optional[Dict[str, Any]]:
         """Fetches the raw KEV data from CISA."""
@@ -71,26 +75,30 @@ class CisaKevClient:
 
         new_vuln_details = []
 
-        if not self._initial_load_complete:
-            # First run: populate the seen list but don't report anything yet
-            logger.info(f"Initial load of CISA KEV catalog. Found {len(current_kev_ids)} entries. Monitoring for new additions.")
-            self.seen_kev_ids = current_kev_ids
-            self._initial_load_complete = True
-            return [] # Return empty list on first successful load
-        else:
-            # Subsequent runs: find the difference
-            new_ids = current_kev_ids - self.seen_kev_ids
-            if new_ids:
-                logger.info(f"Found {len(new_ids)} new CISA KEV entries: {', '.join(new_ids)}")
-                # Find the full details for the new IDs
-                for vuln in data.get('vulnerabilities', []):
-                    cve_id = vuln.get('cveID')
-                    if cve_id in new_ids:
-                        new_vuln_details.append(vuln)
-                        self.seen_kev_ids.add(cve_id) # Update seen list
-            else:
-                logger.info("No new entries found in CISA KEV catalog.")
+        # Compare current IDs with the persistent + in-memory seen list
+        new_ids = current_kev_ids - self.seen_kev_ids
 
+        if new_ids:
+            logger.info(f"Found {len(new_ids)} new CISA KEV entries: {', '.join(sorted(list(new_ids)))}")
+            
+            # Persist new IDs *before* adding to in-memory set and processing
+            try:
+                self.db.add_seen_kevs(new_ids)
+            except Exception as e:
+                # Log error but continue, so we still attempt alerts
+                logger.error(f"Failed to persist new KEV IDs to database: {e}", exc_info=True)
+                
+            # Find the full details for the new IDs
+            for vuln in data.get('vulnerabilities', []):
+                cve_id = vuln.get('cveID')
+                if cve_id in new_ids:
+                    new_vuln_details.append(vuln)
+                    # Update in-memory set *after* successful DB add attempt
+                    self.seen_kev_ids.add(cve_id) 
+        else:
+            logger.info("No new entries found in CISA KEV catalog.")
+
+        # Return details for newly found entries (could be empty)
         return new_vuln_details
 
 # Example Usage (requires an async context and aiohttp session)

@@ -69,7 +69,15 @@ class KEVConfigDB:
                 logger.info("Adding 'enabled' column to kev_config table.")
                 cursor.execute("ALTER TABLE kev_config ADD COLUMN enabled BOOLEAN NOT NULL DEFAULT 0")
             
-            logger.debug("Database table 'kev_config' initialized successfully.")
+            # --- Initialize seen_kevs table --- 
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS seen_kevs (
+                    cve_id TEXT PRIMARY KEY
+                )
+            """)
+            # ----------------------------------
+
+            logger.debug("Database tables initialized successfully.")
         except sqlite3.Error as e:
             logger.error(f"Database initialization error: {e}", exc_info=True)
 
@@ -139,6 +147,44 @@ class KEVConfigDB:
         except sqlite3.Error as e:
             logger.error(f"Error getting enabled KEV configs: {e}", exc_info=True)
             return []
+
+    # --- Methods for seen KEVs --- 
+
+    def load_seen_kevs(self) -> set[str]:
+        """Loads all previously seen KEV IDs from the database."""
+        if not self._conn:
+             logger.error("No DB connection to load seen KEVs.")
+             return set() # Return empty set if no DB connection
+        try:
+            cursor = self._conn.cursor()
+            cursor.execute("SELECT cve_id FROM seen_kevs")
+            rows = cursor.fetchall()
+            seen_set = {row['cve_id'] for row in rows}
+            logger.info(f"Loaded {len(seen_set)} seen KEV IDs from database.")
+            return seen_set
+        except sqlite3.Error as e:
+            logger.error(f"Error loading seen KEVs: {e}", exc_info=True)
+            return set() # Return empty set on error
+            
+    def add_seen_kevs(self, cve_ids: set[str]):
+        """Adds a set of KEV IDs to the seen list in the database."""
+        if not self._conn:
+            logger.error("No DB connection to add seen KEVs.")
+            return
+        if not cve_ids:
+            return # Nothing to add
+            
+        try:
+            cursor = self._conn.cursor()
+            # Prepare data as list of tuples for executemany
+            data_to_insert = [(cve_id,) for cve_id in cve_ids]
+            # Use INSERT OR IGNORE to avoid errors if ID already exists
+            cursor.executemany("INSERT OR IGNORE INTO seen_kevs (cve_id) VALUES (?)", data_to_insert)
+            # No need to commit due to isolation_level=None
+            logger.debug(f"Attempted to add {len(cve_ids)} KEV IDs to seen list in DB (ignored duplicates).")
+        except sqlite3.Error as e:
+            logger.error(f"Error adding seen KEVs: {e}", exc_info=True)
+    # ----------------------------- 
 
     def close(self):
         """Closes the database connection."""

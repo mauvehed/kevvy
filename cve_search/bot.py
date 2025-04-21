@@ -52,8 +52,13 @@ class SecurityBot(commands.Bot):
         logger.info("Created aiohttp.ClientSession.")
 
         # Initialize CISA client
-        self.cisa_kev_client = CisaKevClient(session=self.http_session)
-        logger.info("Initialized CisaKevClient.")
+        # Pass the DB instance for persistence
+        if self.db and self.http_session: # Ensure both DB and session are ready
+             self.cisa_kev_client = CisaKevClient(session=self.http_session, db=self.db)
+             logger.info("Initialized CisaKevClient with DB persistence.")
+        else:
+            logger.error("Could not initialize CisaKevClient due to missing DB or HTTP session.")
+            self.cisa_kev_client = None # Ensure it's None if init fails
         
         # Initialize Database utility
         try:
@@ -186,20 +191,21 @@ class SecurityBot(commands.Bot):
         """Ensures the bot is ready before the loop starts."""
         await self.wait_until_ready()
         logger.info("Bot is ready, starting CISA KEV monitoring loop.")
-        # Perform initial population without sending messages
+        # Perform initial population without sending messages - REMOVED
+        # Initial population is now handled by CisaKevClient.__init__ loading from DB
         # Ensure client is initialized before initial population
-        if not self.cisa_kev_client:
-            # This check might be less critical now as task starts after setup_hook
-            # where client is initialized, but doesn't hurt.
-            logger.error("CISA KEV client not initialized, skipping initial population.")
-            return
+        # if not self.cisa_kev_client:
+        #     # This check might be less critical now as task starts after setup_hook
+        #     # where client is initialized, but doesn't hurt.
+        #     logger.error("CISA KEV client not initialized, skipping initial population.")
+        #     return
             
-        try:
-            logger.info("Performing initial population of CISA KEV seen list...")
-            await self.cisa_kev_client.get_new_kev_entries()
-            logger.info("Initial CISA KEV population complete.")
-        except Exception as e:
-            logger.error(f"Error during initial CISA KEV population: {e}", exc_info=True)
+        # try:
+        #     logger.info("Performing initial population of CISA KEV seen list...")
+        #     await self.cisa_kev_client.get_new_kev_entries() # REMOVED CALL
+        #     logger.info("Initial CISA KEV population complete.")
+        # except Exception as e:
+        #     logger.error(f"Error during initial CISA KEV population: {e}", exc_info=True)
 
     def _create_kev_embed(self, kev_data: Dict[str, Any]) -> discord.Embed:
         """Creates a Discord embed for a CISA KEV entry."""
