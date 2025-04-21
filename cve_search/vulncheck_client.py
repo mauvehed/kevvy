@@ -147,7 +147,7 @@ class VulnCheckClient:
             cve_from_data = getattr(vc_data, 'id', cve_id) # NVD 2.0 uses 'id'
             return {
                 'id': cve_from_data, 
-                'title': f"NIST NVD Details for {cve_from_data}", # Updated title
+                'title': f"NIST NVD Details for {cve_from_data} via VulnCheck", # Updated title
                 'description': description,
                 'published': published,
                 'modified': modified,
