@@ -1,11 +1,10 @@
 import os
 import logging
-import asyncio # ADDED
-import functools # ADDED
-from typing import Optional, Dict, Any, Callable, Awaitable, Tuple, List # Added Tuple, List
+import asyncio
+import functools
+from typing import Optional, Dict, Any, Callable, Tuple, List
+import vulncheck_sdk
 from datetime import datetime
-
-import vulncheck_sdk # Import the SDK
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +12,7 @@ class VulnCheckClient:
     DEFAULT_HOST = "https://api.vulncheck.com"
     DEFAULT_API = DEFAULT_HOST + "/v3"
     MAX_RETRIES = 3
-    RETRY_DELAY = 2 # Simple fixed delay for retries
+    RETRY_DELAY = 2
 
     def __init__(self, api_key: Optional[str]):
         if not api_key:
@@ -25,15 +24,10 @@ class VulnCheckClient:
         self.api_key = api_key
         configuration = vulncheck_sdk.Configuration(host=self.DEFAULT_API)
         configuration.api_key["Bearer"] = self.api_key
-        configuration.retries = self.MAX_RETRIES # Use SDK retry mechanism if available
-        # Note: The SDK might have its own retry logic; consult its docs for details.
-        # We'll keep a simple manual retry loop as a fallback/example.
+        configuration.retries = self.MAX_RETRIES
 
-        # Create the API client
         self.api_client = vulncheck_sdk.ApiClient(configuration)
         self.indices_client = vulncheck_sdk.IndicesApi(self.api_client)
-        # It's good practice to close the client when done, but for a long-running bot,
-        # we might keep it open or manage it within request contexts if resource issues arise.
 
     def _parse_date(self, date_input: Any) -> Optional[str]:
         """Helper to parse date which might be datetime or string."""
@@ -41,43 +35,35 @@ class VulnCheckClient:
             return None
         try:
             if isinstance(date_input, datetime):
-                # Ensure timezone info for consistent formatting if needed, default to UTC
-                # return date_input.isoformat()
                 return date_input.strftime('%Y-%m-%dT%H:%M:%S')
             elif isinstance(date_input, str):
-                 # Attempt to parse string into datetime then format
                  dt_obj = datetime.fromisoformat(date_input.replace('Z', '+00:00'))
                  return dt_obj.strftime('%Y-%m-%dT%H:%M:%S')
             else:
                 logger.warning(f"Unexpected date type: {type(date_input)}")
-                return str(date_input) # Fallback to string representation
+                return str(date_input)
         except (ValueError, TypeError) as e:
             logger.warning(f"Could not parse date input '{date_input}': {e}")
-            return str(date_input) # Fallback
+            return str(date_input)
 
     async def _run_sdk_call(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """Runs a potentially blocking SDK function in an executor."""
         loop = asyncio.get_running_loop()
-        # Use functools.partial to bind arguments to the function
         pfunc = functools.partial(func, *args, **kwargs)
         try:
             result = await loop.run_in_executor(None, pfunc)
             return result
         except Exception as e:
-            # Log the error here or let the caller handle specific SDK exceptions?
-            # For now, let the caller handle it, just raise it.
-            # Consider adding specific error logging if needed universally.
             logger.debug(f"Error during executor run for {func.__name__}: {e}")
             raise # Re-raise the exception for the caller to handle
 
-    # --- Parsing Helper Methods --- 
+    # --- Parsing Helper Methods ---
 
     def _parse_cvss_from_data(self, vc_data: Any) -> Tuple[Optional[float], Optional[str], Optional[str]]:
         """Extracts CVSS score, version, and vector from NVD data."""
         cvss_score = None
         cvss_version = None
         cvss_vector = None
-        # Check if metrics exist and is not None before accessing attributes
         if hasattr(vc_data, 'metrics') and vc_data.metrics is not None:
             if hasattr(vc_data.metrics, 'cvss_metric_v31') and vc_data.metrics.cvss_metric_v31:
                 metric_v3 = vc_data.metrics.cvss_metric_v31[0]
@@ -105,7 +91,6 @@ class VulnCheckClient:
                         desc_value = getattr(desc, 'value', None)
                         if getattr(desc, 'lang', '') == 'en' and desc_value and 'CWE-' in desc_value:
                             try:
-                                # More robust extraction, handle potential errors
                                 parts = desc_value.split('CWE-', 1)[1]
                                 cwe_num = parts.split()[0].split('<')[0].split(')')[0].strip()
                                 if cwe_num.isdigit():
@@ -123,8 +108,8 @@ class VulnCheckClient:
                  if url:
                      references.append({
                          'url': url,
-                         'source': getattr(ref, 'source', 'NIST NVD'), 
-                         'tags': getattr(ref, 'tags', []) 
+                         'source': getattr(ref, 'source', 'NIST NVD'),
+                         'tags': getattr(ref, 'tags', [])
                      })
         return references
 
@@ -135,7 +120,7 @@ class VulnCheckClient:
             for desc in vc_data.descriptions:
                 if getattr(desc, 'lang', '') == 'en':
                     description = getattr(desc, 'value', description)
-                    break 
+                    break
         return description
 
     def _extract_dates_from_data(self, vc_data: Any) -> Tuple[Optional[str], Optional[str]]:
@@ -157,21 +142,18 @@ class VulnCheckClient:
             if not api_response or not api_response.data:
                 logger.warning(f"No vulnerability data found for {cve_id} using VulnCheck's NIST NVD2 endpoint.")
                 return None
-                
+
             vc_data = api_response.data[0]
 
-            # --- Call helper methods to parse data --- 
             cvss_score, cvss_version, cvss_vector = self._parse_cvss_from_data(vc_data)
             cwe_ids = self._parse_cwes_from_data(vc_data)
             references = self._parse_references_from_data(vc_data)
             description = self._parse_description_from_data(vc_data)
             published, modified = self._extract_dates_from_data(vc_data)
-            cve_from_data = getattr(vc_data, 'id', cve_id) # NVD 2.0 uses 'id'
-            # -------------------------------------------
+            cve_from_data = getattr(vc_data, 'id', cve_id)
 
-            # Construct the common dictionary
             return {
-                'id': cve_from_data, 
+                'id': cve_from_data,
                 'title': f"NIST NVD Details for {cve_from_data} (via VulnCheck)",
                 'description': description,
                 'published': published,
@@ -187,19 +169,7 @@ class VulnCheckClient:
 
         except vulncheck_sdk.ApiException as e:
             logger.error(f"VulnCheck API error fetching {cve_id}: {e.status} {e.reason} - {e.body}")
-            return None # Max retries exceeded
+            return None
         except Exception as e:
-            # Catch other potential errors (network, parsing, etc.)
             logger.error(f"An unexpected error occurred processing {cve_id} with VulnCheck: {e}", exc_info=True)
             return None
-
-    # Removed close method as vulncheck_sdk.ApiClient likely manages its own resources
-    # or doesn't require explicit closing in this usage pattern.
-    # def close(self):
-    #     """Closes the API client connection."""
-    #     if self.api_client:
-    #         try:
-    #             # self.api_client.close() # This was causing AttributeError
-    #             logger.info("VulnCheck API client closed (or assumed closed).")
-    #         except Exception as e:
-    #             logger.error(f"Error closing VulnCheck API client: {e}", exc_info=True) 

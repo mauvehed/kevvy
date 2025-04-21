@@ -1,98 +1,72 @@
 import discord
-from discord.ext import commands, tasks # Import tasks
-from discord import app_commands # Import app_commands
+from discord.ext import commands, tasks
+from discord import app_commands
+import aiohttp
 from .cve_monitor import CVEMonitor
 from .nvd_client import NVDClient
-from .vulncheck_client import VulnCheckClient # Import VulnCheckClient
-from .cisa_kev_client import CisaKevClient # Import CisaKevClient
-from .db_utils import KEVConfigDB # Import DB utility
+from .vulncheck_client import VulnCheckClient
+from .cisa_kev_client import CisaKevClient
+from .db_utils import KEVConfigDB
 import logging
 import os
-import asyncio # Import asyncio for sleep
-import aiohttp # Import aiohttp
-from typing import Dict, Any # Import Dict, Any
+import asyncio
+from typing import Dict, Any
 
-# Limit the number of embeds sent for a single message
 MAX_EMBEDS_PER_MESSAGE = 5
-# Default polling interval for CISA KEV feed (1 hour)
-DEFAULT_CISA_KEV_INTERVAL = 3600 
 
-logger = logging.getLogger(__name__) # Define logger at module level
+logger = logging.getLogger(__name__)
 
 class SecurityBot(commands.Bot):
     def __init__(self, nvd_api_key: str | None, vulncheck_api_token: str | None):
         intents = discord.Intents.default()
-        intents.message_content = True # Needed for message content access
-        intents.guilds = True # Needed for guild information access
+        intents.message_content = True
+        intents.guilds = True
         prefix = os.getenv('DISCORD_COMMAND_PREFIX', '!')
         super().__init__(command_prefix=prefix, intents=intents, enable_debug_events=True)
-        
-        # Declare session & clients, initialize later
+
         self.http_session: aiohttp.ClientSession | None = None
         self.cisa_kev_client: CisaKevClient | None = None
-        self.db: KEVConfigDB | None = None # DB Util instance
-
-        # Initialize other data source clients - MOVED to setup_hook where session is available
+        self.db: KEVConfigDB | None = None
         self.nvd_client: NVDClient | None = None
+        self.cve_monitor: CVEMonitor | None = None
+
         # VulnCheck doesn't need session, can init here
         self.vulncheck_client = VulnCheckClient(api_key=vulncheck_api_token)
-        
-        # Initialize monitor components - MOVED to setup_hook
-        self.cve_monitor: CVEMonitor | None = None
-        
-        # --- CISA KEV Monitoring Configuration --- REMOVED ENV VAR LOGIC
-        # Configuration is now handled per-guild via slash commands and DB
-        # -----------------------------------------
-        
-        # Create the main command group - REMOVED (Moved to Cog)
-        # self.kev_group = app_commands.Group(name="kev", description="Manage CISA KEV monitoring for this server.")
 
     async def setup_hook(self):
-        # Create the HTTP session 
         self.http_session = aiohttp.ClientSession()
         logger.info("Created aiohttp.ClientSession.")
 
         # Initialize NVD client now that we have a session
-        self.nvd_client = NVDClient(session=self.http_session, api_key=os.getenv('NVD_API_KEY')) # Get key again here or pass from init
+        self.nvd_client = NVDClient(session=self.http_session, api_key=os.getenv('NVD_API_KEY'))
         logger.info("Initialized NVDClient.")
-        
+
         # Initialize monitor components now that NVDClient exists
         if self.nvd_client:
             self.cve_monitor = CVEMonitor(self.nvd_client)
             logger.info("Initialized CVEMonitor.")
         else:
             logger.error("Could not initialize CVEMonitor because NVDClient failed to initialize.")
-            # Bot can continue but CVE scanning in messages won't work
-        
+
+        # Initialize Database utility
+        try:
+            self.db = KEVConfigDB()
+            logger.info("Initialized KEV Configuration Database.")
+        except Exception as e:
+             logger.error(f"Failed to initialize KEV Configuration Database: {e}", exc_info=True)
+             self.db = None
+
         # Initialize CISA client
-        # Pass the DB instance for persistence
-        if self.db and self.http_session: # Ensure both DB and session are ready
+        if self.db and self.http_session:
              self.cisa_kev_client = CisaKevClient(session=self.http_session, db=self.db)
              logger.info("Initialized CisaKevClient with DB persistence.")
         else:
             logger.error("Could not initialize CisaKevClient due to missing DB or HTTP session.")
-            self.cisa_kev_client = None # Ensure it's None if init fails
-        
-        # Initialize Database utility
-        try:
-            self.db = KEVConfigDB() # Use default path
-            logger.info("Initialized KEV Configuration Database.")
-        except Exception as e:
-             logger.error(f"Failed to initialize KEV Configuration Database: {e}", exc_info=True)
-             # Bot can continue, but KEV features won't work
-             self.db = None
-
-        # Register KEV commands to the group - REMOVED (Handled by Cog loading)
-        # self.kev_group.add_command(self.kev_enable_command)
-        # self.kev_group.add_command(self.kev_disable_command)
-        # self.kev_group.add_command(self.kev_status_command)
-        
-        # Add the command group to the bot's tree - REMOVED (Handled by Cog loading)
-        # self.tree.add_command(self.kev_group)
+            self.cisa_kev_client = None
 
         # Load Cogs
         initial_extensions = [
-            'cve_search.cogs.kev_commands' # Path to the new cog file
+            'cve_search.cogs.kev_commands'
         ]
         for extension in initial_extensions:
             try:
@@ -103,53 +77,39 @@ class SecurityBot(commands.Bot):
             except Exception as e:
                  logger.error(f"An unexpected error occurred loading extension {extension}: {e}", exc_info=True)
 
-        # Sync the commands (syncs commands from loaded cogs too)
-        await self.tree.sync() 
+        # Sync the commands
+        await self.tree.sync()
         logging.info(f"Synced application commands.")
-        
+
         # Start background tasks
-        # Start CISA KEV task unconditionally; it will check DB internally
         self.check_cisa_kev_feed.start()
-        # if self.cisa_kev_channel_id: # OLD LOGIC
-        #     self.check_cisa_kev_feed.change_interval(seconds=self.cisa_kev_interval) 
-        #     self.check_cisa_kev_feed.start()
-        # else:
-        #     logger.info("CISA KEV monitoring task not started due to missing/invalid channel ID.")
 
     async def close(self):
-        """Ensure cleanup happens correctly."""
         logging.info("Closing bot resources...")
         if self.check_cisa_kev_feed.is_running():
             self.check_cisa_kev_feed.cancel()
             logging.info("Cancelled CISA KEV monitoring task.")
-        
+
         if self.http_session:
-            await self.http_session.close() # Close the aiohttp session
+            await self.http_session.close()
             logging.info("Closed aiohttp session.")
-        
+
         if self.db:
-            self.db.close() # Close the database connection
+            self.db.close()
             logging.info("Closed KEV Config Database connection.")
-        
-        await super().close() # Call the parent class's close method
+
+        await super().close()
         logging.info("Bot closed.")
 
-    # --- KEV Slash Commands --- REMOVED (Moved to Cog) 
-    # @app_commands.checks.has_permissions(manage_guild=True)
-    # @kev_group.command(name="enable", description="Enable KEV alerts in the specified channel.")
-    # async def kev_enable_command(self, interaction: discord.Interaction, channel: discord.TextChannel):
-    # ... (rest of command methods removed) ...
-    # --- End KEV Slash Commands ---
-
-    @tasks.loop(hours=1) # Check hourly by default
+    @tasks.loop(hours=1)
     async def check_cisa_kev_feed(self):
         """Periodically checks the CISA KEV feed for new entries and sends to configured guilds."""
         if not self.cisa_kev_client or not self.db:
             logger.debug("CISA KEV client or DB not initialized, skipping check.")
             return
-            
+
         try:
-            logger.info("Running periodic CISA KEV check...") # Changed level to INFO
+            logger.info("Running periodic CISA KEV check...")
             new_entries = await self.cisa_kev_client.get_new_kev_entries()
 
             if not new_entries:
@@ -166,16 +126,16 @@ class SecurityBot(commands.Bot):
             for config in enabled_configs:
                 guild_id = config['guild_id']
                 channel_id = config['channel_id']
-                
+
                 guild = self.get_guild(guild_id)
                 if not guild:
                     logger.warning(f"Could not find guild {guild_id} from KEV config, skipping.")
                     continue
-                    
+
                 target_channel = self.get_channel(channel_id)
                 if not target_channel:
                     logger.error(f"Could not find CISA KEV target channel with ID: {channel_id} in guild {guild.name} ({guild_id})")
-                    continue # Skip this guild, maybe log to disable it?
+                    continue
                 if not isinstance(target_channel, discord.TextChannel):
                      logger.error(f"CISA KEV target channel {channel_id} in guild {guild.name} ({guild_id}) is not a TextChannel.")
                      continue
@@ -185,16 +145,15 @@ class SecurityBot(commands.Bot):
                     embed = self._create_kev_embed(entry)
                     try:
                         await target_channel.send(embed=embed)
-                        await asyncio.sleep(0.75) # Slightly longer delay when sending to potentially multiple channels
+                        await asyncio.sleep(0.75)
                     except discord.Forbidden:
                          logger.error(f"Missing permissions to send message in CISA KEV channel {channel_id} (Guild: {guild_id})")
-                         # Should we disable config for this guild after repeated failures?
-                         break # Stop trying for this channel on permissions error
+                         break
                     except discord.HTTPException as e:
                          logger.error(f"Failed to send CISA KEV embed for {entry.get('cveID', 'Unknown CVE')} to channel {channel_id} (Guild: {guild_id}): {e}")
                     except Exception as e:
                          logger.error(f"Unexpected error sending KEV embed for {entry.get('cveID', 'Unknown CVE')} (Guild: {guild_id}): {e}", exc_info=True)
-                await asyncio.sleep(2) # Small delay before processing the next guild
+                await asyncio.sleep(2)
 
         except Exception as e:
             logger.error(f"Error during CISA KEV check loop: {e}", exc_info=True)
@@ -204,33 +163,18 @@ class SecurityBot(commands.Bot):
         """Ensures the bot is ready before the loop starts."""
         await self.wait_until_ready()
         logger.info("Bot is ready, starting CISA KEV monitoring loop.")
-        # Perform initial population without sending messages - REMOVED
-        # Initial population is now handled by CisaKevClient.__init__ loading from DB
-        # Ensure client is initialized before initial population
-        # if not self.cisa_kev_client:
-        #     # This check might be less critical now as task starts after setup_hook
-        #     # where client is initialized, but doesn't hurt.
-        #     logger.error("CISA KEV client not initialized, skipping initial population.")
-        #     return
-            
-        # try:
-        #     logger.info("Performing initial population of CISA KEV seen list...")
-        #     await self.cisa_kev_client.get_new_kev_entries() # REMOVED CALL
-        #     logger.info("Initial CISA KEV population complete.")
-        # except Exception as e:
-        #     logger.error(f"Error during initial CISA KEV population: {e}", exc_info=True)
 
     def _create_kev_embed(self, kev_data: Dict[str, Any]) -> discord.Embed:
         """Creates a Discord embed for a CISA KEV entry."""
         cve_id = kev_data.get('cveID', 'N/A')
         nvd_link = f"https://nvd.nist.gov/vuln/detail/{cve_id}" if cve_id != 'N/A' else "Link unavailable"
-        
+
         title = f"🚨 New CISA KEV Entry: {cve_id}"
         embed = discord.Embed(
             title=title,
             description=kev_data.get('shortDescription', 'No description available.'),
-            url=nvd_link, # Link title to NVD page
-            color=discord.Color.dark_red() 
+            url=nvd_link,
+            color=discord.Color.dark_red()
         )
 
         embed.add_field(name="Vulnerability Name", value=kev_data.get('vulnerabilityName', 'N/A'), inline=False)
@@ -240,81 +184,65 @@ class SecurityBot(commands.Bot):
         embed.add_field(name="Required Action", value=kev_data.get('requiredAction', 'N/A'), inline=False)
         embed.add_field(name="Due Date", value=kev_data.get('dueDate', 'N/A'), inline=True)
         embed.add_field(name="Known Ransomware Use", value=kev_data.get('knownRansomwareCampaignUse', 'N/A'), inline=True)
-        
-        # Use named expression (walrus operator) for notes
+
         if notes := kev_data.get('notes', ''):
-            # Limit notes length
             notes_display = notes[:1020] + '...' if len(notes) > 1024 else notes
             embed.add_field(name="Notes", value=notes_display, inline=False)
 
         embed.set_footer(text="Source: CISA Known Exploited Vulnerabilities Catalog")
-        embed.timestamp = discord.utils.utcnow() # Add timestamp
+        embed.timestamp = discord.utils.utcnow()
 
         return embed
 
     async def on_ready(self):
         logging.info(f'Logged in as {self.user.name} ({self.user.id})')
-        
         logging.info(f'Command prefix: {self.command_prefix}')
         logging.info(f'Ready! Listening for CVEs...')
         logging.info('------')
 
     async def on_message(self, message: discord.Message):
-        # Don't respond to our own messages
         if message.author == self.user:
             return
-        
-        # If monitor failed to initialize, don't process messages for CVEs
+
         if not self.cve_monitor:
              logger.debug("CVEMonitor not initialized, skipping CVE scan.")
-             # Still process other commands
              await self.process_commands(message)
              return
 
-        # Look for CVEs in the message
         cves_found = self.cve_monitor.find_cves(message.content)
-        
+
         if not cves_found:
-            await self.process_commands(message) # Process traditional commands if no CVEs found
+            await self.process_commands(message)
             return
 
-        # Use a set to avoid processing the same CVE ID multiple times if it appears repeatedly
         unique_cves = sorted(list(set(cves_found)), key=lambda x: cves_found.index(x))
-        
+
         embeds_to_send = []
         processed_count = 0
-        # If CVEs are found, look up and generate embeds
         for cve in unique_cves:
-            # Limit processing if too many unique CVEs are found in one message
             if processed_count >= MAX_EMBEDS_PER_MESSAGE:
                 logging.warning(f"Max embeds reached for message {message.id}. Found {len(unique_cves)} unique CVEs, processing first {MAX_EMBEDS_PER_MESSAGE}.")
-                break 
-            
+                break
+
             cve_data = None
             try:
-                # --- Try VulnCheck first (if client is available) --- 
                 if self.vulncheck_client.api_client:
                     logging.debug(f"Attempting VulnCheck fetch for {cve}")
                     cve_data = await self.vulncheck_client.get_cve_details(cve)
                 else:
                     logging.debug("VulnCheck client not available (no API key?), skipping.")
-                
-                # --- Fallback to NVD if VulnCheck fails or returns no data --- 
+
                 if not cve_data:
                     if self.vulncheck_client.api_client:
                         logging.debug(f"VulnCheck failed for {cve}, attempting NVD fallback.")
                     else:
-                        # If VulnCheck wasn't even tried, log that we're going straight to NVD
                         logging.debug(f"Attempting NVD fetch for {cve} (VulnCheck unavailable).")
-                        
-                    # Use await for the async method
-                    # Add check for nvd_client existing before calling it
+
                     if self.nvd_client:
                         cve_data = await self.nvd_client.get_cve_details(cve)
                     else:
                          logger.warning("NVD Client not available, skipping NVD lookup.")
-                
-                # --- Process data if found from either source --- 
+
                 if cve_data:
                     embed = self.cve_monitor.create_cve_embed(cve_data)
                     embeds_to_send.append(embed)
@@ -324,20 +252,17 @@ class SecurityBot(commands.Bot):
 
             except Exception as e:
                 logging.error(f"Failed to process CVE {cve} after checking sources: {e}", exc_info=True)
-            
-            # Delay before processing next CVE ID in the message
-            await asyncio.sleep(0.2) # Slightly longer delay between different CVE lookups
 
-        # Send the collected embeds
+            await asyncio.sleep(0.2)
+
         if embeds_to_send:
             logging.info(f"Sending {len(embeds_to_send)} embeds for message {message.id}")
             for i, embed in enumerate(embeds_to_send):
                 await message.channel.send(embed=embed)
                 if i < len(embeds_to_send) - 1:
-                    await asyncio.sleep(0.5) # Delay between message sends
-            
+                    await asyncio.sleep(0.5)
+
             if len(unique_cves) > MAX_EMBEDS_PER_MESSAGE:
                 await message.channel.send(f"*Found {len(unique_cves)} unique CVEs, showing details for the first {MAX_EMBEDS_PER_MESSAGE}.*", allowed_mentions=discord.AllowedMentions.none())
 
-        # Process traditional commands after handling CVEs
-        await self.process_commands(message) 
+        await self.process_commands(message)
