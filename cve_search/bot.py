@@ -33,7 +33,7 @@ class SecurityBot(commands.Bot):
         self.db: KEVConfigDB | None = None # DB Util instance
 
         # Initialize other data source clients 
-        self.nvd_client = NVDClient(api_key=nvd_api_key)
+        self.nvd_client = NVDClient(session=self.http_session, api_key=nvd_api_key)
         self.vulncheck_client = VulnCheckClient(api_key=vulncheck_api_token)
         
         # Initialize monitor components
@@ -269,7 +269,7 @@ class SecurityBot(commands.Bot):
                 # --- Try VulnCheck first (if client is available) --- 
                 if self.vulncheck_client.api_client:
                     logging.debug(f"Attempting VulnCheck fetch for {cve}")
-                    cve_data = self.vulncheck_client.get_cve_details(cve)
+                    cve_data = await self.vulncheck_client.get_cve_details(cve)
                 else:
                     logging.debug("VulnCheck client not available (no API key?), skipping.")
                 
@@ -281,8 +281,8 @@ class SecurityBot(commands.Bot):
                         # If VulnCheck wasn't even tried, log that we're going straight to NVD
                         logging.debug(f"Attempting NVD fetch for {cve} (VulnCheck unavailable).")
                         
-                    await asyncio.sleep(0.1) # Small delay before trying next source
-                    cve_data = self.nvd_client.get_cve_details(cve)
+                    # await asyncio.sleep(0.1) # No longer needed as await below yields control
+                    cve_data = await self.nvd_client.get_cve_details(cve)
                 
                 # --- Process data if found from either source --- 
                 if cve_data:
