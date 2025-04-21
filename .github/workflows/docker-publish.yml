@@ -56,6 +56,9 @@ jobs:
             # Tag with the commit SHA
             type=sha
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -63,6 +66,8 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          # Add platforms for multi-arch build
+          platforms: linux/amd64,linux/arm64
           # Push is true only for main branch pushes and PRs (can adjust if needed)
           # For PRs, this builds but doesn't strictly NEED to push, 
           # but pushing with a PR tag can be useful for testing.
