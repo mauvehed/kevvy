@@ -105,10 +105,11 @@ class VulnCheckClient:
         if hasattr(vc_data, 'references') and vc_data.references:
             for ref in vc_data.references:
                  url = getattr(ref, 'url', None)
-                 if url:
+                 source = getattr(ref, 'source', '')
+                 if url and '@' not in source:
                      references.append({
                          'url': url,
-                         'source': getattr(ref, 'source', 'NIST NVD'),
+                         'source': source or 'Link',
                          'tags': getattr(ref, 'tags', [])
                      })
         return references
