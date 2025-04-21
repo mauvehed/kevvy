@@ -26,12 +26,13 @@
 
 - [About](#about)
   - [Built With](#built-with)
+  - [Usage](#usage)
+  - [Screenshots](#screenshots)
 - [Getting Started](#getting-started)
   - [Prerequisites](#prerequisites)
   - [Configuration](#configuration)
   - [Running with Docker (Recommended)](#running-with-docker-recommended)
   - [Running Locally with Poetry](#running-locally-with-poetry)
-- [Usage](#usage)
 - [Roadmap](#roadmap)
 - [Support](#support)
 - [Contributing](#contributing)
@@ -63,7 +64,30 @@ Key features:
 *   <img src="https://img.shields.io/badge/discord.py-2.5.2-5865F2?style=for-the-badge&logo=discord&logoColor=white" />
 *   <img src="https://img.shields.io/badge/Poetry-1.8-60A5FA?style=for-the-badge&logo=poetry&logoColor=white" />
 *   <img src="https://img.shields.io/badge/Docker-26.1-0db7ed?style=for-the-badge&logo=docker&logoColor=white" />
-*   NVD API v2.0
+*   <img src="https://img.shields.io/badge/Requests-library-orange?style=for-the-badge&logo=python&logoColor=white" />
+*   <img src="https://img.shields.io/badge/aiohttp-library-blueviolet?style=for-the-badge&logo=python&logoColor=white" />
+*   <img src="https://img.shields.io/badge/VulnCheck SDK-blue?style=for-the-badge&logo=python&logoColor=white" />
+*   <img src="https://img.shields.io/badge/NVD API v2.0-darkgreen?style=for-the-badge&logo=python&logoColor=white" />
+
+## Usage
+
+1.  **Invite the Bot:** Invite the configured bot to your Discord server.
+2.  **Automatic Detection:** Simply type or paste a message containing one or more CVE IDs (e.g., `Check out CVE-2024-1234 and CVE-2024-5678`). The bot will automatically detect them and post embed(s) with the details.
+    *   If multiple unique CVEs are in one message, the bot will post details for up to 5 of them (by default) and indicate if more were found.
+3.  **CISA KEV Alerts (Optional Setup):**
+    *   `/kev enable channel:<#your-alert-channel>`: A server administrator with 'Manage Server' permissions can run this command to enable KEV monitoring and designate a specific channel for alerts.
+
+## Screenshots
+
+Here's the bot in action:
+
+**Automatic CVE Detection and Information:**
+
+![CVE Information Embed](docs/images/CVE%20Info.png)
+
+**CISA KEV Alert Notification:**
+
+![KEV Alert Notification](docs/images/KEV%20Alert.png)
 
 ## Getting Started
 
@@ -122,14 +146,6 @@ Then, edit the `.env` file:
     ```bash
     poetry run python main.py
     ```
-
-## Usage
-
-1.  **Invite the Bot:** Invite the configured bot to your Discord server.
-2.  **Automatic Detection:** Simply type or paste a message containing one or more CVE IDs (e.g., `Check out CVE-2024-1234 and CVE-2024-5678`). The bot will automatically detect them and post embed(s) with the details.
-    *   If multiple unique CVEs are in one message, the bot will post details for up to 5 of them (by default) and indicate if more were found.
-3.  **CISA KEV Alerts (Optional Setup):**
-    *   `/kev enable channel:<#your-alert-channel>`: A server administrator with 'Manage Server' permissions can run this command to enable KEV monitoring and designate a specific channel for alerts.
 
 ## Roadmap
 
