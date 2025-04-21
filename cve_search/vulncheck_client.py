@@ -5,6 +5,7 @@ import functools
 from typing import Optional, Dict, Any, Callable, Tuple, List
 import vulncheck_sdk
 from datetime import datetime
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -100,18 +101,39 @@ class VulnCheckClient:
         return sorted(list(set(cwe_ids)))
 
     def _parse_references_from_data(self, vc_data: Any) -> List[Dict[str, Any]]:
-        """Extracts references from NVD data."""
+        """Extracts references from VulnCheck/NVD data, attempting to find a useful source/link text."""
         references = []
         if hasattr(vc_data, 'references') and vc_data.references:
             for ref in vc_data.references:
-                 url = getattr(ref, 'url', None)
-                 source = getattr(ref, 'source', '')
-                 if url and '@' not in source:
-                     references.append({
-                         'url': url,
-                         'source': source or 'Link',
-                         'tags': getattr(ref, 'tags', [])
-                     })
+                url = getattr(ref, 'url', None)
+                if not url: # Skip if no URL
+                    continue
+
+                original_source = getattr(ref, 'source', '')
+                display_source = 'Link' # Default
+
+                # Basic check if source looks like a potential UUID/hash (e.g., length 36 with hyphens)
+                looks_like_uuid = len(original_source) == 36 and original_source.count('-') == 4
+
+                if original_source and '@' not in original_source and not looks_like_uuid:
+                    # Use original source if it exists and doesn't look like an email or UUID
+                    display_source = original_source
+                else:
+                    # Otherwise, try to use the hostname from the URL
+                    try:
+                        hostname = urlparse(url).netloc
+                        if hostname:
+                            display_source = hostname
+                        # else: keep default 'Link'
+                    except Exception:
+                        # Keep default 'Link' if URL parsing fails
+                        pass
+
+                references.append({
+                    'url': url,
+                    'source': display_source,
+                    'tags': getattr(ref, 'tags', [])
+                })
         return references
 
     def _parse_description_from_data(self, vc_data: Any) -> str:
