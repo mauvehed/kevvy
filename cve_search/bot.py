@@ -64,6 +64,13 @@ class SecurityBot(commands.Bot):
             logger.error("Could not initialize CisaKevClient due to missing DB or HTTP session.")
             self.cisa_kev_client = None
 
+        # Initialize monitor components now that NVDClient exists
+        if self.nvd_client:
+            self.cve_monitor = CVEMonitor(self.nvd_client, kev_client=self.cisa_kev_client)
+            logger.info("Initialized CVEMonitor with KEV support.")
+        else:
+            logger.error("Could not initialize CVEMonitor because NVDClient failed to initialize.")
+
         # Load Cogs
         initial_extensions = [
             'cve_search.cogs.kev_commands'
@@ -244,8 +251,8 @@ class SecurityBot(commands.Bot):
                          logger.warning("NVD Client not available, skipping NVD lookup.")
 
                 if cve_data:
-                    embed = self.cve_monitor.create_cve_embed(cve_data)
-                    embeds_to_send.append(embed)
+                    embeds = await self.cve_monitor.create_cve_embed(cve_data)
+                    embeds_to_send.extend(embeds)
                     processed_count += 1
                 else:
                     logging.warning(f"Could not retrieve details for {cve} from any source.")

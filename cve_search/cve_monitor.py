@@ -1,24 +1,31 @@
 import re
 import discord
+import logging
 from datetime import datetime
 # from .vulners_client import VulnersClient # Removed VulnersClient
 from .nvd_client import NVDClient # Added NVDClient
+from .cisa_kev_client import CisaKevClient
+from typing import Optional, List, Dict, Any
 
 # Max length for embed fields
 MAX_FIELD_LENGTH = 1024
 MAX_REFERENCE_LINKS = 5
 
+logger = logging.getLogger(__name__)
+
 class CVEMonitor:
     # def __init__(self, vulners_client: VulnersClient):
-    def __init__(self, nvd_client: NVDClient): # Updated type hint
+    def __init__(self, nvd_client: NVDClient, kev_client: Optional[CisaKevClient] = None):
         # self.vulners_client = vulners_client
         self.nvd_client = nvd_client # Store NVD client
+        self.kev_client = kev_client
         self.cve_pattern = re.compile(r'CVE-\d{4}-\d{4,7}', re.IGNORECASE)
 
     def find_cves(self, content: str) -> list:
         return self.cve_pattern.findall(content)
 
-    def create_cve_embed(self, cve_data: dict) -> discord.Embed:
+    async def create_cve_embed(self, cve_data: dict) -> List[discord.Embed]:
+        """Creates Discord embeds for a CVE, including KEV information if available."""
         description = cve_data.get('description', "No description available.")
         # Ensure description fits within embed limits (2048 for description itself)
         if len(description) > 2048:
@@ -82,7 +89,39 @@ class CVEMonitor:
 
         source = cve_data.get('source', 'N/A')
         embed.set_footer(text=f"Data provided by {source}")
-        return embed
+
+        embeds = [embed]
+
+        # Check for KEV entry if client is available
+        if self.kev_client:
+            try:
+                kev_entry = await self.kev_client.get_kev_entry(cve_data['id'])
+                if kev_entry:
+                    kev_embed = discord.Embed(
+                        title=f"🚨 CISA KEV Alert: {cve_data['id']}",
+                        description=kev_entry.get('shortDescription', 'No description available.'),
+                        url=f"https://nvd.nist.gov/vuln/detail/{cve_data['id']}",
+                        color=discord.Color.dark_red()
+                    )
+                    
+                    kev_embed.add_field(name="Vulnerability Name", value=kev_entry.get('vulnerabilityName', 'N/A'), inline=False)
+                    kev_embed.add_field(name="Vendor/Project", value=kev_entry.get('vendorProject', 'N/A'), inline=True)
+                    kev_embed.add_field(name="Product", value=kev_entry.get('product', 'N/A'), inline=True)
+                    kev_embed.add_field(name="Date Added", value=kev_entry.get('dateAdded', 'N/A'), inline=True)
+                    kev_embed.add_field(name="Required Action", value=kev_entry.get('requiredAction', 'N/A'), inline=False)
+                    kev_embed.add_field(name="Due Date", value=kev_entry.get('dueDate', 'N/A'), inline=True)
+                    kev_embed.add_field(name="Known Ransomware Use", value=kev_entry.get('knownRansomwareCampaignUse', 'N/A'), inline=True)
+
+                    if notes := kev_entry.get('notes', ''):
+                        notes_display = notes[:1020] + '...' if len(notes) > 1024 else notes
+                        kev_embed.add_field(name="Notes", value=notes_display, inline=False)
+
+                    kev_embed.set_footer(text="Source: CISA Known Exploited Vulnerabilities Catalog")
+                    embeds.append(kev_embed)
+            except Exception as e:
+                logger.error(f"Error checking KEV status for {cve_data['id']}: {e}", exc_info=True)
+
+        return embeds
 
     def _get_severity_color(self, cvss: float | None) -> int:
         if cvss is None:

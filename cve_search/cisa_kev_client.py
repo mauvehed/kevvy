@@ -54,6 +54,27 @@ class CisaKevClient:
             logger.error(f"Unexpected error fetching CISA KEV data: {e}", exc_info=True)
             return None
 
+    async def get_kev_entry(self, cve_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Fetches the KEV entry for a specific CVE if it exists in the catalog.
+        
+        Args:
+            cve_id: The CVE ID to look up (e.g., 'CVE-2021-44228')
+            
+        Returns:
+            Optional[Dict[str, Any]]: The KEV entry if found, None otherwise
+        """
+        data = await self._fetch_kev_data()
+        if not data or 'vulnerabilities' not in data:
+            logger.warning("Could not fetch or parse CISA KEV data while checking for specific CVE.")
+            return None
+
+        for vuln in data.get('vulnerabilities', []):
+            if vuln.get('cveID') == cve_id:
+                return vuln
+
+        return None
+
     async def get_new_kev_entries(self) -> List[Dict[str, Any]]:
         """
         Fetches the latest KEV catalog and returns a list of vulnerabilities
