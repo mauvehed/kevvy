@@ -32,12 +32,13 @@ class SecurityBot(commands.Bot):
         self.cisa_kev_client: CisaKevClient | None = None
         self.db: KEVConfigDB | None = None # DB Util instance
 
-        # Initialize other data source clients 
-        self.nvd_client = NVDClient(session=self.http_session, api_key=nvd_api_key)
+        # Initialize other data source clients - MOVED to setup_hook where session is available
+        self.nvd_client: NVDClient | None = None
+        # VulnCheck doesn't need session, can init here
         self.vulncheck_client = VulnCheckClient(api_key=vulncheck_api_token)
         
-        # Initialize monitor components
-        self.cve_monitor = CVEMonitor(self.nvd_client)
+        # Initialize monitor components - MOVED to setup_hook
+        self.cve_monitor: CVEMonitor | None = None
         
         # --- CISA KEV Monitoring Configuration --- REMOVED ENV VAR LOGIC
         # Configuration is now handled per-guild via slash commands and DB
@@ -51,6 +52,18 @@ class SecurityBot(commands.Bot):
         self.http_session = aiohttp.ClientSession()
         logger.info("Created aiohttp.ClientSession.")
 
+        # Initialize NVD client now that we have a session
+        self.nvd_client = NVDClient(session=self.http_session, api_key=os.getenv('NVD_API_KEY')) # Get key again here or pass from init
+        logger.info("Initialized NVDClient.")
+        
+        # Initialize monitor components now that NVDClient exists
+        if self.nvd_client:
+            self.cve_monitor = CVEMonitor(self.nvd_client)
+            logger.info("Initialized CVEMonitor.")
+        else:
+            logger.error("Could not initialize CVEMonitor because NVDClient failed to initialize.")
+            # Bot can continue but CVE scanning in messages won't work
+        
         # Initialize CISA client
         # Pass the DB instance for persistence
         if self.db and self.http_session: # Ensure both DB and session are ready
@@ -228,11 +241,11 @@ class SecurityBot(commands.Bot):
         embed.add_field(name="Due Date", value=kev_data.get('dueDate', 'N/A'), inline=True)
         embed.add_field(name="Known Ransomware Use", value=kev_data.get('knownRansomwareCampaignUse', 'N/A'), inline=True)
         
-        notes = kev_data.get('notes', '')
-        if notes:
+        # Use named expression (walrus operator) for notes
+        if notes := kev_data.get('notes', ''):
             # Limit notes length
-            notes = notes[:1020] + '...' if len(notes) > 1024 else notes
-            embed.add_field(name="Notes", value=notes, inline=False)
+            notes_display = notes[:1020] + '...' if len(notes) > 1024 else notes
+            embed.add_field(name="Notes", value=notes_display, inline=False)
 
         embed.set_footer(text="Source: CISA Known Exploited Vulnerabilities Catalog")
         embed.timestamp = discord.utils.utcnow() # Add timestamp
@@ -250,6 +263,13 @@ class SecurityBot(commands.Bot):
         # Don't respond to our own messages
         if message.author == self.user:
             return
+        
+        # If monitor failed to initialize, don't process messages for CVEs
+        if not self.cve_monitor:
+             logger.debug("CVEMonitor not initialized, skipping CVE scan.")
+             # Still process other commands
+             await self.process_commands(message)
+             return
 
         # Look for CVEs in the message
         cves_found = self.cve_monitor.find_cves(message.content)
@@ -287,8 +307,12 @@ class SecurityBot(commands.Bot):
                         # If VulnCheck wasn't even tried, log that we're going straight to NVD
                         logging.debug(f"Attempting NVD fetch for {cve} (VulnCheck unavailable).")
                         
-                    # await asyncio.sleep(0.1) # No longer needed as await below yields control
-                    cve_data = await self.nvd_client.get_cve_details(cve)
+                    # Use await for the async method
+                    # Add check for nvd_client existing before calling it
+                    if self.nvd_client:
+                        cve_data = await self.nvd_client.get_cve_details(cve)
+                    else:
+                         logger.warning("NVD Client not available, skipping NVD lookup.")
                 
                 # --- Process data if found from either source --- 
                 if cve_data:

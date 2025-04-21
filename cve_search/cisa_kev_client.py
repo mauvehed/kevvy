@@ -42,16 +42,20 @@ class CisaKevClient:
                 timeout=request_timeout # Use the ClientTimeout object
             ) as response:
                 response.raise_for_status() # Raise an exception for bad status codes (4xx or 5xx)
+                # If content type is JSON, parse and return
                 if response.content_type == 'application/json':
                     return await response.json()
-                else:
-                    logger.error(f"Unexpected content type received from CISA KEV feed: {response.content_type}")
-                    # Try to decode as json anyway, but log error
-                    try:
-                        return await response.json()
-                    except Exception:
-                         logger.error(f"Failed to decode CISA KEV response even after content-type mismatch.")
-                         return None
+                
+                # If not JSON, log error and attempt fallback parsing
+                logger.error(f"Unexpected content type received from CISA KEV feed: {response.content_type}")
+                # Try to decode as json anyway, but log error
+                try:
+                    logger.warning("Attempting to parse non-JSON response as JSON...") # Added warning
+                    return await response.json()
+                except Exception:
+                    # Use standard string, no f-string needed here
+                    logger.error("Failed to decode CISA KEV response even after content-type mismatch.")
+                    return None
         except aiohttp.ClientError as e:
             logger.error(f"HTTP error fetching CISA KEV data: {e}")
             return None
@@ -76,9 +80,8 @@ class CisaKevClient:
         new_vuln_details = []
 
         # Compare current IDs with the persistent + in-memory seen list
-        new_ids = current_kev_ids - self.seen_kev_ids
-
-        if new_ids:
+        # Use walrus operator (:=) to assign and check in one step
+        if new_ids := current_kev_ids - self.seen_kev_ids:
             logger.info(f"Found {len(new_ids)} new CISA KEV entries: {', '.join(sorted(list(new_ids)))}")
             
             # Persist new IDs *before* adding to in-memory set and processing

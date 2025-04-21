@@ -2,7 +2,7 @@ import os
 import logging
 import asyncio # ADDED
 import functools # ADDED
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Callable, Awaitable, Tuple, List # Added Tuple, List
 from datetime import datetime
 
 import vulncheck_sdk # Import the SDK
@@ -55,99 +55,124 @@ class VulnCheckClient:
             logger.warning(f"Could not parse date input '{date_input}': {e}")
             return str(date_input) # Fallback
 
+    async def _run_sdk_call(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+        """Runs a potentially blocking SDK function in an executor."""
+        loop = asyncio.get_running_loop()
+        # Use functools.partial to bind arguments to the function
+        pfunc = functools.partial(func, *args, **kwargs)
+        try:
+            result = await loop.run_in_executor(None, pfunc)
+            return result
+        except Exception as e:
+            # Log the error here or let the caller handle specific SDK exceptions?
+            # For now, let the caller handle it, just raise it.
+            # Consider adding specific error logging if needed universally.
+            logger.debug(f"Error during executor run for {func.__name__}: {e}")
+            raise # Re-raise the exception for the caller to handle
+
+    # --- Parsing Helper Methods --- 
+
+    def _parse_cvss_from_data(self, vc_data: Any) -> Tuple[Optional[float], Optional[str], Optional[str]]:
+        """Extracts CVSS score, version, and vector from NVD data."""
+        cvss_score = None
+        cvss_version = None
+        cvss_vector = None
+        # Check if metrics exist and is not None before accessing attributes
+        if hasattr(vc_data, 'metrics') and vc_data.metrics is not None:
+            if hasattr(vc_data.metrics, 'cvss_metric_v31') and vc_data.metrics.cvss_metric_v31:
+                metric_v3 = vc_data.metrics.cvss_metric_v31[0]
+                if hasattr(metric_v3, 'cvss_data') and metric_v3.cvss_data:
+                    cvss_score = getattr(metric_v3.cvss_data, 'base_score', None)
+                    severity = getattr(metric_v3.cvss_data, 'base_severity', 'Unknown')
+                    cvss_version = f"3.1 ({severity})"
+                    cvss_vector = getattr(metric_v3.cvss_data, 'vector_string', None)
+            elif hasattr(vc_data.metrics, 'cvss_metric_v2') and vc_data.metrics.cvss_metric_v2:
+                metric_v2 = vc_data.metrics.cvss_metric_v2[0]
+                if hasattr(metric_v2, 'cvss_data') and metric_v2.cvss_data:
+                    cvss_score = getattr(metric_v2.cvss_data, 'base_score', None)
+                    severity = getattr(metric_v2, 'base_severity', 'Unknown')
+                    cvss_version = f"2.0 ({severity})"
+                    cvss_vector = getattr(metric_v2.cvss_data, 'vector_string', None)
+        return cvss_score, cvss_version, cvss_vector
+
+    def _parse_cwes_from_data(self, vc_data: Any) -> List[str]:
+        """Extracts CWE IDs from NVD data."""
+        cwe_ids = []
+        if hasattr(vc_data, 'weaknesses') and vc_data.weaknesses:
+            for weakness in vc_data.weaknesses:
+                if hasattr(weakness, 'description') and weakness.description:
+                    for desc in weakness.description:
+                        desc_value = getattr(desc, 'value', None)
+                        if getattr(desc, 'lang', '') == 'en' and desc_value and 'CWE-' in desc_value:
+                            try:
+                                # More robust extraction, handle potential errors
+                                parts = desc_value.split('CWE-', 1)[1]
+                                cwe_num = parts.split()[0].split('<')[0].split(')')[0].strip()
+                                if cwe_num.isdigit():
+                                    cwe_ids.append(f"CWE-{cwe_num}")
+                            except IndexError:
+                                logger.warning(f"Could not parse CWE from description: {desc_value}")
+        return sorted(list(set(cwe_ids)))
+
+    def _parse_references_from_data(self, vc_data: Any) -> List[Dict[str, Any]]:
+        """Extracts references from NVD data."""
+        references = []
+        if hasattr(vc_data, 'references') and vc_data.references:
+            for ref in vc_data.references:
+                 url = getattr(ref, 'url', None)
+                 if url:
+                     references.append({
+                         'url': url,
+                         'source': getattr(ref, 'source', 'NIST NVD'), 
+                         'tags': getattr(ref, 'tags', []) 
+                     })
+        return references
+
+    def _parse_description_from_data(self, vc_data: Any) -> str:
+        """Extracts the English description from NVD data."""
+        description = "No description available."
+        if hasattr(vc_data, 'descriptions') and vc_data.descriptions:
+            for desc in vc_data.descriptions:
+                if getattr(desc, 'lang', '') == 'en':
+                    description = getattr(desc, 'value', description)
+                    break 
+        return description
+
+    def _extract_dates_from_data(self, vc_data: Any) -> Tuple[Optional[str], Optional[str]]:
+        """Extracts and formats published and modified dates."""
+        published = self._parse_date(getattr(vc_data, 'published', None))
+        modified = self._parse_date(getattr(vc_data, 'last_modified', None))
+        return published, modified
+
+    # -------------------------------
+
     async def get_cve_details(self, cve_id: str) -> Optional[Dict[str, Any]]:
         if not self.indices_client:
             logger.debug("VulnCheck client not initialized (no API key).")
             return None
 
         try:
-            # Use the index_nist_nvd2_get method for NIST NVD data
-            # Run the synchronous SDK call in an executor
-            loop = asyncio.get_running_loop()
-            # Use functools.partial to pass keyword argument to the executor function
-            func = functools.partial(self.indices_client.index_nist_nvd2_get, cve=cve_id)
-            api_response = await loop.run_in_executor(None, func)
+            api_response = await self._run_sdk_call(self.indices_client.index_nist_nvd2_get, cve=cve_id)
 
             if not api_response or not api_response.data:
                 logger.warning(f"No vulnerability data found for {cve_id} using VulnCheck's NIST NVD2 endpoint.")
                 return None
-            
-            # Assuming the first result is the most relevant
-            # Note: Verify if the structure of api_response.data[0] from index_nist_nvd2_get
-            # matches the expected fields below. Adjust mapping if necessary.
-            vc_data = api_response.data[0] 
+                
+            vc_data = api_response.data[0]
 
-            # --- Map NIST NVD 2.0 fields to our common format ---
-            # Based on standard NVD CVE JSON 2.0 Schema
-            # Reference: https://csrc.nist.gov/schema/nvd/api/2.0/cve_api_json_2.0.schema
-            
-            cvss_score = None
-            cvss_version = None
-            cvss_vector = None
-            
-            # Check for CVSS v3.x metrics
-            # Check if metrics exist and is not None before accessing attributes
-            if hasattr(vc_data, 'metrics') and vc_data.metrics is not None and hasattr(vc_data.metrics, 'cvss_metric_v31') and vc_data.metrics.cvss_metric_v31:
-                # Take the first CVSS v3.1 metric found (assuming it's primary)
-                metric_v3 = vc_data.metrics.cvss_metric_v31[0]
-                if hasattr(metric_v3, 'cvss_data') and metric_v3.cvss_data:
-                    cvss_score = getattr(metric_v3.cvss_data, 'base_score', None)
-                    cvss_version = f"3.1 ({getattr(metric_v3.cvss_data, 'base_severity', 'Unknown')})" # Include severity
-                    cvss_vector = getattr(metric_v3.cvss_data, 'vector_string', None)
-            # Fallback to CVSS v2.0 metrics if v3.x not found
-            # Check if metrics exist and is not None before accessing attributes
-            elif hasattr(vc_data, 'metrics') and vc_data.metrics is not None and hasattr(vc_data.metrics, 'cvss_metric_v2') and vc_data.metrics.cvss_metric_v2:
-                 # Take the first CVSS v2.0 metric found
-                metric_v2 = vc_data.metrics.cvss_metric_v2[0]
-                if hasattr(metric_v2, 'cvss_data') and metric_v2.cvss_data:
-                    cvss_score = getattr(metric_v2.cvss_data, 'base_score', None)
-                    cvss_version = f"2.0 ({getattr(metric_v2, 'base_severity', 'Unknown')})" # Severity might be top-level in v2 metric
-                    cvss_vector = getattr(metric_v2.cvss_data, 'vector_string', None)
-
-            cwe_ids = []
-            # Check for weaknesses structure
-            if hasattr(vc_data, 'weaknesses') and vc_data.weaknesses:
-                for weakness in vc_data.weaknesses:
-                    if hasattr(weakness, 'description') and weakness.description:
-                        for desc in weakness.description:
-                            # Check if the description is in English and contains a CWE ID
-                            desc_value = getattr(desc, 'value', None)
-                            if getattr(desc, 'lang', '') == 'en' and desc_value and 'CWE-' in desc_value:
-                                # Safely split the non-None string
-                                cwe_id = desc_value.split('CWE-')[-1].split(' ')[0].split('<')[0].split(')')[0].strip()
-                                if cwe_id.isdigit(): # Basic validation
-                                     cwe_ids.append(f"CWE-{cwe_id}")
-                cwe_ids = sorted(list(set(cwe_ids))) # Deduplicate and sort
-
-            references = []
-            if hasattr(vc_data, 'references') and vc_data.references:
-                for ref in vc_data.references:
-                     url = getattr(ref, 'url', None) 
-                     if url:
-                         references.append({
-                             'url': url,
-                             # Use NVD as source if not specified, tags might exist
-                             'source': getattr(ref, 'source', 'NIST NVD'), 
-                             'tags': getattr(ref, 'tags', []) 
-                         })
-
-            description = "No description available."
-            # Check for descriptions structure (list, filter by lang='en')
-            if hasattr(vc_data, 'descriptions') and vc_data.descriptions:
-                for desc in vc_data.descriptions:
-                    if getattr(desc, 'lang', '') == 'en':
-                        description = getattr(desc, 'value', description)
-                        break # Take the first English description
-
-            # Access top-level date fields common in NVD 2.0
-            published = self._parse_date(getattr(vc_data, 'published', None)) 
-            modified = self._parse_date(getattr(vc_data, 'last_modified', None)) 
+            # --- Call helper methods to parse data --- 
+            cvss_score, cvss_version, cvss_vector = self._parse_cvss_from_data(vc_data)
+            cwe_ids = self._parse_cwes_from_data(vc_data)
+            references = self._parse_references_from_data(vc_data)
+            description = self._parse_description_from_data(vc_data)
+            published, modified = self._extract_dates_from_data(vc_data)
+            cve_from_data = getattr(vc_data, 'id', cve_id) # NVD 2.0 uses 'id'
+            # -------------------------------------------
 
             # Construct the common dictionary
-            cve_from_data = getattr(vc_data, 'id', cve_id) # NVD 2.0 uses 'id'
             return {
                 'id': cve_from_data, 
-                'title': f"NIST NVD Details for {cve_from_data} via VulnCheck", # Updated title
+                'title': f"NIST NVD Details for {cve_from_data} (via VulnCheck)",
                 'description': description,
                 'published': published,
                 'modified': modified,
@@ -156,8 +181,8 @@ class VulnCheckClient:
                 'cvss_vector': cvss_vector,
                 'cwe_ids': cwe_ids,
                 'references': references,
-                'link': f"https://nvd.nist.gov/vuln/detail/{cve_from_data}", # Link to NVD
-                'source': 'NIST NVD' # Updated source
+                'link': f"https://nvd.nist.gov/vuln/detail/{cve_from_data}",
+                'source': 'NIST NVD (via VulnCheck)'
             }
 
         except vulncheck_sdk.ApiException as e:
