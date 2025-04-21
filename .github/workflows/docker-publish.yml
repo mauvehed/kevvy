@@ -20,6 +20,7 @@ on:
     branches:
       - main # Or specify branches PRs target if needed
     # Run for PRs regardless of paths changed to ensure build succeeds
+  workflow_dispatch: # Added: Allows manual triggering
 
 # Permissions needed to push to GHCR
 permissions:
