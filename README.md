@@ -64,10 +64,6 @@ Key features:
 *   <img src="https://img.shields.io/badge/Poetry-1.8-60A5FA?style=for-the-badge&logo=poetry&logoColor=white" />
 *   <img src="https://img.shields.io/badge/Docker-26.1-0db7ed?style=for-the-badge&logo=docker&logoColor=white" />
 *   NVD API v2.0
-*   `NVD_API_KEY` (Optional): Your NVD API key. Request one [here](https://nvd.nist.gov/developers/request-an-api-key) for significantly higher request rate limits. Used as a fallback data source if VulnCheck is unavailable or fails.
-*   `VULNCHECK_API_TOKEN` (Optional): Your VulnCheck API key. Get one from [VulnCheck](https://vulncheck.com/). If provided, VulnCheck becomes the *primary* data source for CVE details.
-*   `DISCORD_COMMAND_PREFIX` (Optional): The prefix for traditional commands (if any are added later). Defaults to `!`. The primary interaction is automatic detection and slash commands.
-*   `CISA_KEV_INTERVAL_SECONDS` (Optional): How often (in seconds) to check the CISA KEV feed. Defaults to `3600` (1 hour).
 
 ## Getting Started
 
@@ -91,8 +87,6 @@ Then, edit the `.env` file:
 *   `NVD_API_KEY` (Optional): Your NVD API key. Request one [here](https://nvd.nist.gov/developers/request-an-api-key) for significantly higher request rate limits. Used as a fallback data source if VulnCheck is unavailable or fails.
 *   `VULNCHECK_API_TOKEN` (Optional): Your VulnCheck API key. Get one from [VulnCheck](https://vulncheck.com/). If provided, VulnCheck becomes the *primary* data source for CVE details.
 *   `DISCORD_COMMAND_PREFIX` (Optional): The prefix for traditional commands (if any are added later). Defaults to `!`. The primary interaction is automatic detection and slash commands.
-*   `CISA_KEV_CHANNEL_ID` (Optional): The Discord channel ID where new CISA KEV entries should be posted. If not set, KEV monitoring is disabled.
-*   `CISA_KEV_INTERVAL_SECONDS` (Optional): How often (in seconds) to check the CISA KEV feed. Defaults to `3600` (1 hour).
 
 ### Running with Docker (Recommended)
 
@@ -134,12 +128,8 @@ Then, edit the `.env` file:
 1.  **Invite the Bot:** Invite the configured bot to your Discord server.
 2.  **Automatic Detection:** Simply type or paste a message containing one or more CVE IDs (e.g., `Check out CVE-2024-1234 and CVE-2024-5678`). The bot will automatically detect them and post embed(s) with the details.
     *   If multiple unique CVEs are in one message, the bot will post details for up to 5 of them (by default) and indicate if more were found.
-3.  **Version Check:** Use the slash command `/version` to see the current running version of the bot.
-4.  **CISA KEV Alerts (Optional Setup):**
+3.  **CISA KEV Alerts (Optional Setup):**
     *   `/kev enable channel:<#your-alert-channel>`: A server administrator with 'Manage Server' permissions can run this command to enable KEV monitoring and designate a specific channel for alerts.
-    *   `/kev disable`: Disables KEV monitoring for the server.
-    *   `/kev status`: Checks if KEV monitoring is enabled for the server and shows the configured channel.
-    *   If enabled, the bot will automatically post embeds to the configured channel whenever a new vulnerability is added to the CISA KEV catalog (checks hourly).
 
 ## Roadmap
 
