@@ -1,6 +1,6 @@
 services:
   cve-bot:
-    build: .
+    image: ghcr.io/mauvehed/cve-search-discord:latest
     container_name: cve_search_discord_bot
     env_file:
       - .env

@@ -116,10 +116,12 @@ Then, edit the `.env` file:
 
 1.  Ensure Docker and Docker Compose are installed.
 2.  Make sure you have configured your `.env` file.
-3.  Build and start the container in detached mode:
+3.  Pull the latest image and start the container in detached mode:
     ```bash
-    docker-compose up --build -d
+    docker-compose up -d
     ```
+    _(This will automatically pull the `ghcr.io/mauvehed/cve-search-discord:latest` image if you don't have it locally)._
+    
 4.  To view logs:
     ```bash
     docker-compose logs -f
