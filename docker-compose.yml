@@ -4,4 +4,6 @@ services:
     container_name: cve_search_discord_bot
     env_file:
       - .env
+    volumes:
+      - ./data:/app/data
     restart: unless-stopped 

@@ -46,6 +46,7 @@ logs/
 .env
 .envrc
 .direnv/
+data/
 
 # OS specific
 .DS_Store
