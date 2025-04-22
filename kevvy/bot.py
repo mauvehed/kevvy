@@ -208,26 +208,39 @@ class SecurityBot(commands.Bot):
         logging.info(f'Command prefix: {self.command_prefix}')
         logging.info(f'Ready! Listening for CVEs...')
 
-        # --- Setup Discord Logging Handler ---
+        await self._setup_discord_logging()
+
+        logging.info('------')
+
+    async def _setup_discord_logging(self):
+        """Sets up the DiscordLogHandler based on environment variables."""
         log_channel_id_str = os.getenv('LOGGING_CHANNEL_ID')
         disable_discord_logging = os.getenv('DISABLE_DISCORD_LOGGING', 'false').lower() == 'true'
 
         if disable_discord_logging:
             logging.info("Discord logging handler is disabled via DISABLE_DISCORD_LOGGING environment variable.")
-        elif log_channel_id_str:
+            return # Exit setup early if disabled
+
+        if log_channel_id_str:
             try:
                 log_channel_id = int(log_channel_id_str)
                 root_logger = logging.getLogger()
-                
+
+                # Check if the handler is already added to prevent duplicates during reconnects
+                handler_exists = any(isinstance(h, DiscordLogHandler) and h.channel_id == log_channel_id for h in root_logger.handlers)
+                if handler_exists:
+                    logging.debug(f"DiscordLogHandler for channel {log_channel_id} already configured.")
+                    return
+
                 # Find existing console handler to copy its formatter
                 formatter = None
                 for handler in root_logger.handlers:
                     if isinstance(handler, logging.StreamHandler):
                         formatter = handler.formatter
                         break
-                
+
                 discord_handler = DiscordLogHandler(bot=self, channel_id=log_channel_id)
-                
+
                 # Set formatter if found, otherwise use default
                 if formatter:
                     discord_handler.setFormatter(formatter)
@@ -236,9 +249,6 @@ class SecurityBot(commands.Bot):
                     fallback_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
                     discord_handler.setFormatter(fallback_formatter)
 
-                # Set level (optional, default is NOTSET, inheriting root logger level)
-                # discord_handler.setLevel(logging.INFO) 
-                
                 root_logger.addHandler(discord_handler)
                 logging.info(f"Successfully added Discord logging handler for channel ID {log_channel_id}")
             except ValueError:
@@ -247,8 +257,6 @@ class SecurityBot(commands.Bot):
                 logging.error(f"Failed to set up Discord logging handler: {e}", exc_info=True)
         else:
             logging.info("LOGGING_CHANNEL_ID not set, skipping Discord log handler setup.")
-        
-        logging.info('------')
 
     async def on_message(self, message: discord.Message):
         if message.author == self.user:

@@ -42,12 +42,14 @@ class DiscordLogHandler(logging.Handler):
                 # Create task to send message without blocking handler
                 asyncio.create_task(self._send_log_message(channel, log_entry))
             else:
-                # Log error locally if channel not found (only log once?)
-                # This avoids spamming if channel ID is wrong
-                if not hasattr(self, '_channel_error_logged'):
-                    # We don't have the channel object here, so we can't get guild ID easily
-                    logger.error(f"DiscordLogHandler: Could not find configured logging channel with ID {self.channel_id}. Logging to this channel is disabled.")
-                    self._channel_error_logged = True
+                # Log error locally if channel could not be fetched/found.
+                # We will retry fetching on the next log record.
+                if not hasattr(self, '_channel_fetch_error_logged'): # Log only periodically
+                     logger.error(f"DiscordLogHandler: Could not find/fetch configured logging channel with ID {self.channel_id}. Will retry later.")
+                     # Set a temporary flag to avoid spamming, could potentially reset this after a delay
+                     self._channel_fetch_error_logged = True 
+                 # else: # Optional: logic to reset the flag after some time/attempts
+                 #    pass
 
         except Exception:
             # Catch-all for formatting errors etc.
@@ -57,20 +59,24 @@ class DiscordLogHandler(logging.Handler):
         """Asynchronously sends the log message, handling potential Discord errors."""
         try:
             await channel.send(f"```log\n{message}```") # Send in a code block
+            # Reset error flags on successful send
+            if hasattr(self, '_permission_error_logged'): delattr(self, '_permission_error_logged')
+            if hasattr(self, '_http_error_logged'): delattr(self, '_http_error_logged')
+            if hasattr(self, '_send_error_logged'): delattr(self, '_send_error_logged')
+            if hasattr(self, '_channel_fetch_error_logged'): delattr(self, '_channel_fetch_error_logged')
+
         except discord.Forbidden:
             if not hasattr(self, '_permission_error_logged'):
-                 # Guild ID is available via channel object here
-                 logger.error(f"DiscordLogHandler: Bot lacks permissions to send messages in channel #{channel.name} (ID: {self.channel_id}, Guild: {channel.guild.id}).")
+                 logger.error(f"DiscordLogHandler: Bot lacks permissions to send messages in channel #{channel.name} (ID: {self.channel_id}, Guild: {channel.guild.id}). Check bot roles.")
                  self._permission_error_logged = True
+            self._channel = None # Reset channel cache to force refetch
         except discord.HTTPException as e:
              if not hasattr(self, '_http_error_logged'):
-                 # Guild ID is available via channel object here
-                 # Use e.text instead of e.reason for discord.py v2
                  logger.error(f"DiscordLogHandler: Failed to send log message to #{channel.name} (ID: {self.channel_id}, Guild: {channel.guild.id}): {e.status} {e.text}")
                  self._http_error_logged = True
+             self._channel = None # Reset channel cache to force refetch
         except Exception as e:
-            # Catch other unexpected errors during send
              if not hasattr(self, '_send_error_logged'):
-                 # Guild ID is available via channel object here
                  logger.error(f"DiscordLogHandler: Unexpected error sending log to #{channel.name} (ID: {self.channel_id}, Guild: {channel.guild.id}): {e}", exc_info=True)
-                 self._send_error_logged = True 
+                 self._send_error_logged = True
+             self._channel = None # Reset channel cache to force refetch 
