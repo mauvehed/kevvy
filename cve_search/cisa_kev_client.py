@@ -13,7 +13,7 @@ class CisaKevClient:
     Monitors the KEV JSON feed for new additions.
     """
     KEV_CATALOG_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
-    HEADERS = {'User-Agent': 'cve-search-discord-bot/1.0'}
+    HEADERS = {'User-Agent': 'kevvy-bot/1.0'}
 
     def __init__(self, session: aiohttp.ClientSession, db: KEVConfigDB):
         """

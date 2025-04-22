@@ -1,7 +1,7 @@
 services:
   cve-bot:
-    image: ghcr.io/mauvehed/cve-search-discord:latest
-    container_name: cve_search_discord_bot
+    image: ghcr.io/mauvehed/kevvy:latest
+    container_name: kevvy
     env_file:
       - .env
     volumes:

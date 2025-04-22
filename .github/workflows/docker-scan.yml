@@ -34,7 +34,7 @@ jobs:
           # Don't push, just load the image into the local Docker daemon
           load: true
           # Tag the image for Trivy to find
-          tags: localbuild/cve-search-discord:latest
+          tags: localbuild/kevvy:latest
           # Use cache for faster builds
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -42,7 +42,7 @@ jobs:
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master # Use master for latest features/fixes
         with:
-          image-ref: 'localbuild/cve-search-discord:latest'
+          image-ref: 'localbuild/kevvy:latest'
           format: 'table'
           # Exit code 1 if vulnerabilities are found
           exit-code: '1'

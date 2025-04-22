@@ -2,7 +2,7 @@
 
 ## Reporting a Vulnerability
 
-If there are any vulnerabilities in **cve-search**, don't hesitate to _report them_.
+If there are any vulnerabilities in **kevvy**, don't hesitate to _report them_.
 
 1. Please contact the maintainer [mauvehed (mh@mvh.dev)](mailto:mh@mvh.dev).
 2. Describe the vulnerability and provide a proof of concept if possible.
