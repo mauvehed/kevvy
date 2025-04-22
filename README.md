@@ -107,6 +107,8 @@ Then, edit the `.env` file:
 *   `NVD_API_KEY` (Optional): Your NVD API key. Request one [here](https://nvd.nist.gov/developers/request-an-api-key) for significantly higher request rate limits. Used as a fallback data source if VulnCheck is unavailable or fails.
 *   `VULNCHECK_API_TOKEN` (Optional): Your VulnCheck API key. Get one from [VulnCheck](https://vulncheck.com/). If provided, VulnCheck becomes the *primary* data source for CVE details.
 *   `DISCORD_COMMAND_PREFIX` (Optional): The prefix for traditional commands (if any are added later). Defaults to `!`. The primary interaction is automatic detection and slash commands.
+*   `LOGGING_GUILD_ID` (Optional): The ID of the Discord server (guild) where the logging channel resides.
+*   `LOGGING_CHANNEL_ID` (Optional): The ID of the Discord channel within the specified guild to which log messages should be sent.
 
 ### Running with Docker (Recommended)
 

@@ -1,7 +1,7 @@
 import json
 import os
 from dotenv import load_dotenv
-from cve_search.bot import SecurityBot
+from kevvy.bot import SecurityBot
 import logging
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
