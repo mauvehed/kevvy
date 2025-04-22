@@ -18,7 +18,7 @@ class NVDClient:
     def __init__(self, session: aiohttp.ClientSession, api_key: Optional[str] = None):
         self.session = session
         self.api_key = api_key
-        self.headers = {'User-Agent': 'cve-search-discord-bot/1.0'}
+        self.headers = {'User-Agent': 'kevvy-bot/1.0'}
         if self.api_key:
             self.headers['apiKey'] = self.api_key
             self.retry_delay = self.RETRY_DELAY_API_KEY
