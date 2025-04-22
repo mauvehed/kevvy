@@ -1,23 +1,19 @@
 <h1 align="center">
-  <a href="https://github.com/mauvehed/cve-search-discord">
-    <!-- Update link/image if logo exists -->
-    <!-- <img src="docs/images/cve-search_logo.png" alt="cve-search Logo" width="100" height="100"> -->
+  <a href="https://github.com/mauvehed/kevvy">
+    <img src="docs/images/kevvy_logo_transparent.png" alt="kevvy Logo" width="200" height="200">
   </a>
 </h1>
 
 <div align="center">
-  <h2>cve-search-discord</h2>
-  <br />
-  A Discord bot for automatically searching CVE details using the NVD API.
-  <br />
+  A Discord bot for searching the Common Vulnerabilities and Exposures (CVE) list and providing KEV updates.
 </div>
 
 <div align="center">
 <br />
 
-[![CodeQL](https://github.com/mauvehed/cve-search-discord/actions/workflows/codeql-analysis.yml/badge.svg?branch=main)](https://github.com/mauvehed/cve-search-discord/actions/workflows/codeql-analysis.yml)
-[![Codacy Badge](https://app.codacy.com/project/badge/Grade/4ec1fc69d8a14048a80124167f6f7664)](https://www.codacy.com/gh/mauvehed/cve-search-discord/dashboard)
-[![Project license](https://img.shields.io/github/license/mauvehed/cve-search-discord.svg?style=flat-square)](LICENSE)
+[![CodeQL](https://github.com/mauvehed/kevvy/actions/workflows/codeql-analysis.yml/badge.svg?branch=main)](https://github.com/mauvehed/kevvy/actions/workflows/codeql-analysis.yml)
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/4ec1fc69d8a14048a80124167f6f7664)](https://www.codacy.com/gh/mauvehed/kevvy/dashboard)
+[![Project license](https://img.shields.io/github/license/mauvehed/kevvy.svg?style=flat-square)](LICENSE)
 
 </div>
 
@@ -47,7 +43,7 @@
 
 ## About
 
-**cve-search-discord** is a Discord bot that automatically monitors chat messages for CVE (Common Vulnerabilities and Exposures) identifiers (e.g., `CVE-2023-12345`). When a CVE is detected, the bot fetches detailed information primarily from the [VulnCheck API](https://vulncheck.com/) (if an API key is provided). If VulnCheck is unavailable or doesn't return data, it falls back to the [NIST National Vulnerability Database (NVD) API v2.0](https://nvd.nist.gov/developers/vulnerabilities).
+**kevvy** is a Discord bot that automatically monitors chat messages for CVE (Common Vulnerabilities and Exposures) identifiers (e.g., `CVE-2023-12345`). When a CVE is detected, the bot fetches detailed information primarily from the [VulnCheck API](https://vulncheck.com/) (if an API key is provided). If VulnCheck is unavailable or doesn't return data, it falls back to the [NIST National Vulnerability Database (NVD) API v2.0](https://nvd.nist.gov/developers/vulnerabilities).
 
 Additionally, the bot can monitor the [CISA Known Exploited Vulnerabilities (KEV) catalog](https://www.cisa.gov/known-exploited-vulnerabilities-catalog). Server administrators can enable this feature per server using slash commands, designating a channel for new KEV alerts.
 
@@ -120,7 +116,7 @@ Then, edit the `.env` file:
     ```bash
     docker-compose up -d
     ```
-    _(This will automatically pull the `ghcr.io/mauvehed/cve-search-discord:latest` image if you don't have it locally)._
+    _(This will automatically pull the `ghcr.io/mauvehed/kevvy:latest` image if you don't have it locally)._
     
 4.  To view logs:
     ```bash
@@ -136,8 +132,8 @@ Then, edit the `.env` file:
 1.  Ensure Python 3.10+ and Poetry are installed.
 2.  Clone the repository:
     ```bash
-    git clone https://github.com/mauvehed/cve-search-discord.git
-    cd cve-search-discord
+    git clone https://github.com/mauvehed/kevvy.git
+    cd kevvy
     ```
 3.  Install dependencies:
     ```bash
@@ -151,11 +147,11 @@ Then, edit the `.env` file:
 
 ## Roadmap
 
-See the [open issues](https://github.com/mauvehed/cve-search-discord/issues) for a list of proposed features (and known issues).
+See the [open issues](https://github.com/mauvehed/kevvy/issues) for a list of proposed features (and known issues).
 
-- [Top Feature Requests](https://github.com/mauvehed/cve-search-discord/issues?q=label%3Aenhancement+is%3Aopen+sort%3Areactions-%2B1-desc) (Add your votes using the 👍 reaction)
-- [Top Bugs](https://github.com/mauvehed/cve-search-discord/issues?q=is%3Aissue+is%3Aopen+label%3Abug+sort%3Areactions-%2B1-desc) (Add your votes using the 👍 reaction)
-- [Newest Bugs](https://github.com/mauvehed/cve-search-discord/issues?q=is%3Aopen+is%3Aissue+label%3Abug) (Squash Em!)
+- [Top Feature Requests](https://github.com/mauvehed/kevvy/issues?q=label%3Aenhancement+is%3Aopen+sort%3Areactions-%2B1-desc) (Add your votes using the 👍 reaction)
+- [Top Bugs](https://github.com/mauvehed/kevvy/issues?q=is%3Aissue+is%3Aopen+label%3Abug+sort%3Areactions-%2B1-desc) (Add your votes using the 👍 reaction)
+- [Newest Bugs](https://github.com/mauvehed/kevvy/issues?q=is%3Aopen+is%3Aissue+label%3Abug) (Squash Em!)
 
 ## Support
 
@@ -175,12 +171,12 @@ Please read [our contribution guidelines](docs/CONTRIBUTING.md), and thank you f
 
 The original setup of this repository is by [mauvehed](https://github.com/mauvehed).
 
-For a full list of all authors and contributors, see [the contributors page](https://github.com/mauvehed/cve-search-discord/contributors).
+For a full list of all authors and contributors, see [the contributors page](https://github.com/mauvehed/kevvy/contributors).
 
 ## Security
 
-- **cve-search** follows good practices of security, but 100% security cannot be assured.
-- **cve-search** is provided **"as is"** without any **warranty**. Use at your own risk.
+- **kevvy** follows good practices of security, but 100% security cannot be assured.
+- **kevvy** is provided **"as is"** without any **warranty**. Use at your own risk.
 
 _For more information and to report security issues, please refer to our [security documentation](docs/SECURITY.md)._
 
