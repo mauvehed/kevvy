@@ -12,6 +12,7 @@ import os
 import asyncio
 from typing import Dict, Any
 from .discord_log_handler import DiscordLogHandler
+import datetime
 
 MAX_EMBEDS_PER_MESSAGE = 5
 
@@ -30,9 +31,29 @@ class SecurityBot(commands.Bot):
         self.db: KEVConfigDB | None = None
         self.nvd_client: NVDClient | None = None
         self.cve_monitor: CVEMonitor | None = None
+        self.start_time: datetime.datetime = datetime.datetime.utcnow()
+
+        # --- Statistics Counters --- Added Section
+        self.stats_lock = asyncio.Lock() # Lock for thread-safe counter updates
+        self.stats_cve_lookups = 0
+        self.stats_kev_alerts_sent = 0
+        self.stats_messages_processed = 0
+        # --- End Statistics Counters --- Added Section
 
         # VulnCheck doesn't need session, can init here
         self.vulncheck_client = VulnCheckClient(api_key=vulncheck_api_token)
+
+        # --- Kevvy Web Reporting Config ---
+        self.kevvy_web_url = os.getenv('KEVVY_WEB_URL')
+        self.kevvy_web_api_key = os.getenv('KEVVY_WEB_API_KEY')
+        if self.kevvy_web_url and not self.kevvy_web_api_key:
+             logger.warning("KEVVY_WEB_URL is set, but KEVVY_WEB_API_KEY is missing. Web reporting disabled.")
+             self.kevvy_web_url = None # Disable if key is missing
+        elif self.kevvy_web_url:
+             logger.info(f"Kevvy Web reporting enabled for URL: {self.kevvy_web_url}")
+        else:
+             logger.info("Kevvy Web reporting is disabled (KEVVY_WEB_URL not set).")
+        # --- End Kevvy Web Reporting Config ---
 
     async def setup_hook(self):
         self.http_session = aiohttp.ClientSession()
@@ -92,12 +113,18 @@ class SecurityBot(commands.Bot):
 
         # Start background tasks
         self.check_cisa_kev_feed.start()
+        if self.kevvy_web_url:
+             self.report_status_task.start()
 
     async def close(self):
         logging.info("Closing bot resources...")
         if self.check_cisa_kev_feed.is_running():
             self.check_cisa_kev_feed.cancel()
             logging.info("Cancelled CISA KEV monitoring task.")
+
+        if self.report_status_task.is_running():
+            self.report_status_task.cancel()
+            logging.info("Cancelled Kevvy Web reporting task.")
 
         if self.http_session:
             await self.http_session.close()
@@ -154,6 +181,9 @@ class SecurityBot(commands.Bot):
                     embed = self._create_kev_embed(entry)
                     try:
                         await target_channel.send(embed=embed)
+                        # Increment stats counter after successful send
+                        async with self.stats_lock:
+                            self.stats_kev_alerts_sent += 1
                         await asyncio.sleep(0.75)
                     except discord.Forbidden:
                          logger.error(f"Missing permissions to send message in CISA KEV channel {channel_id} (Guild: {guild_id})")
@@ -172,6 +202,96 @@ class SecurityBot(commands.Bot):
         """Ensures the bot is ready before the loop starts."""
         await self.wait_until_ready()
         logger.info("Bot is ready, starting CISA KEV monitoring loop.")
+
+    @tasks.loop(minutes=5)
+    async def report_status_task(self):
+        """Periodically sends status and basic stats to the kevvy-web server."""
+        if not self.kevvy_web_url or not self.kevvy_web_api_key or not self.http_session:
+            logger.debug("Web reporting skipped: URL, API key, or HTTP session not available.")
+            return
+
+        logger.debug("Preparing status report for kevvy-web...")
+
+        # Calculate uptime
+        now = datetime.datetime.utcnow()
+        uptime_delta = now - self.start_time
+        uptime_seconds = int(uptime_delta.total_seconds())
+
+        # Prepare status data
+        status_data = {
+            "timestamp": now.isoformat(),
+            "bot_id": self.user.id if self.user else None,
+            "bot_name": self.user.name if self.user else "Unknown",
+            "guild_count": len(self.guilds),
+            "latency_ms": round(self.latency * 1000, 2) if self.latency else None,
+            "uptime_seconds": uptime_seconds,
+            "shard_id": self.shard_id if self.shard_id is not None else 0,
+            "shard_count": self.shard_count if self.shard_count is not None else 1,
+            "is_ready": self.is_ready(),
+            "is_closed": self.is_closed()
+        }
+
+        # Prepare stats data (Read current counters)
+        async with self.stats_lock:
+            cve_lookups = self.stats_cve_lookups
+            kev_alerts = self.stats_kev_alerts_sent
+            messages_processed = self.stats_messages_processed
+            # Reset counters after reading
+            self.stats_cve_lookups = 0
+            self.stats_kev_alerts_sent = 0
+            self.stats_messages_processed = 0
+
+        stats_data = {
+            "timestamp": now.isoformat(),
+            "cve_lookups_since_last": cve_lookups,
+            "kev_alerts_sent_since_last": kev_alerts,
+            "messages_processed_since_last": messages_processed
+        }
+
+        # Send status
+        await self._send_to_web_portal("/api/v1/status", status_data)
+
+        # Send stats (optional, maybe less frequently in future)
+        await self._send_to_web_portal("/api/v1/stats", stats_data)
+
+    @report_status_task.before_loop
+    async def before_report_status(self):
+        """Ensures the bot is ready before the reporting loop starts."""
+        await self.wait_until_ready()
+        logger.info("Bot is ready, starting Kevvy Web reporting loop.")
+
+    @report_status_task.after_loop
+    async def after_report_status(self):
+        if self.report_status_task.is_being_cancelled():
+            logger.info("Kevvy Web reporting loop cancelled.")
+        else:
+            logger.error("Kevvy Web reporting loop stopped unexpectedly.")
+
+    async def _send_to_web_portal(self, endpoint: str, data: Dict[str, Any]):
+        """Sends data to a specified endpoint on the kevvy-web server."""
+        if not self.kevvy_web_url or not self.kevvy_web_api_key or not self.http_session:
+            logger.error("Cannot send to web portal: Configuration or session missing.")
+            return
+
+        target_url = self.kevvy_web_url.rstrip('/') + endpoint
+        headers = {
+            'Content-Type': 'application/json',
+            'X-API-Key': self.kevvy_web_api_key
+        }
+
+        try:
+            async with self.http_session.post(target_url, json=data, headers=headers, timeout=10) as response:
+                if 200 <= response.status < 300:
+                    logger.debug(f"Successfully sent data to kevvy-web endpoint {endpoint}. Status: {response.status}")
+                else:
+                    response_text = await response.text()
+                    logger.error(f"Error sending data to kevvy-web endpoint {endpoint}. Status: {response.status}, Response: {response_text[:200]}") # Log first 200 chars
+        except aiohttp.ClientConnectorError as e:
+             logger.error(f"Connection error sending data to kevvy-web ({target_url}): {e}")
+        except asyncio.TimeoutError:
+            logger.error(f"Timeout error sending data to kevvy-web ({target_url})")
+        except Exception as e:
+            logger.error(f"Unexpected error sending data to kevvy-web endpoint {endpoint}: {e}", exc_info=True)
 
     def _create_kev_embed(self, kev_data: Dict[str, Any]) -> discord.Embed:
         """Creates a Discord embed for a CISA KEV entry."""
@@ -204,6 +324,7 @@ class SecurityBot(commands.Bot):
         return embed
 
     async def on_ready(self):
+        self.start_time = datetime.datetime.utcnow()
         logging.info(f'Logged in as {self.user.name} ({self.user.id})')
         logging.info(f'Command prefix: {self.command_prefix}')
         logging.info(f'Ready! Listening for CVEs...')
@@ -262,6 +383,10 @@ class SecurityBot(commands.Bot):
         if message.author == self.user:
             return
 
+        # Increment message counter
+        async with self.stats_lock:
+            self.stats_messages_processed += 1
+
         if not self.cve_monitor:
              logger.debug("CVEMonitor not initialized, skipping CVE scan.")
              await self.process_commands(message)
@@ -284,6 +409,10 @@ class SecurityBot(commands.Bot):
 
             cve_data = None
             try:
+                # Increment lookup counter for each unique CVE attempted
+                async with self.stats_lock:
+                    self.stats_cve_lookups += 1
+
                 if self.vulncheck_client.api_client:
                     logging.debug(f"Attempting VulnCheck fetch for {cve}")
                     cve_data = await self.vulncheck_client.get_cve_details(cve)
