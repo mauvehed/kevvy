@@ -74,7 +74,8 @@ class SecurityBot(commands.Bot):
 
         # Load Cogs
         initial_extensions = [
-            'cve_search.cogs.kev_commands'
+            'kevvy.cogs.kev_commands'
+            # Add other cogs here if needed
         ]
         for extension in initial_extensions:
             try:
