@@ -210,7 +210,11 @@ class SecurityBot(commands.Bot):
 
         # --- Setup Discord Logging Handler ---
         log_channel_id_str = os.getenv('LOGGING_CHANNEL_ID')
-        if log_channel_id_str:
+        disable_discord_logging = os.getenv('DISABLE_DISCORD_LOGGING', 'false').lower() == 'true'
+
+        if disable_discord_logging:
+            logging.info("Discord logging handler is disabled via DISABLE_DISCORD_LOGGING environment variable.")
+        elif log_channel_id_str:
             try:
                 log_channel_id = int(log_channel_id_str)
                 root_logger = logging.getLogger()

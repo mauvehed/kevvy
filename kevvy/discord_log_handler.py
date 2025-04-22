@@ -45,7 +45,8 @@ class DiscordLogHandler(logging.Handler):
                 # Log error locally if channel not found (only log once?)
                 # This avoids spamming if channel ID is wrong
                 if not hasattr(self, '_channel_error_logged'):
-                    logger.error(f"DiscordLogHandler: Could not find channel with ID {self.channel_id}. Logging to channel disabled.")
+                    # We don't have the channel object here, so we can't get guild ID easily
+                    logger.error(f"DiscordLogHandler: Could not find configured logging channel with ID {self.channel_id}. Logging to this channel is disabled.")
                     self._channel_error_logged = True
 
         except Exception:
@@ -58,15 +59,18 @@ class DiscordLogHandler(logging.Handler):
             await channel.send(f"```log\n{message}```") # Send in a code block
         except discord.Forbidden:
             if not hasattr(self, '_permission_error_logged'):
-                 logger.error(f"DiscordLogHandler: Bot lacks permissions to send messages in channel {channel.name} ({self.channel_id}).")
+                 # Guild ID is available via channel object here
+                 logger.error(f"DiscordLogHandler: Bot lacks permissions to send messages in channel #{channel.name} (ID: {self.channel_id}, Guild: {channel.guild.id}).")
                  self._permission_error_logged = True
         except discord.HTTPException as e:
              if not hasattr(self, '_http_error_logged'):
+                 # Guild ID is available via channel object here
                  # Use e.text instead of e.reason for discord.py v2
-                 logger.error(f"DiscordLogHandler: Failed to send log message to {channel.name} ({self.channel_id}): {e.status} {e.text}")
+                 logger.error(f"DiscordLogHandler: Failed to send log message to #{channel.name} (ID: {self.channel_id}, Guild: {channel.guild.id}): {e.status} {e.text}")
                  self._http_error_logged = True
         except Exception as e:
             # Catch other unexpected errors during send
              if not hasattr(self, '_send_error_logged'):
-                 logger.error(f"DiscordLogHandler: Unexpected error sending log to {channel.name} ({self.channel_id}): {e}", exc_info=True)
+                 # Guild ID is available via channel object here
+                 logger.error(f"DiscordLogHandler: Unexpected error sending log to #{channel.name} (ID: {self.channel_id}, Guild: {channel.guild.id}): {e}", exc_info=True)
                  self._send_error_logged = True 
