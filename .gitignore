@@ -171,3 +171,9 @@ dmypy.json
 
 # IDE related
 .dccache
+
+# dotenv environment variables file
+# .env specific lines are usually kept in both project types
+.env
+.env.*
+!.env.example

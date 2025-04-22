@@ -78,5 +78,5 @@ class DiscordLogHandler(logging.Handler):
         except Exception as e:
              if not hasattr(self, '_send_error_logged'):
                  logger.error(f"DiscordLogHandler: Unexpected error sending log to #{channel.name} (ID: {self.channel_id}, Guild: {channel.guild.id}): {e}", exc_info=True)
-                 self._send_error_logged = True
+                 self._send_error_logged = True 
              self._channel = None # Reset channel cache to force refetch 
