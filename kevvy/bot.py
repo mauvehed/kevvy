@@ -14,6 +14,7 @@ import asyncio
 from typing import Dict, Any
 from .discord_log_handler import DiscordLogHandler
 import datetime
+import signal
 
 MAX_EMBEDS_PER_MESSAGE = 5
 
@@ -55,6 +56,26 @@ class SecurityBot(commands.Bot):
         else:
              logger.info("Kevvy Web reporting is disabled (KEVVY_WEB_URL not set).")
         # --- End Kevvy Web Reporting Config ---
+
+    async def _handle_signal(self, sig: signal.Signals):
+        """Handles received OS signals for graceful shutdown."""
+        logger.warning(f"Received signal {sig.name}. Initiating graceful shutdown...")
+        # Use create_task to ensure close() runs even if the handler is interrupted
+        asyncio.create_task(self.close(), name=f'Signal-{sig.name}-Shutdown')
+
+    def _setup_signal_handlers(self):
+        """Sets up OS signal handlers for graceful shutdown."""
+        try:
+            loop = asyncio.get_running_loop()
+            for sig in (signal.SIGINT, signal.SIGTERM):
+                loop.add_signal_handler(
+                    sig, lambda s=sig: asyncio.create_task(self._handle_signal(s))
+                )
+            logger.info(f"Registered signal handlers for SIGINT and SIGTERM.")
+        except NotImplementedError:
+            logger.warning("Signal handlers are not supported on this platform (likely Windows). Graceful shutdown via signals is disabled.")
+        except Exception as e:
+            logger.error(f"Failed to set up signal handlers: {e}", exc_info=True)
 
     async def setup_hook(self):
         self.http_session = aiohttp.ClientSession()
@@ -102,6 +123,9 @@ class SecurityBot(commands.Bot):
             except Exception as e:
                  logger.error(f"An unexpected error occurred loading extension {extension}: {e}", exc_info=True)
 
+        # Setup signal handlers before syncing commands or starting tasks
+        self._setup_signal_handlers()
+
         # Sync the commands
         await self.tree.sync()
         logging.info(f"Synced application commands.")
@@ -112,6 +136,11 @@ class SecurityBot(commands.Bot):
              self.report_status_task.start()
 
     async def close(self):
+        logger.warning("Bot shutdown initiated...")
+        if self.is_closed():
+            logger.info("Bot close() called, but already closing/closed.")
+            return
+
         logging.info("Closing bot resources...")
         if self.check_cisa_kev_feed.is_running():
             self.check_cisa_kev_feed.cancel()
@@ -130,7 +159,7 @@ class SecurityBot(commands.Bot):
             logging.info("Closed KEV Config Database connection.")
 
         await super().close()
-        logging.info("Bot closed.")
+        logger.warning("Bot shutdown complete.")
 
     @tasks.loop(hours=1)
     async def check_cisa_kev_feed(self):
