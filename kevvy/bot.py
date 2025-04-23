@@ -63,13 +63,6 @@ class SecurityBot(commands.Bot):
         self.nvd_client = NVDClient(session=self.http_session, api_key=os.getenv('NVD_API_KEY'))
         logger.info("Initialized NVDClient.")
 
-        # Initialize monitor components now that NVDClient exists
-        if self.nvd_client:
-            self.cve_monitor = CVEMonitor(self.nvd_client)
-            logger.info("Initialized CVEMonitor.")
-        else:
-            logger.error("Could not initialize CVEMonitor because NVDClient failed to initialize.")
-
         # Initialize Database utility
         try:
             self.db = KEVConfigDB()
@@ -86,10 +79,10 @@ class SecurityBot(commands.Bot):
             logger.error("Could not initialize CisaKevClient due to missing DB or HTTP session.")
             self.cisa_kev_client = None
 
-        # Initialize monitor components now that NVDClient exists
+        # Initialize CVEMonitor with NVDClient and potentially CisaKevClient
         if self.nvd_client:
             self.cve_monitor = CVEMonitor(self.nvd_client, kev_client=self.cisa_kev_client)
-            logger.info("Initialized CVEMonitor with KEV support.")
+            logger.info(f"Initialized CVEMonitor (KEV support: {'enabled' if self.cisa_kev_client else 'disabled'}).")
         else:
             logger.error("Could not initialize CVEMonitor because NVDClient failed to initialize.")
 

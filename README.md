@@ -64,7 +64,6 @@ Key features:
 *   <img src="https://img.shields.io/badge/discord.py-2.5.2-5865F2?style=for-the-badge&logo=discord&logoColor=white" />
 *   <img src="https://img.shields.io/badge/Poetry-1.8-60A5FA?style=for-the-badge&logo=poetry&logoColor=white" />
 *   <img src="https://img.shields.io/badge/Docker-26.1-0db7ed?style=for-the-badge&logo=docker&logoColor=white" />
-*   <img src="https://img.shields.io/badge/Requests-library-orange?style=for-the-badge&logo=python&logoColor=white" />
 *   <img src="https://img.shields.io/badge/aiohttp-library-blueviolet?style=for-the-badge&logo=python&logoColor=white" />
 *   <img src="https://img.shields.io/badge/VulnCheck SDK-blue?style=for-the-badge&logo=python&logoColor=white" />
 *   <img src="https://img.shields.io/badge/NVD API v2.0-darkgreen?style=for-the-badge&logo=python&logoColor=white" />
@@ -111,8 +110,8 @@ Then, edit the `.env` file:
 *   `NVD_API_KEY` (Optional): Your NVD API key. Request one [here](https://nvd.nist.gov/developers/request-an-api-key) for significantly higher request rate limits. Used as a fallback data source if VulnCheck is unavailable or fails.
 *   `VULNCHECK_API_TOKEN` (Optional): Your VulnCheck API key. Get one from [VulnCheck](https://vulncheck.com/). If provided, VulnCheck becomes the *primary* data source for CVE details.
 *   `DISCORD_COMMAND_PREFIX` (Optional): The prefix for traditional commands (if any are added later). Defaults to `!`. The primary interaction is automatic detection and slash commands.
-*   `LOGGING_GUILD_ID` (Optional): The ID of the Discord server (guild) where the logging channel resides.
-*   `LOGGING_CHANNEL_ID` (Optional): The ID of the Discord channel within the specified guild to which log messages should be sent.
+*   `LOGGING_CHANNEL_ID` (Optional): The ID of the Discord channel to which log messages should be sent.
+*   `DISABLE_DISCORD_LOGGING` (Optional): Set to `true` to disable sending logs to the Discord channel specified by `LOGGING_CHANNEL_ID`. Defaults to `false`.
 
 ### Running with Docker (Recommended)
 

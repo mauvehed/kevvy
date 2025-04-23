@@ -1,4 +1,3 @@
-import json
 import os
 from dotenv import load_dotenv
 from kevvy.bot import SecurityBot
