@@ -363,7 +363,7 @@ class SecurityBot(commands.Bot):
     async def on_ready(self):
         """Called when the bot is fully ready and internal cache is built."""
         if not hasattr(self, 'start_time'): # Prevent overwriting if on_ready is called multiple times (e.g., after resume)
-            self.start_time = datetime.datetime.utcnow()
+            self.start_time = datetime.datetime.now(datetime.timezone.utc)
         logger.info(f'Logged in as {self.user.name} ({self.user.id})')
         logger.info(f'Command prefix: {self.command_prefix}')
         logger.info(f'Successfully fetched {len(self.guilds)} guilds.')
