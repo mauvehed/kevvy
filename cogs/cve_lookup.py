@@ -49,9 +49,7 @@ class CVELookupCog(commands.Cog):
         if cve_data.get('modified'):
              embed.add_field(name="Last Modified", value=cve_data['modified'], inline=True)
 
-        # Add References (limit to a few to avoid embed limits)
-        references = cve_data.get('references', [])
-        if references:
+        if references := cve_data.get('references', []):
             ref_limit = 5
             ref_text = ""
             for i, ref in enumerate(references[:ref_limit]):
