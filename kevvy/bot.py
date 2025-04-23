@@ -341,10 +341,8 @@ class SecurityBot(commands.Bot):
         # Send basic status
         await self._send_to_web_portal("/api/v1/status", status_data)
         # Send detailed stats counters
-        logger.info(f"[REPORT TASK] Stats payload prepared: {stats_payload}")
         await self._send_to_web_portal("/api/v1/stats", stats_payload)
         # Send diagnostic info
-        logger.info(f"[REPORT TASK] Diagnostics payload prepared: {diagnostics_payload}")
         await self._send_to_web_portal("/api/v1/diagnostics", diagnostics_payload)
 
     @report_status_task.before_loop
