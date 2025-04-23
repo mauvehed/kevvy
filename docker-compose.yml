@@ -1,7 +1,7 @@
 services:
   kevvy:
-    image: ghcr.io/mauvehed/kevvy:latest
-    container_name: kevvy_bot
+    image: ghcr.io/mauvehed/kevvy:pr-17
+    container_name: kevvy-bot
     env_file:
       - .env
     volumes:
