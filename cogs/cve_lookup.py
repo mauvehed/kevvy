@@ -75,7 +75,10 @@ class CVELookupCog(commands.Cog):
 
         # Validate CVE ID format
         if not CVE_REGEX.match(cve_id):
-            await interaction.followup.send(f"❌ Invalid CVE ID format. Please use `CVE-YYYY-NNNNN...` (e.g., CVE-2023-12345).", ephemeral=True)
+            await interaction.followup.send(
+                "❌ Invalid CVE ID format. Please use `CVE-YYYY-NNNNN...` (e.g., CVE-2023-12345).",
+                ephemeral=True,
+            )
             return
 
         if not self.nvd_client:
