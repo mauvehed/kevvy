@@ -338,7 +338,7 @@ class SecurityBot(commands.Bot):
         }
 
         # --- Send Data --- 
-        # Send basic status (includes versions now)
+        # Send basic status
         await self._send_to_web_portal("/api/v1/status", status_data)
         # Send detailed stats counters
         await self._send_to_web_portal("/api/v1/stats", stats_payload)
