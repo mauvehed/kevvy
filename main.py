@@ -25,7 +25,7 @@ def main():
     logger.info(f"NVD API Key Provided: {bool(nvd_api_key)}")
     logger.info(f"VulnCheck API Token Provided: {bool(vulncheck_api_token)}")
     logger.info(f"Kevvy Web URL: {kevvy_web_url or 'Not Set'}")
-    logger.info(f"Discord Logging Channel ID: {logging_channel_id if logging_channel_id else 'Not Set'}")
+    logger.info(f"Discord Logging Channel ID: {logging_channel_id or 'Not Set'}")
     logger.info(f"Discord Logging Disabled: {disable_discord_logging}")
     logger.info("-------------------------")
     # --- End Log Configuration ---
