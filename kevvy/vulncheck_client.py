@@ -160,6 +160,7 @@ class VulnCheckClient:
             return None
 
         try:
+            logger.debug(f"Querying VulnCheck API for {cve_id}")
             api_response = await self._run_sdk_call(self.indices_client.index_nist_nvd2_get, cve=cve_id)
 
             if not api_response or not api_response.data:
@@ -174,6 +175,8 @@ class VulnCheckClient:
             description = self._parse_description_from_data(vc_data)
             published, modified = self._extract_dates_from_data(vc_data)
             cve_from_data = getattr(vc_data, 'id', cve_id)
+
+            logger.info(f"Successfully fetched details for {cve_from_data} from VulnCheck.")
 
             return {
                 'id': cve_from_data,
