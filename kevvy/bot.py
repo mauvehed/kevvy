@@ -295,9 +295,6 @@ class SecurityBot(commands.Bot):
             "shard_count": self.shard_count if self.shard_count is not None else 1,
             "is_ready": self.is_ready(),
             "is_closed": self.is_closed(),
-             # Add versions here
-            "discord_py_version": discord.__version__,
-            "python_version": platform.python_version(),
         }
 
         # --- Gather Detailed Stats & Diagnostics ---
