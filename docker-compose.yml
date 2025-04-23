@@ -1,7 +1,7 @@
 services:
-  cve-bot:
+  kevvy:
     image: ghcr.io/mauvehed/kevvy:latest
-    container_name: kevvy
+    container_name: kevvy_bot
     env_file:
       - .env
     volumes:
