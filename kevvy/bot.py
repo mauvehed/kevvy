@@ -369,7 +369,6 @@ class SecurityBot(commands.Bot):
         logger.info(f'Successfully fetched {len(self.guilds)} guilds.')
         logger.info('Bot is ready! Listening for CVEs...')
         await self._setup_discord_logging()
-        logger.info('------')
 
     async def on_guild_join(self, guild: discord.Guild):
         """Called when the bot joins a new guild."""
