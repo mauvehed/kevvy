@@ -388,10 +388,17 @@ class SecurityBot(commands.Bot):
         guild = interaction.guild
         channel = interaction.channel
 
+        # Safely get guild/channel info for logging
+        guild_name = guild.name if guild else "DM"
+        guild_id = guild.id if guild else "N/A"
+        # Use getattr for channel name as some types (like DMChannel) lack it
+        channel_name = getattr(channel, 'name', 'DM/Unknown Channel')
+        channel_id = channel.id if channel else "N/A"
+
         log_message = (
             f"App Command Error in command '{command_name}' "
-            f"(User: {user} ({user.id}), Guild: {guild.name if guild else 'DM'} ({guild.id if guild else 'N/A'}), "
-            f"Channel: {channel.name if channel else 'DM'} ({channel.id if channel else 'N/A'})): {error}"
+            f"(User: {user} ({user.id}), Guild: {guild_name} ({guild_id}), "
+            f"Channel: {channel_name} ({channel_id})): {error}"
         )
 
         if isinstance(error, app_commands.CommandNotFound):
@@ -419,7 +426,8 @@ class SecurityBot(commands.Bot):
                     ephemeral=True
                 )
             except discord.Forbidden:
-                 logger.error(f"Cannot even send error message about BotMissingPermissions in channel {channel.id} (Guild: {guild.id})")
+                 # Also safely access guild/channel id here
+                 logger.error(f"Cannot even send error message about BotMissingPermissions in channel {channel_id} (Guild: {guild_id})")
         elif isinstance(error, app_commands.CheckFailure):
             # This covers custom checks failing (e.g., @app_commands.check decorators)
             logger.warning(f"CheckFailure: {log_message}")
