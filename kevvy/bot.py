@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 import aiohttp
+from aiohttp import ClientTimeout
 from .cve_monitor import CVEMonitor
 from .nvd_client import NVDClient
 from .vulncheck_client import VulnCheckClient
@@ -88,7 +89,8 @@ class SecurityBot(commands.Bot):
 
         # Load Cogs
         initial_extensions = [
-            'kevvy.cogs.kev_commands'
+            'kevvy.cogs.kev_commands',
+            'kevvy.cogs.cve_lookup'
             # Add other cogs here if needed
         ]
         for extension in initial_extensions:
@@ -271,9 +273,10 @@ class SecurityBot(commands.Bot):
             'Content-Type': 'application/json',
             'X-API-Key': self.kevvy_web_api_key
         }
+        request_timeout = ClientTimeout(total=10)
 
         try:
-            async with self.http_session.post(target_url, json=data, headers=headers, timeout=10) as response:
+            async with self.http_session.post(target_url, json=data, headers=headers, timeout=request_timeout) as response:
                 if 200 <= response.status < 300:
                     logger.debug(f"Successfully sent data to kevvy-web endpoint {endpoint}. Status: {response.status}")
                 else:
