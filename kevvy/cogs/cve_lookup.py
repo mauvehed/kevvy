@@ -5,23 +5,27 @@ import re
 import logging
 from typing import Optional, TYPE_CHECKING
 
+# Use absolute imports for type checking
 if TYPE_CHECKING:
-    # from ..bot import SecurityBot # Use absolute imports for type checking if relative fails
-    # from ..nvd_client import NVDClient
     from kevvy.bot import SecurityBot
     from kevvy.nvd_client import NVDClient
 
 logger = logging.getLogger(__name__)
 
-# Basic regex for CVE ID format (adjust if needed for stricter validation)
+# Basic regex for CVE ID format
 CVE_REGEX = re.compile(r'^CVE-\d{4}-\d{4,}$', re.IGNORECASE)
 
+# Define the command group
 class CVELookupCog(commands.Cog):
     """Cog for handling CVE lookup commands."""
 
     def __init__(self, bot: 'SecurityBot'):
         self.bot = bot
-        self.nvd_client: Optional['NVDClient'] = self.bot.nvd_client # Get NVD client from bot
+        self.nvd_client: Optional['NVDClient'] = self.bot.nvd_client
+
+    # Define the base group - this won't be directly callable
+    # You can add a description here if desired
+    cve_group = app_commands.Group(name="cve", description="Commands related to CVE information.")
 
     def create_cve_embed(self, cve_data: dict) -> discord.Embed:
         """Creates a Discord embed from fetched CVE data."""
@@ -67,13 +71,12 @@ class CVELookupCog(commands.Cog):
 
         return embed
 
-    @app_commands.command(name="cve", description="Look up details for a specific CVE ID from NVD.")
+    @cve_group.command(name="lookup", description="Look up details for a specific CVE ID from NVD.")
     @app_commands.describe(cve_id="The CVE ID (e.g., CVE-2023-12345)")
-    async def cve_lookup(self, interaction: discord.Interaction, cve_id: str):
-        """Handles the /cve command."""
-        await interaction.response.defer() # Defer response as API call can take time
+    async def lookup_subcommand(self, interaction: discord.Interaction, cve_id: str):
+        """Handles the /cve lookup subcommand."""
+        await interaction.response.defer()
 
-        # Validate CVE ID format
         if not CVE_REGEX.match(cve_id):
             await interaction.followup.send(
                 "❌ Invalid CVE ID format. Please use `CVE-YYYY-NNNNN...` (e.g., CVE-2023-12345).",
@@ -87,8 +90,8 @@ class CVELookupCog(commands.Cog):
              return
 
         try:
-            logger.info(f"User {interaction.user} ({interaction.user.id}) looking up CVE: {cve_id}")
-            cve_details = await self.nvd_client.get_cve_details(cve_id.upper()) # Ensure uppercase
+            logger.info(f"User {interaction.user} ({interaction.user.id}) looking up CVE: {cve_id} via /cve lookup")
+            cve_details = await self.nvd_client.get_cve_details(cve_id.upper())
 
             if cve_details:
                 embed = self.create_cve_embed(cve_details)
@@ -97,7 +100,7 @@ class CVELookupCog(commands.Cog):
                 await interaction.followup.send(f"🤷 Could not find details for `{cve_id}` in NVD, or an error occurred during fetch.")
 
         except Exception as e:
-            logger.error(f"Unexpected error during /cve command for {cve_id}: {e}", exc_info=True)
+            logger.error(f"Unexpected error during /cve lookup command for {cve_id}: {e}", exc_info=True)
             await interaction.followup.send(f"❌ An unexpected error occurred while looking up `{cve_id}`. Please try again later.", ephemeral=True)
 
 
