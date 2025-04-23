@@ -174,6 +174,22 @@ class KEVConfigDB:
         except sqlite3.Error as e:
             logger.error(f"Error adding seen KEVs: {e}", exc_info=True)
 
+    def count_enabled_guilds(self) -> int:
+        """Counts the number of distinct guilds with KEV monitoring enabled."""
+        if not self._conn:
+            logger.error("Cannot count enabled KEV guilds: Database connection is not available.")
+            return 0
+        try:
+            cursor = self._conn.cursor()
+            cursor.execute('''
+                SELECT COUNT(DISTINCT guild_id) FROM kev_config WHERE enabled = 1
+            ''')
+            result = cursor.fetchone()
+            return result[0] if result else 0
+        except sqlite3.Error as e:
+            logger.error(f"Database error counting enabled KEV guilds: {e}", exc_info=True)
+            return 0 # Return 0 on error
+
     def close(self):
         """Closes the database connection."""
         if self._conn:
