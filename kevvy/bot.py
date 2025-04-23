@@ -173,7 +173,7 @@ class SecurityBot(commands.Bot):
             new_entries = await self.cisa_kev_client.get_new_kev_entries()
 
             if not new_entries:
-                logger.info("No new KEV entries found.")
+                logger.info("Completed periodic CISA KEV check. No new KEV entries found.")
                 return
 
             logger.info(f"Found {len(new_entries)} new KEV entries. Checking configured guilds...")
@@ -348,15 +348,104 @@ class SecurityBot(commands.Bot):
 
         return embed
 
-    async def on_ready(self):
-        self.start_time = datetime.datetime.utcnow()
-        logging.info(f'Logged in as {self.user.name} ({self.user.id})')
-        logging.info(f'Command prefix: {self.command_prefix}')
-        logging.info(f'Ready! Listening for CVEs...')
+    async def on_connect(self):
+        """Called when the bot successfully connects to the Discord Gateway."""
+        logger.info(f"Successfully connected to Discord Gateway. Shard ID: {self.shard_id}")
 
+    async def on_disconnect(self):
+        """Called when the bot loses connection to the Discord Gateway."""
+        logger.warning(f"Disconnected from Discord Gateway unexpectedly. Shard ID: {self.shard_id}. Will attempt to reconnect.")
+
+    async def on_resumed(self):
+        """Called when the bot successfully resumes a session after a disconnect."""
+        logger.info(f"Successfully resumed Discord Gateway session. Shard ID: {self.shard_id}")
+
+    async def on_ready(self):
+        """Called when the bot is fully ready and internal cache is built."""
+        if not hasattr(self, 'start_time'): # Prevent overwriting if on_ready is called multiple times (e.g., after resume)
+            self.start_time = datetime.datetime.now(datetime.timezone.utc)
+        logger.info(f'Logged in as {self.user.name} ({self.user.id})')
+        logger.info(f'Command prefix: {self.command_prefix}')
+        logger.info(f'Successfully fetched {len(self.guilds)} guilds.')
+        logger.info('Bot is ready! Listening for CVEs...')
         await self._setup_discord_logging()
 
-        logging.info('------')
+    async def on_guild_join(self, guild: discord.Guild):
+        """Called when the bot joins a new guild."""
+        logger.info(f"Joined guild: {guild.name} ({guild.id}). Owner: {guild.owner} ({guild.owner_id}). Members: {guild.member_count}")
+        # Optional: Send a welcome message to the guild owner or a default channel
+
+    async def on_guild_remove(self, guild: discord.Guild):
+        """Called when the bot is removed from a guild."""
+        logger.info(f"Removed from guild: {guild.name} ({guild.id}).")
+        # Optional: Clean up any guild-specific configurations from the database
+
+    async def on_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+        """Global error handler for application (slash) commands."""
+        command_name = interaction.command.name if interaction.command else "Unknown Command"
+        user = interaction.user
+        guild = interaction.guild
+        channel = interaction.channel
+
+        # Safely get guild/channel info for logging
+        guild_name = guild.name if guild else "DM"
+        guild_id = guild.id if guild else "N/A"
+        # Use getattr for channel name as some types (like DMChannel) lack it
+        channel_name = getattr(channel, 'name', 'DM/Unknown Channel')
+        channel_id = channel.id if channel else "N/A"
+
+        log_message = (
+            f"App Command Error in command '{command_name}' "
+            f"(User: {user} ({user.id}), Guild: {guild_name} ({guild_id}), "
+            f"Channel: {channel_name} ({channel_id})): {error}"
+        )
+
+        if isinstance(error, app_commands.CommandNotFound):
+            logger.warning(f"CommandNotFound error suppressed: {log_message}") # Usually not an issue unless commands aren't syncing
+            # Don't need to inform user, Discord handles this
+            return
+        elif isinstance(error, app_commands.CommandOnCooldown):
+            logger.warning(log_message)
+            await interaction.response.send_message(
+                f"⏳ This command is on cooldown. Please try again in {error.retry_after:.2f} seconds.",
+                ephemeral=True
+            )
+        elif isinstance(error, app_commands.MissingPermissions):
+            logger.error(log_message)
+            await interaction.response.send_message(
+                f"🚫 You do not have the required permissions to use this command: {', '.join(error.missing_permissions)}",
+                ephemeral=True
+            )
+        elif isinstance(error, app_commands.BotMissingPermissions):
+            logger.error(log_message)
+            try:
+                await interaction.response.send_message(
+                    f"🚫 I lack the necessary permissions to run this command: {', '.join(error.missing_permissions)}."
+                    f" Please ensure I have these permissions in this channel/server.",
+                    ephemeral=True
+                )
+            except discord.Forbidden:
+                 # Also safely access guild/channel id here
+                 logger.error(f"Cannot even send error message about BotMissingPermissions in channel {channel_id} (Guild: {guild_id})")
+        elif isinstance(error, app_commands.CheckFailure):
+            # This covers custom checks failing (e.g., @app_commands.check decorators)
+            logger.warning(f"CheckFailure: {log_message}")
+            # Provide a generic message or tailor based on check type if needed
+            await interaction.response.send_message(
+                "❌ You do not meet the requirements to use this command.",
+                ephemeral=True
+            )
+        else:
+            # Log other/unexpected errors
+            logger.error(f"Unhandled App Command Error: {log_message}", exc_info=error)
+            try:
+                # Send a generic error message if possible
+                if interaction.response.is_done():
+                    await interaction.followup.send("❌ An unexpected error occurred while processing your command.", ephemeral=True)
+                else:
+                    await interaction.response.send_message("❌ An unexpected error occurred while processing your command.", ephemeral=True)
+            except Exception as e:
+                 logger.error(f"Failed to send generic error message to user after unhandled App Command Error: {e}")
 
     async def _setup_discord_logging(self):
         """Sets up the DiscordLogHandler based on environment variables."""
