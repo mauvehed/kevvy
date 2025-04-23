@@ -1,9 +1,15 @@
 services:
   kevvy_bot:
-    image: ghcr.io/mauvehed/kevvy:pr-17
+    image: ghcr.io/mauvehed/kevvy:latest
     container_name: kevvy-bot
     env_file:
       - .env
     volumes:
       - ./data:/app/data
-    restart: unless-stopped 
+    restart: unless-stopped
+    networks:
+      kevvy_services:
+
+networks:
+  kevvy_services:
+    external: true
