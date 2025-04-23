@@ -27,7 +27,7 @@ class CVELookupCog(commands.Cog):
         """Creates a Discord embed from fetched CVE data."""
         embed = discord.Embed(
             title=f"{cve_data.get('id', 'Unknown CVE')}",
-            url=cve_data.get('link', None),
+            url=cve_data.get('link'),
             description=cve_data.get('description', 'No description provided.'),
             color=discord.Color.purple() # Or choose another color
         )
