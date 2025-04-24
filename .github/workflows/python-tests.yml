@@ -1,0 +1,50 @@
+name: Run Python Tests
+
+on:
+  push:
+    branches: [ main ]
+    # Optional: Only run if files in the 'kevvy' directory changed
+    # paths:
+    #  - 'kevvy/**'
+  pull_request:
+    branches: [ main ]
+    # Optional: Only run if files in the 'kevvy' directory changed
+    # paths:
+    #  - 'kevvy/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Use the Python version matching your project
+        python-version: ['3.12'] 
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        # Cache dependencies based on the lock file for speed
+        cache: 'poetry'
+        cache-dependency-path: 'kevvy/poetry.lock' 
+
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        virtualenvs-create: true
+        virtualenvs-in-project: true # Keeps venv local for caching/inspection
+        installer-parallel: true
+
+    - name: Install dependencies via Poetry
+      run: poetry install --no-interaction --no-root
+      # Ensure Poetry runs in the correct directory containing pyproject.toml/poetry.lock
+      working-directory: ./kevvy 
+
+    - name: Run tests with pytest
+      run: poetry run pytest -v
+      # Ensure pytest runs in the correct directory
+      working-directory: ./kevvy 
