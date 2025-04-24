@@ -2,15 +2,23 @@
 
 ## Reporting a Vulnerability
 
-If there are any vulnerabilities in **kevvy**, don't hesitate to _report them_.
+The **preferred method** for reporting vulnerabilities in **kevvy** is via **GitHub's Private Vulnerability Reporting feature**.
 
-1. Please contact the maintainer [mauvehed (mh@mvh.dev)](mailto:mh@mvh.dev).
-2. Describe the vulnerability and provide a proof of concept if possible.
+This allows for direct, private communication with the maintainers and helps track the disclosure process effectively.
 
-   If you have a fix, that is most welcome -- please attach or summarize it in your message!
+**To report a vulnerability:**
 
-3. We will evaluate the vulnerability and, if necessary, release a fix or mitigating steps to address it. We will contact you to let you know the outcome, and will credit you in the report.
+1.  Navigate to the main page of the [kevvy repository](https://github.com/mauvehed/kevvy).
+2.  Click on the **Security** tab (located under the repository name).
+3.  Click on **Report a vulnerability**.
+4.  Fill out the form with as much detail as possible, including:
+    *   A clear description of the vulnerability.
+    *   Steps to reproduce the behavior.
+    *   A proof of concept (if applicable).
+5.  Submit the report.
 
-   Please **do not disclose the vulnerability publicly** until a fix is released!
+We will evaluate the vulnerability report submitted via GitHub and communicate through the GitHub Security Advisory platform. We appreciate your efforts in responsibly disclosing security issues.
 
-4. Once we have either a) published a fix, or b) declined to address the vulnerability for whatever reason, you are free to publicly disclose it.
+Please **do not disclose the vulnerability publicly** until it has been addressed through the private reporting process.
+
+(The previous email-based reporting method is superseded by GitHub's integrated feature.)
