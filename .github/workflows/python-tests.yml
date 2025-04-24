@@ -30,7 +30,7 @@ jobs:
         python-version: ${{ matrix.python-version }}
         # Cache dependencies based on the lock file for speed
         cache: 'poetry'
-        cache-dependency-path: 'kevvy/poetry.lock' 
+        cache-dependency-path: 'poetry.lock'
 
     - name: Install Poetry
       uses: snok/install-poetry@v1
@@ -41,10 +41,6 @@ jobs:
 
     - name: Install dependencies via Poetry
       run: poetry install --no-interaction --no-root
-      # Ensure Poetry runs in the correct directory containing pyproject.toml/poetry.lock
-      working-directory: ./kevvy 
 
     - name: Run tests with pytest
       run: poetry run pytest -v
-      # Ensure pytest runs in the correct directory
-      working-directory: ./kevvy 
