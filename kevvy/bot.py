@@ -614,7 +614,10 @@ class SecurityBot(commands.Bot):
                 if self.vulncheck_client.api_client:
                     logging.debug(f"Attempting VulnCheck fetch for {cve}") # Uses normalized cve
                     cve_data = await self.vulncheck_client.get_cve_details(cve) # Pass normalized cve
-                    if cve_data: source_used = "VulnCheck"
+                    if cve_data:
+                        source_used = "VulnCheck"
+                        async with self.stats_lock:
+                            self.stats_vulncheck_success += 1 # Increment VulnCheck success
                 else:
                     logging.debug("VulnCheck client not available (no API key?), skipping.")
 
@@ -624,7 +627,10 @@ class SecurityBot(commands.Bot):
 
                     if self.nvd_client:
                         cve_data = await self.nvd_client.get_cve_details(cve) # Pass normalized cve
-                        if cve_data: source_used = "NVD"
+                        if cve_data:
+                            source_used = "NVD"
+                            async with self.stats_lock:
+                                self.stats_nvd_fallback_success += 1 # Increment NVD fallback success
                     else:
                          logger.warning("NVD Client not available, skipping NVD lookup.")
 
