@@ -284,7 +284,7 @@ class SecurityBot(commands.Bot):
 
         # --- Gather Basic Status (already existed) ---
         uptime_delta = now - self.start_time
-        status_data = {
+        status_payload = {
             "timestamp": now.isoformat(),
             "bot_id": self.user.id if self.user else None,
             "bot_name": self.user.name if self.user else "Unknown",
@@ -339,11 +339,19 @@ class SecurityBot(commands.Bot):
 
         # --- Send Data --- 
         # Send basic status
-        await self._send_to_web_portal("/api/v1/status", status_data)
-        # Send detailed stats counters
+        await self._send_to_web_portal("/api/v1/status", status_payload)
+
+        # Gather and Send Stats Payload
+        stats_payload = await self._get_current_stats()
         await self._send_to_web_portal("/api/v1/stats", stats_payload)
-        # Send diagnostic info
+
+        # Gather and Send Diagnostics Payload
+        diagnostics_payload = await self._get_current_diagnostics()
         await self._send_to_web_portal("/api/v1/diagnostics", diagnostics_payload)
+
+        # Reset counters after attempting to send all payloads
+        async with self.stats_lock:
+            logger.debug("Resetting periodic statistics counters.")
 
     @report_status_task.before_loop
     async def before_report_status(self):
