@@ -4,13 +4,13 @@ on:
   push:
     branches: [ main ]
     # Optional: Only run if files in the 'kevvy' directory changed
-    # paths:
-    #  - 'kevvy/**'
+    paths:
+     - 'kevvy/**'
   pull_request:
     branches: [ main ]
     # Optional: Only run if files in the 'kevvy' directory changed
-    # paths:
-    #  - 'kevvy/**'
+    paths:
+     - 'kevvy/**'
 
 jobs:
   test:
