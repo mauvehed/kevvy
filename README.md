@@ -16,7 +16,7 @@
 </a>
 
 <a href="https://kevvy.mauve.haus/">
-  <img src="https://img.shields.io/badge/Live Dashboard-blue?style=for-the-badge&logo=vue.js&logoColor=white" alt="Live Dashboard" />
+  <img src="https://img.shields.io/badge/Live Dashboard-blue?style=for-the-badge&logo=vue.js&logoColor=white" />
 </a>
 
 <br />
@@ -57,12 +57,11 @@
 
 ## About
 
-**kevvy** is a Discord bot with two main functions:
+**kevvy** is a Discord bot with the following main functions:
 
 1.  **Automatic CVE Detection:** It automatically monitors chat messages for CVE (Common Vulnerabilities and Exposures) identifiers (e.g., `CVE-2023-12345`). When a CVE is detected, the bot fetches detailed information primarily from the [VulnCheck API](https://vulncheck.com/) (if an API key is provided). If VulnCheck is unavailable or doesn't return data, it falls back to the [NIST National Vulnerability Database (NVD) API v2.0](https://nvd.nist.gov/developers/vulnerabilities).
 2.  **Direct CVE Lookup:** Users can explicitly request details for a specific CVE using the `/cve lookup` command.
 3.  **CISA KEV Monitoring:** Optionally monitors the [CISA Known Exploited Vulnerabilities (KEV) catalog](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) and sends alerts for new entries to configured channels.
-4.  **Web Dashboard:** Includes a companion web application (`kevvy-web`) that displays real-time statistics and diagnostics reported by the bot, such as uptime, API usage, KEV check status, and internal errors.
 
 Key features:
 *   Automatic detection of CVE IDs in messages.
@@ -71,7 +70,6 @@ Key features:
 *   Displays CVSS score (v3.1/v3.0/v2.0), vector string, description, publication dates, CWEs, and reference links.
 *   Consolidates responses for messages containing multiple CVEs (max 5 embeds per message by default) to prevent spam.
 *   Optionally checks the CISA KEV catalog periodically and posts alerts for new entries to a designated channel (configurable per server).
-*   Provides a web dashboard (`kevvy-web`) for monitoring bot statistics and health.
 
 ### Built With
 
@@ -105,10 +103,6 @@ Here's the bot in action:
 
 ![KEV Alert Notification](docs/images/KEV%20Alert.png)
 
-**Web Dashboard:**
-
-![Web Dashboard Preview](docs/images/kevvy_dashboard.png)
-
 ## Getting Started
 
 ### Prerequisites
@@ -133,55 +127,32 @@ Then, edit the `.env` file:
 *   `DISCORD_COMMAND_PREFIX` (Optional): The prefix for traditional commands (if any are added later). Defaults to `!`. The primary interaction is automatic detection and slash commands.
 *   `LOGGING_CHANNEL_ID` (Optional): The ID of the Discord channel to which log messages should be sent.
 *   `DISABLE_DISCORD_LOGGING` (Optional): Set to `true` to disable sending logs to the Discord channel specified by `LOGGING_CHANNEL_ID`. Defaults to `false`.
-*   `KEVVY_WEB_URL` (Optional, Used by Bot): The URL the bot uses to send status/stats updates to the web server. Defaults to `http://localhost:5253` but should be `http://kevvy_web:5253` when using the provided `docker-compose.yml`.
-*   `KEVVY_WEB_SHARED_SECRET` (Optional): A shared secret string that the bot must send to the web server for authentication when posting data. If set, it must match the `SHARED_SECRET` environment variable set for the `kevvy-web` service.
 
 ### Running with Docker (Recommended)
 
 1.  Ensure Docker and Docker Compose are installed.
-2.  Make sure you have configured your `.env` file (especially `DISCORD_TOKEN`). The `docker-compose.yml` file is already set up to pass the necessary environment variables (like `KEVVY_WEB_URL=http://kevvy_web:5253`) to the bot container.
-3.  Start both the bot and the web server container in detached mode:
+2.  Make sure you have configured your `.env` file (especially `DISCORD_TOKEN`).
+3.  Start the bot container in detached mode:
     ```bash
     docker-compose up -d --build
     ```
-    _(This will automatically pull the `ghcr.io/mauvehed/kevvy:latest` image for the bot if you don't have it locally, and build the `kevvy-web` image)._
-4.  **Access Web Dashboard:** Open your browser to `http://localhost:5253` (or the port you mapped if you changed `docker-compose.yml`).
-5.  **Check Health:** You can check the web service health at `http://localhost:5253/api/v1/health`.
-6.  **View Logs:**
+    _(This will automatically pull the `ghcr.io/mauvehed/kevvy:latest` image if you don't have it locally)._
+4.  **View Logs:**
     ```bash
-    # View combined logs
-    docker-compose logs -f
-    # View only bot logs
     docker-compose logs -f kevvy-bot
-    # View only web server logs
-    docker-compose logs -f kevvy-web
     ```
-7.  **Stop Containers:**
+5.  **Stop Container:**
     ```bash
     docker-compose down
     ```
 
 ### Running Locally with Poetry
 
-This setup is primarily for development. Running both the bot and the web server requires separate steps.
-
-**Bot:**
 1.  Ensure Python 3.10+ and Poetry are installed.
 2.  Clone the repository: `git clone https://github.com/mauvehed/kevvy.git && cd kevvy`
 3.  Install bot dependencies: `poetry install`
-4.  Configure your `.env` file (ensure `KEVVY_WEB_URL` points to where your local web server will run, e.g., `http://localhost:5253`).
+4.  Configure your `.env` file.
 5.  Run the bot: `poetry run python main.py`
-
-**Web Server (`kevvy-web`):**
-1.  Ensure Node.js and npm are installed.
-2.  Navigate to the web server directory: `cd kevvy-web`
-3.  Install backend dependencies: `npm install`
-4.  (Optional) Configure environment variables for the web server if needed (e.g., `PORT`, `SHARED_SECRET`).
-5.  Start the backend server: `node server.js`
-6.  Navigate to the frontend directory: `cd frontend`
-7.  Install frontend dependencies: `npm install`
-8.  Build the frontend for production: `npm run build` (The backend server serves the built files from `frontend/dist`)
-9.  OR Run the frontend in development mode (connects to backend automatically if running): `npm run dev`
 
 ## Roadmap
 
