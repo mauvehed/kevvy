@@ -10,12 +10,13 @@ on:
       - 'pyproject.toml'
       - 'poetry.lock'
       - 'Dockerfile'
-      - '.github/workflows/**'
       # Exclude documentation changes
       - '!**.md'
       - '!.gitignore'
       - '!LICENSE'
       - '!.env.example'
+      # Exclude GitHub Actions workflow changes
+      - '!.github/workflows/**'
   pull_request:
     branches:
       - main # Or specify branches PRs target if needed
