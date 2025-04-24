@@ -588,7 +588,10 @@ class SecurityBot(commands.Bot):
 
         embeds_to_send = []
         processed_count = 0
-        for cve in unique_cves:
+        for cve_original_case in unique_cves:
+            # Normalize to uppercase for API lookups
+            cve = cve_original_case.upper() # Added conversion
+
             if processed_count >= MAX_EMBEDS_PER_MESSAGE:
                 logging.warning(f"Max embeds reached for message {message.id}. Found {len(unique_cves)} unique CVEs, processing first {MAX_EMBEDS_PER_MESSAGE}.")
                 break
@@ -596,64 +599,39 @@ class SecurityBot(commands.Bot):
             cve_data = None
             source_used = None # Track which source succeeded
             try:
+                # Increment lookup counter for each unique CVE attempted
                 async with self.stats_lock:
-                    self.stats_cve_lookups += 1 # Count total lookups attempted
+                    self.stats_cve_lookups += 1
 
-                # --- Try VulnCheck First --- 
-                if self.vulncheck_client and self.vulncheck_client.api_client:
-                    try:
-                        logger.debug(f"Attempting VulnCheck fetch for {cve}")
-                        cve_data = await self.vulncheck_client.get_cve_details(cve)
-                        if cve_data:
-                            source_used = "VulnCheck"
-                        # No specific rate limit handling shown, assume SDK handles or log generic error
-                    except Exception as vc_error:
-                        logger.error(f"VulnCheck client error for {cve}: {vc_error}", exc_info=True)
-                        async with self.stats_lock:
-                            self.stats_api_errors_vulncheck += 1
+                if self.vulncheck_client.api_client:
+                    logging.debug(f"Attempting VulnCheck fetch for {cve}") # Uses normalized cve
+                    cve_data = await self.vulncheck_client.get_cve_details(cve) # Pass normalized cve
+                    if cve_data: source_used = "VulnCheck"
                 else:
-                    logging.debug("VulnCheck client not available, skipping.")
+                    logging.debug("VulnCheck client not available (no API key?), skipping.")
 
-                # --- Fallback to NVD --- 
-                if not cve_data and self.nvd_client:
-                    try:
-                        logger.debug(f"Attempting NVD fallback for {cve}")
-                        cve_data = await self.nvd_client.get_cve_details(cve)
-                        if cve_data:
-                             source_used = "NVD"
-                    # Handle potential NVD specific errors (e.g., rate limit) - requires NVDClient to raise specific exceptions or return status
-                    # For now, catch generic exception and increment general NVD error counter
-                    # TODO: Enhance NVDClient to return status/error info for better counting
-                    except Exception as nvd_error:
-                        logger.error(f"NVD client error for {cve}: {nvd_error}", exc_info=True)
-                        # Basic check if it might be a rate limit (needs improvement)
-                        is_rate_limit = "403" in str(nvd_error) or "429" in str(nvd_error)
-                        async with self.stats_lock:
-                            self.stats_api_errors_nvd += 1
-                            if is_rate_limit:
-                                self.stats_rate_limits_nvd += 1
-                elif not self.nvd_client:
-                     logger.warning("NVD Client not available, skipping NVD lookup.")
+                if not cve_data:
+                    log_msg_prefix = f"VulnCheck failed for {cve}," if self.vulncheck_client.api_client else ""
+                    logging.debug(f"{log_msg_prefix} Attempting NVD fetch for {cve} (VulnCheck unavailable or failed).") # Uses normalized cve
 
-                # --- Process Result --- 
+                    if self.nvd_client:
+                        cve_data = await self.nvd_client.get_cve_details(cve) # Pass normalized cve
+                        if cve_data: source_used = "NVD"
+                    else:
+                         logger.warning("NVD Client not available, skipping NVD lookup.")
+
                 if cve_data:
-                    # Increment success counter based on source
-                    async with self.stats_lock:
-                        if source_used == "VulnCheck":
-                             self.stats_vulncheck_success += 1
-                        elif source_used == "NVD":
-                             self.stats_nvd_fallback_success += 1
-
+                    # Add source info if not already present from client
+                    if 'source' not in cve_data and source_used:
+                         cve_data['source'] = source_used
                     embeds = await self.cve_monitor.create_cve_embed(cve_data)
                     embeds_to_send.extend(embeds)
                     processed_count += 1
                 else:
-                    # Lookup failed from all sources
-                    logging.warning(f"Could not retrieve details for {cve} from any source.")
+                    logging.warning(f"Could not retrieve details for {cve} from any source.") # Uses normalized cve
 
             except Exception as e:
-                # Catch errors in the loop logic itself
-                logging.error(f"Error processing CVE {cve} in on_message loop: {e}", exc_info=True)
+                logging.error(f"Failed to process CVE {cve} after checking sources: {e}", exc_info=True) # Uses normalized cve
 
             await asyncio.sleep(0.2)
 
