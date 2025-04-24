@@ -613,11 +613,17 @@ class SecurityBot(commands.Bot):
 
                 if self.vulncheck_client.api_client:
                     logging.debug(f"Attempting VulnCheck fetch for {cve}") # Uses normalized cve
-                    cve_data = await self.vulncheck_client.get_cve_details(cve) # Pass normalized cve
-                    if cve_data:
-                        source_used = "VulnCheck"
+                    try:
+                        cve_data = await self.vulncheck_client.get_cve_details(cve) # Pass normalized cve
+                        if cve_data:
+                            source_used = "VulnCheck"
+                            async with self.stats_lock:
+                                self.stats_vulncheck_success += 1 # Increment VulnCheck success
+                    except Exception as e_vc:
+                        logger.error(f"Error during VulnCheck API call for {cve}: {e_vc}", exc_info=True)
                         async with self.stats_lock:
-                            self.stats_vulncheck_success += 1 # Increment VulnCheck success
+                            self.stats_api_errors_vulncheck += 1
+                        cve_data = None # Ensure cve_data is None if exception occurred
                 else:
                     logging.debug("VulnCheck client not available (no API key?), skipping.")
 
@@ -626,11 +632,20 @@ class SecurityBot(commands.Bot):
                     logging.debug(f"{log_msg_prefix} Attempting NVD fetch for {cve} (VulnCheck unavailable or failed).") # Uses normalized cve
 
                     if self.nvd_client:
-                        cve_data = await self.nvd_client.get_cve_details(cve) # Pass normalized cve
-                        if cve_data:
-                            source_used = "NVD"
+                        try:
+                            cve_data = await self.nvd_client.get_cve_details(cve) # Pass normalized cve
+                            if cve_data:
+                                source_used = "NVD"
+                                async with self.stats_lock:
+                                    self.stats_nvd_fallback_success += 1 # Increment NVD fallback success
+                        except Exception as e_nvd:
+                            logger.error(f"Error during NVD API call for {cve}: {e_nvd}", exc_info=True)
                             async with self.stats_lock:
-                                self.stats_nvd_fallback_success += 1 # Increment NVD fallback success
+                                self.stats_api_errors_nvd += 1
+                            # Consider checking e_nvd for rate limit details if possible
+                            # async with self.stats_lock:
+                            #    self.stats_rate_limits_nvd += 1
+                            cve_data = None # Ensure cve_data is None if exception occurred
                     else:
                          logger.warning("NVD Client not available, skipping NVD lookup.")
 
