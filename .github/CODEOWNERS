@@ -1,0 +1,3 @@
+# This is a basic CODEOWNERS file.
+# Designate the default owner(s) for all files in the repository.
+*    @mauvehed
