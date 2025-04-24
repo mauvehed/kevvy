@@ -8,6 +8,11 @@ from aiohttp import ClientTimeout
 
 logger = logging.getLogger(__name__)
 
+# Custom Exception for Rate Limit Errors
+class NVDRateLimitError(Exception):
+    """Custom exception raised when the NVD API indicates a rate limit."""
+    pass
+
 class NVDClient:
     BASE_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
     MAX_RETRIES = 3
@@ -30,8 +35,10 @@ class NVDClient:
         params = {'cveId': cve_id}
         retries = 0
         request_timeout = ClientTimeout(total=self.REQUEST_TIMEOUT)
+        last_status_code = None # Variable to store the status code that caused the last retry
 
         while retries <= self.MAX_RETRIES:
+            last_status_code = None # Reset for this attempt
             try:
                 logger.debug(f"Querying NVD API for {cve_id} at {self.BASE_URL}")
                 async with self.session.get(
@@ -40,6 +47,7 @@ class NVDClient:
                     headers=self.headers,
                     timeout=request_timeout
                 ) as response:
+                    last_status_code = response.status # Store the status code
                     if response.status == 200:
                         data = await response.json()
                         if data.get('vulnerabilities'):
@@ -56,6 +64,9 @@ class NVDClient:
                         continue
                     else:
                         logger.error(f"HTTP error fetching CVE details for {cve_id} from NVD: {response.status} {response.reason}", exc_info=True)
+                        # Check if this final failure was due to a rate limit status
+                        if response.status in [403, 429]:
+                            raise NVDRateLimitError(f"NVD API rate limit hit for {cve_id} (Status: {response.status})")
                         return None
 
             except asyncio.TimeoutError:
@@ -66,15 +77,17 @@ class NVDClient:
                     await asyncio.sleep(self.retry_delay)
                     continue
                 else:
+                    logger.error(f"Timeout fetching {cve_id} from NVD after {self.MAX_RETRIES} retries.")
                     return None
             except aiohttp.ClientError as e:
+                logger.warning(f"Network/Client error fetching NVD for {cve_id} ({e}).")
                 if retries < self.MAX_RETRIES:
                     retries += 1
-                    logger.warning(f"Network/Client error fetching NVD for {cve_id} ({e}). Retrying in {self.retry_delay}s... ({retries}/{self.MAX_RETRIES})")
+                    logger.warning(f"Retrying... ({retries}/{self.MAX_RETRIES})")
                     await asyncio.sleep(self.retry_delay)
                     continue
                 else:
-                    logger.error(f"Network/Client error fetching NVD for {cve_id} after retries: {e}", exc_info=True)
+                    logger.error(f"Network/Client error fetching {cve_id} from NVD after {self.MAX_RETRIES} retries: {e}", exc_info=True)
                     return None
             except (KeyError, IndexError, TypeError) as e:
                 logger.error(f"Error parsing NVD response for {cve_id}. Type: {type(e).__name__}, Details: {e}", exc_info=True)
@@ -84,6 +97,12 @@ class NVDClient:
                 return None
 
         logger.error(f"Failed to fetch CVE details for {cve_id} from NVD after {self.MAX_RETRIES} retries.")
+        # Check the status code from the *last* failed attempt within the loop
+        if last_status_code in [403, 429]:
+            raise NVDRateLimitError(f"NVD API rate limit hit for {cve_id} after max retries (Last Status: {last_status_code})")
+        
+        # If the loop finished due to other retryable errors (503/504) or other exceptions leading to 'continue'
+        # we ultimately return None here.
         return None
 
     def _parse_cve_data(self, cve_item: Dict[str, Any], url: str) -> Dict[str, Any]:
