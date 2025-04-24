@@ -24,20 +24,20 @@ jobs:
     - name: Check out code
       uses: actions/checkout@v4
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-        # Cache dependencies based on the lock file for speed
-        cache: 'poetry'
-        cache-dependency-path: 'poetry.lock'
-
+    # Install Poetry BEFORE setting up Python, as setup-python needs it for caching
     - name: Install Poetry
       uses: snok/install-poetry@v1
       with:
         virtualenvs-create: true
-        virtualenvs-in-project: true # Keeps venv local for caching/inspection
+        virtualenvs-in-project: true
         installer-parallel: true
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'poetry'
+        cache-dependency-path: 'poetry.lock'
 
     - name: Install dependencies via Poetry
       run: poetry install --no-interaction --no-root
