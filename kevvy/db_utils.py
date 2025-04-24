@@ -10,6 +10,8 @@ DEFAULT_DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'bot_con
 class KEVConfigDB:
     """Handles database operations for CISA KEV per-guild configurations."""
 
+    _conn: Optional[sqlite3.Connection]
+
     def __init__(self, db_path: str = DEFAULT_DB_PATH):
         """Initializes the database connection.
 

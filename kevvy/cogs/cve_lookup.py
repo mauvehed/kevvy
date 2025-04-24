@@ -91,16 +91,35 @@ class CVELookupCog(commands.Cog):
 
         try:
             logger.info(f"User {interaction.user} ({interaction.user.id}) looking up CVE: {cve_id} via /cve lookup")
+            
+            # --- Add Stat Increment ---
+            async with self.bot.stats_lock:
+                self.bot.stats_cve_lookups += 1
+            # --- End Stat Increment ---
+            
             cve_details = await self.nvd_client.get_cve_details(cve_id.upper())
 
             if cve_details:
+                # --- Add Stat Increment ---
+                # Using nvd_fallback_success counter here for simplicity as this command only uses NVD
+                async with self.bot.stats_lock:
+                    self.bot.stats_nvd_fallback_success += 1
+                # --- End Stat Increment ---
+                
                 embed = self.create_cve_embed(cve_details)
                 await interaction.followup.send(embed=embed)
             else:
                 await interaction.followup.send(f"🤷 Could not find details for `{cve_id}` in NVD, or an error occurred during fetch.")
 
         except Exception as e:
-            logger.error(f"Unexpected error during /cve lookup command for {cve_id}: {e}", exc_info=True)
+            logger.error(f"Unexpected error during /cve lookupcommand for {cve_id}: {e}", exc_info=True)
+            
+            # --- Add Stat Increment ---
+            async with self.bot.stats_lock:
+                self.bot.stats_api_errors_nvd += 1
+                # Could add rate limit check here too if needed
+            # --- End Stat Increment ---
+            
             await interaction.followup.send(f"❌ An unexpected error occurred while looking up `{cve_id}`. Please try again later.", ephemeral=True)
 
 
