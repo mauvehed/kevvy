@@ -15,11 +15,21 @@
   <img src="https://img.shields.io/badge/Add Me To Your Discord-purple?style=for-the-badge&logo=python&logoColor=white" />
 </a>
 
+<a href="https://kevvy.mauve.haus/">
+  <img src="https://img.shields.io/badge/Live Dashboard-blue?style=for-the-badge&logo=vue.js&logoColor=white" alt="Live Dashboard" />
+</a>
+
+<br />
+
 [![Build](https://github.com/mauvehed/kevvy/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/mauvehed/kevvy/actions/workflows/docker-publish.yml)
 [![Test](https://github.com/mauvehed/kevvy/actions/workflows/python-tests.yml/badge.svg)](https://github.com/mauvehed/kevvy/actions/workflows/python-tests.yml)
 [![CodeQL](https://github.com/mauvehed/kevvy/actions/workflows/codeql-analysis.yml/badge.svg?branch=main)](https://github.com/mauvehed/kevvy/actions/workflows/codeql-analysis.yml)
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/4ec1fc69d8a14048a80124167f6f7664)](https://www.codacy.com/gh/mauvehed/kevvy/dashboard)
 </div>
+
+<hr />
+
+<br />
 
 <details open="open">
 <summary>Table of Contents</summary>
