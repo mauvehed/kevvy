@@ -654,3 +654,41 @@ class SecurityBot(commands.Bot):
                 await message.channel.send(f"*Found {len(unique_cves)} unique CVEs, showing details for the first {MAX_EMBEDS_PER_MESSAGE}.*", allowed_mentions=discord.AllowedMentions.none())
 
         await self.process_commands(message)
+
+    async def _get_current_stats(self) -> Dict[str, Any]:
+        """Gathers current statistics counters under lock."""
+        async with self.stats_lock:
+            # Return a copy of the current stats
+            return {
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "bot_id": self.user.id if self.user else None,
+                "cve_lookups_since_last": self.stats_cve_lookups,
+                "kev_alerts_sent_since_last": self.stats_kev_alerts_sent,
+                "messages_processed_since_last": self.stats_messages_processed,
+                "vulncheck_success_since_last": self.stats_vulncheck_success,
+                "nvd_fallback_success_since_last": self.stats_nvd_fallback_success,
+                "api_errors_vulncheck_since_last": self.stats_api_errors_vulncheck,
+                "api_errors_nvd_since_last": self.stats_api_errors_nvd,
+                "api_errors_cisa_since_last": self.stats_api_errors_cisa,
+                "rate_limits_nvd_since_last": self.stats_rate_limits_nvd,
+                # Convert defaultdict to regular dict for JSON serialization before sending
+                "app_command_errors_since_last": dict(self.stats_app_command_errors)
+            }
+
+    async def _get_current_diagnostics(self) -> Dict[str, Any]:
+        """Gathers current diagnostic information."""
+        # Gather non-counter diagnostics (DB access outside lock)
+        enabled_kev_guilds = self.db.count_enabled_guilds() if self.db else 0
+
+        # No lock needed here as these lists/timestamps are updated less frequently
+        # or are assumed atomic reads/writes for basic types.
+        return {
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "bot_id": self.user.id if self.user else None,
+            "loaded_cogs": self.loaded_cogs,
+            "failed_cogs": self.failed_cogs,
+            "kev_enabled_guilds": enabled_kev_guilds,
+            "last_kev_check_success_ts": self.timestamp_last_kev_check_success.isoformat() if self.timestamp_last_kev_check_success else None,
+            "last_kev_alert_sent_ts": self.timestamp_last_kev_alert_sent.isoformat() if self.timestamp_last_kev_alert_sent else None,
+            # Add other relevant non-counter diagnostics here if needed
+        }
