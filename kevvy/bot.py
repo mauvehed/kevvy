@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 import aiohttp
+from aiohttp import ClientTimeout
 from .cve_monitor import CVEMonitor
 from .nvd_client import NVDClient
 from .vulncheck_client import VulnCheckClient
@@ -10,9 +11,12 @@ from .db_utils import KEVConfigDB
 import logging
 import os
 import asyncio
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
+from collections import defaultdict
 from .discord_log_handler import DiscordLogHandler
 import datetime
+import signal
+import platform
 
 MAX_EMBEDS_PER_MESSAGE = 5
 
@@ -31,14 +35,28 @@ class SecurityBot(commands.Bot):
         self.db: KEVConfigDB | None = None
         self.nvd_client: NVDClient | None = None
         self.cve_monitor: CVEMonitor | None = None
-        self.start_time: datetime.datetime = datetime.datetime.utcnow()
+        self.start_time: datetime.datetime = datetime.datetime.now(datetime.timezone.utc)
+        self.loaded_cogs: List[str] = []
+        self.failed_cogs: List[str] = []
+        self.timestamp_last_kev_check_success: Optional[datetime.datetime] = None
+        self.timestamp_last_kev_alert_sent: Optional[datetime.datetime] = None
 
-        # --- Statistics Counters --- Added Section
-        self.stats_lock = asyncio.Lock() # Lock for thread-safe counter updates
+        # --- Statistics Counters ---
+        self.stats_lock = asyncio.Lock()
+        # Basic counters (already existed)
         self.stats_cve_lookups = 0
         self.stats_kev_alerts_sent = 0
         self.stats_messages_processed = 0
-        # --- End Statistics Counters --- Added Section
+        # New counters
+        self.stats_vulncheck_success = 0
+        self.stats_nvd_fallback_success = 0
+        self.stats_api_errors_vulncheck = 0
+        self.stats_api_errors_nvd = 0
+        self.stats_api_errors_cisa = 0
+        self.stats_rate_limits_nvd = 0 # Specific counter for NVD rate limits
+        # App command errors: defaultdict(int) to count errors by type name
+        self.stats_app_command_errors: Dict[str, int] = defaultdict(int)
+        # --- End Statistics Counters ---
 
         # VulnCheck doesn't need session, can init here
         self.vulncheck_client = VulnCheckClient(api_key=vulncheck_api_token)
@@ -54,6 +72,26 @@ class SecurityBot(commands.Bot):
         else:
              logger.info("Kevvy Web reporting is disabled (KEVVY_WEB_URL not set).")
         # --- End Kevvy Web Reporting Config ---
+
+    async def _handle_signal(self, sig: signal.Signals):
+        """Handles received OS signals for graceful shutdown."""
+        logger.warning(f"Received signal {sig.name}. Initiating graceful shutdown...")
+        # Use create_task to ensure close() runs even if the handler is interrupted
+        asyncio.create_task(self.close(), name=f'Signal-{sig.name}-Shutdown')
+
+    def _setup_signal_handlers(self):
+        """Sets up OS signal handlers for graceful shutdown."""
+        try:
+            loop = asyncio.get_running_loop()
+            for sig in (signal.SIGINT, signal.SIGTERM):
+                loop.add_signal_handler(
+                    sig, lambda s=sig: asyncio.create_task(self._handle_signal(s))
+                )
+            logger.info(f"Registered signal handlers for SIGINT and SIGTERM.")
+        except NotImplementedError:
+            logger.warning("Signal handlers are not supported on this platform (likely Windows). Graceful shutdown via signals is disabled.")
+        except Exception as e:
+            logger.error(f"Failed to set up signal handlers: {e}", exc_info=True)
 
     async def setup_hook(self):
         self.http_session = aiohttp.ClientSession()
@@ -88,21 +126,34 @@ class SecurityBot(commands.Bot):
 
         # Load Cogs
         initial_extensions = [
-            'kevvy.cogs.kev_commands'
+            'kevvy.cogs.kev_commands',
+            'kevvy.cogs.cve_lookup'
             # Add other cogs here if needed
         ]
+        self.loaded_cogs = [] # Reset on setup
+        self.failed_cogs = [] # Reset on setup
         for extension in initial_extensions:
             try:
                 await self.load_extension(extension)
                 logger.info(f"Successfully loaded extension: {extension}")
+                self.loaded_cogs.append(extension)
             except commands.ExtensionError as e:
                 logger.error(f"Failed to load extension {extension}: {e}", exc_info=True)
+                self.failed_cogs.append(f"{extension} (Load Error)")
             except Exception as e:
                  logger.error(f"An unexpected error occurred loading extension {extension}: {e}", exc_info=True)
+                 self.failed_cogs.append(f"{extension} (Exception)")
+
+        # Setup signal handlers before syncing commands or starting tasks
+        self._setup_signal_handlers()
 
         # Sync the commands
-        await self.tree.sync()
-        logging.info(f"Synced application commands.")
+        try:
+            await self.tree.sync()
+            logging.info(f"Synced application commands.")
+        except Exception as e:
+            logger.error(f"Failed to sync application commands: {e}", exc_info=True)
+            # Consider adding this failure to failed_cogs or a separate status
 
         # Start background tasks
         self.check_cisa_kev_feed.start()
@@ -110,6 +161,11 @@ class SecurityBot(commands.Bot):
              self.report_status_task.start()
 
     async def close(self):
+        logger.warning("Bot shutdown initiated...")
+        if self.is_closed():
+            logger.info("Bot close() called, but already closing/closed.")
+            return
+
         logging.info("Closing bot resources...")
         if self.check_cisa_kev_feed.is_running():
             self.check_cisa_kev_feed.cancel()
@@ -128,7 +184,7 @@ class SecurityBot(commands.Bot):
             logging.info("Closed KEV Config Database connection.")
 
         await super().close()
-        logging.info("Bot closed.")
+        logger.warning("Bot shutdown complete.")
 
     @tasks.loop(hours=1)
     async def check_cisa_kev_feed(self):
@@ -137,58 +193,78 @@ class SecurityBot(commands.Bot):
             logger.debug("CISA KEV client or DB not initialized, skipping check.")
             return
 
+        task_start_time = datetime.datetime.now(datetime.timezone.utc)
+        success = False
         try:
             logger.info("Running periodic CISA KEV check...")
-            new_entries = await self.cisa_kev_client.get_new_kev_entries()
+            # Wrap client call to potentially track API errors
+            new_entries = []
+            try:
+                new_entries = await self.cisa_kev_client.get_new_kev_entries()
+                success = True # Mark success if call completes without CISA client exception
+            except Exception as client_error:
+                 logger.error(f"CISA KEV client error during fetch: {client_error}", exc_info=True)
+                 async with self.stats_lock:
+                     self.stats_api_errors_cisa += 1
+                 # Allow loop to continue to update timestamp
 
             if not new_entries:
-                logger.info("No new KEV entries found.")
-                return
+                logger.info("Completed periodic CISA KEV check. No new KEV entries found.")
+                # No return needed here, let it reach the success update
+            else:
+                logger.info(f"Found {len(new_entries)} new KEV entries. Checking configured guilds...")
+                enabled_configs = self.db.get_enabled_kev_configs()
 
-            logger.info(f"Found {len(new_entries)} new KEV entries. Checking configured guilds...")
-            enabled_configs = self.db.get_enabled_kev_configs()
+                if not enabled_configs:
+                    logger.info("No guilds have KEV monitoring enabled.")
+                else:
+                    alerts_sent_this_run = 0
+                    for config in enabled_configs:
+                        guild_id = config['guild_id']
+                        channel_id = config['channel_id']
 
-            if not enabled_configs:
-                logger.info("No guilds have KEV monitoring enabled.")
-                return
+                        guild = self.get_guild(guild_id)
+                        if not guild:
+                            logger.warning(f"Could not find guild {guild_id} from KEV config, skipping.")
+                            continue
 
-            for config in enabled_configs:
-                guild_id = config['guild_id']
-                channel_id = config['channel_id']
+                        target_channel = self.get_channel(channel_id)
+                        if not target_channel:
+                            logger.error(f"Could not find CISA KEV target channel with ID: {channel_id} in guild {guild.name} ({guild_id})")
+                            continue
+                        if not isinstance(target_channel, discord.TextChannel):
+                             logger.error(f"CISA KEV target channel {channel_id} in guild {guild.name} ({guild_id}) is not a TextChannel.")
+                             continue
 
-                guild = self.get_guild(guild_id)
-                if not guild:
-                    logger.warning(f"Could not find guild {guild_id} from KEV config, skipping.")
-                    continue
-
-                target_channel = self.get_channel(channel_id)
-                if not target_channel:
-                    logger.error(f"Could not find CISA KEV target channel with ID: {channel_id} in guild {guild.name} ({guild_id})")
-                    continue
-                if not isinstance(target_channel, discord.TextChannel):
-                     logger.error(f"CISA KEV target channel {channel_id} in guild {guild.name} ({guild_id}) is not a TextChannel.")
-                     continue
-
-                logger.info(f"Sending {len(new_entries)} new KEV entries to channel #{target_channel.name} in guild {guild.name}")
-                for entry in new_entries:
-                    embed = self._create_kev_embed(entry)
-                    try:
-                        await target_channel.send(embed=embed)
-                        # Increment stats counter after successful send
+                        logger.info(f"Sending {len(new_entries)} new KEV entries to channel #{target_channel.name} in guild {guild.name}")
+                        for entry in new_entries:
+                            embed = self._create_kev_embed(entry)
+                            try:
+                                await target_channel.send(embed=embed)
+                                alerts_sent_this_run += 1
+                                self.timestamp_last_kev_alert_sent = datetime.datetime.now(datetime.timezone.utc) # Update timestamp
+                                await asyncio.sleep(0.75)
+                            except discord.Forbidden:
+                                 logger.error(f"Missing permissions to send message in CISA KEV channel {channel_id} (Guild: {guild_id})")
+                                 break
+                            except discord.HTTPException as e:
+                                 logger.error(f"Failed to send CISA KEV embed for {entry.get('cveID', 'Unknown CVE')} to channel {channel_id} (Guild: {guild_id}): {e}")
+                            except Exception as e:
+                                 logger.error(f"Unexpected error sending KEV embed for {entry.get('cveID', 'Unknown CVE')} (Guild: {guild_id}): {e}", exc_info=True)
+                        await asyncio.sleep(2)
+                    # Update global counter after processing all guilds for this run
+                    if alerts_sent_this_run > 0:
                         async with self.stats_lock:
-                            self.stats_kev_alerts_sent += 1
-                        await asyncio.sleep(0.75)
-                    except discord.Forbidden:
-                         logger.error(f"Missing permissions to send message in CISA KEV channel {channel_id} (Guild: {guild_id})")
-                         break
-                    except discord.HTTPException as e:
-                         logger.error(f"Failed to send CISA KEV embed for {entry.get('cveID', 'Unknown CVE')} to channel {channel_id} (Guild: {guild_id}): {e}")
-                    except Exception as e:
-                         logger.error(f"Unexpected error sending KEV embed for {entry.get('cveID', 'Unknown CVE')} (Guild: {guild_id}): {e}", exc_info=True)
-                await asyncio.sleep(2)
+                            self.stats_kev_alerts_sent += alerts_sent_this_run
+
+            # Update success timestamp if the fetch didn't raise an exception
+            if success:
+                 self.timestamp_last_kev_check_success = task_start_time
 
         except Exception as e:
-            logger.error(f"Error during CISA KEV check loop: {e}", exc_info=True)
+            # Catch errors in the loop logic itself (outside CISA client call)
+            logger.error(f"Error during CISA KEV check loop logic: {e}", exc_info=True)
+            # Optionally increment a different counter for loop errors vs API errors
 
     @check_cisa_kev_feed.before_loop
     async def before_kev_check(self):
@@ -198,54 +274,76 @@ class SecurityBot(commands.Bot):
 
     @tasks.loop(minutes=5)
     async def report_status_task(self):
-        """Periodically sends status and basic stats to the kevvy-web server."""
+        """Periodically sends status and detailed diagnostics to the kevvy-web server."""
         if not self.kevvy_web_url or not self.kevvy_web_api_key or not self.http_session:
             logger.debug("Web reporting skipped: URL, API key, or HTTP session not available.")
             return
 
-        logger.debug("Preparing status report for kevvy-web...")
+        logger.debug("Preparing status & diagnostics report for kevvy-web...")
+        now = datetime.datetime.now(datetime.timezone.utc)
 
-        # Calculate uptime
-        now = datetime.datetime.utcnow()
+        # --- Gather Basic Status (already existed) ---
         uptime_delta = now - self.start_time
-        uptime_seconds = int(uptime_delta.total_seconds())
-
-        # Prepare status data
         status_data = {
             "timestamp": now.isoformat(),
             "bot_id": self.user.id if self.user else None,
             "bot_name": self.user.name if self.user else "Unknown",
             "guild_count": len(self.guilds),
             "latency_ms": round(self.latency * 1000, 2) if self.latency else None,
-            "uptime_seconds": uptime_seconds,
+            "uptime_seconds": int(uptime_delta.total_seconds()),
             "shard_id": self.shard_id if self.shard_id is not None else 0,
             "shard_count": self.shard_count if self.shard_count is not None else 1,
             "is_ready": self.is_ready(),
-            "is_closed": self.is_closed()
+            "is_closed": self.is_closed(),
         }
 
-        # Prepare stats data (Read current counters)
+        # --- Gather Detailed Stats & Diagnostics ---
+        # Make copies under lock to avoid holding lock during DB query/sending
         async with self.stats_lock:
-            cve_lookups = self.stats_cve_lookups
-            kev_alerts = self.stats_kev_alerts_sent
-            messages_processed = self.stats_messages_processed
+            stats_payload = {
+                "timestamp": now.isoformat(),
+                "cve_lookups_since_last": self.stats_cve_lookups,
+                "kev_alerts_sent_since_last": self.stats_kev_alerts_sent,
+                "messages_processed_since_last": self.stats_messages_processed,
+                "vulncheck_success_since_last": self.stats_vulncheck_success,
+                "nvd_fallback_success_since_last": self.stats_nvd_fallback_success,
+                "api_errors_vulncheck_since_last": self.stats_api_errors_vulncheck,
+                "api_errors_nvd_since_last": self.stats_api_errors_nvd,
+                "api_errors_cisa_since_last": self.stats_api_errors_cisa,
+                "rate_limits_nvd_since_last": self.stats_rate_limits_nvd,
+                "app_command_errors_since_last": dict(self.stats_app_command_errors) # Convert defaultdict
+            }
             # Reset counters after reading
             self.stats_cve_lookups = 0
             self.stats_kev_alerts_sent = 0
             self.stats_messages_processed = 0
+            self.stats_vulncheck_success = 0
+            self.stats_nvd_fallback_success = 0
+            self.stats_api_errors_vulncheck = 0
+            self.stats_api_errors_nvd = 0
+            self.stats_api_errors_cisa = 0
+            self.stats_rate_limits_nvd = 0
+            self.stats_app_command_errors.clear()
 
-        stats_data = {
+        # Gather non-counter diagnostics
+        enabled_kev_guilds = self.db.count_enabled_guilds() if self.db else 0
+
+        diagnostics_payload = {
             "timestamp": now.isoformat(),
-            "cve_lookups_since_last": cve_lookups,
-            "kev_alerts_sent_since_last": kev_alerts,
-            "messages_processed_since_last": messages_processed
+            "loaded_cogs": self.loaded_cogs,
+            "failed_cogs": self.failed_cogs,
+            "kev_enabled_guilds": enabled_kev_guilds,
+            "last_kev_check_success_ts": self.timestamp_last_kev_check_success.isoformat() if self.timestamp_last_kev_check_success else None,
+            "last_kev_alert_sent_ts": self.timestamp_last_kev_alert_sent.isoformat() if self.timestamp_last_kev_alert_sent else None,
         }
 
-        # Send status
+        # --- Send Data --- 
+        # Send basic status
         await self._send_to_web_portal("/api/v1/status", status_data)
-
-        # Send stats (optional, maybe less frequently in future)
-        await self._send_to_web_portal("/api/v1/stats", stats_data)
+        # Send detailed stats counters
+        await self._send_to_web_portal("/api/v1/stats", stats_payload)
+        # Send diagnostic info
+        await self._send_to_web_portal("/api/v1/diagnostics", diagnostics_payload)
 
     @report_status_task.before_loop
     async def before_report_status(self):
@@ -271,9 +369,10 @@ class SecurityBot(commands.Bot):
             'Content-Type': 'application/json',
             'X-API-Key': self.kevvy_web_api_key
         }
+        request_timeout = ClientTimeout(total=10)
 
         try:
-            async with self.http_session.post(target_url, json=data, headers=headers, timeout=10) as response:
+            async with self.http_session.post(target_url, json=data, headers=headers, timeout=request_timeout) as response:
                 if 200 <= response.status < 300:
                     logger.debug(f"Successfully sent data to kevvy-web endpoint {endpoint}. Status: {response.status}")
                 else:
@@ -316,15 +415,109 @@ class SecurityBot(commands.Bot):
 
         return embed
 
-    async def on_ready(self):
-        self.start_time = datetime.datetime.utcnow()
-        logging.info(f'Logged in as {self.user.name} ({self.user.id})')
-        logging.info(f'Command prefix: {self.command_prefix}')
-        logging.info(f'Ready! Listening for CVEs...')
+    async def on_connect(self):
+        """Called when the bot successfully connects to the Discord Gateway."""
+        logger.info(f"Successfully connected to Discord Gateway. Shard ID: {self.shard_id}")
 
+    async def on_disconnect(self):
+        """Called when the bot loses connection to the Discord Gateway."""
+        logger.warning(f"Disconnected from Discord Gateway unexpectedly. Shard ID: {self.shard_id}. Will attempt to reconnect.")
+
+    async def on_resumed(self):
+        """Called when the bot successfully resumes a session after a disconnect."""
+        logger.info(f"Successfully resumed Discord Gateway session. Shard ID: {self.shard_id}")
+
+    async def on_ready(self):
+        """Called when the bot is fully ready and internal cache is built."""
+        if not hasattr(self, 'start_time'): # Prevent overwriting if on_ready is called multiple times (e.g., after resume)
+            self.start_time = datetime.datetime.now(datetime.timezone.utc)
+        logger.info(f'Logged in as {self.user.name} ({self.user.id})')
+        logger.info(f'Command prefix: {self.command_prefix}')
+        logger.info(f'Successfully fetched {len(self.guilds)} guilds.')
+        logger.info('Bot is ready! Listening for CVEs...')
         await self._setup_discord_logging()
 
-        logging.info('------')
+    async def on_guild_join(self, guild: discord.Guild):
+        """Called when the bot joins a new guild."""
+        logger.info(f"Joined guild: {guild.name} ({guild.id}). Owner: {guild.owner} ({guild.owner_id}). Members: {guild.member_count}")
+        # Optional: Send a welcome message to the guild owner or a default channel
+
+    async def on_guild_remove(self, guild: discord.Guild):
+        """Called when the bot is removed from a guild."""
+        logger.info(f"Removed from guild: {guild.name} ({guild.id}).")
+        # Optional: Clean up any guild-specific configurations from the database
+
+    async def on_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+        """Global error handler for application (slash) commands."""
+        command_name = interaction.command.name if interaction.command else "Unknown Command"
+        user = interaction.user
+        guild = interaction.guild
+        channel = interaction.channel
+
+        # Safely get guild/channel info for logging
+        guild_name = guild.name if guild else "DM"
+        guild_id = guild.id if guild else "N/A"
+        # Use getattr for channel name as some types (like DMChannel) lack it
+        channel_name = getattr(channel, 'name', 'DM/Unknown Channel')
+        channel_id = channel.id if channel else "N/A"
+
+        log_message = (
+            f"App Command Error in command '{command_name}' "
+            f"(User: {user} ({user.id}), Guild: {guild_name} ({guild_id}), "
+            f"Channel: {channel_name} ({channel_id})): {error}"
+        )
+
+        if isinstance(error, app_commands.CommandNotFound):
+            logger.warning(f"CommandNotFound error suppressed: {log_message}") # Usually not an issue unless commands aren't syncing
+            # Don't need to inform user, Discord handles this
+            return
+        elif isinstance(error, app_commands.CommandOnCooldown):
+            logger.warning(log_message)
+            await interaction.response.send_message(
+                f"⏳ This command is on cooldown. Please try again in {error.retry_after:.2f} seconds.",
+                ephemeral=True
+            )
+        elif isinstance(error, app_commands.MissingPermissions):
+            logger.error(log_message)
+            await interaction.response.send_message(
+                f"🚫 You do not have the required permissions to use this command: {', '.join(error.missing_permissions)}",
+                ephemeral=True
+            )
+        elif isinstance(error, app_commands.BotMissingPermissions):
+            logger.error(log_message)
+            try:
+                await interaction.response.send_message(
+                    f"🚫 I lack the necessary permissions to run this command: {', '.join(error.missing_permissions)}."
+                    f" Please ensure I have these permissions in this channel/server.",
+                    ephemeral=True
+                )
+            except discord.Forbidden:
+                 # Also safely access guild/channel id here
+                 logger.error(f"Cannot even send error message about BotMissingPermissions in channel {channel_id} (Guild: {guild_id})")
+        elif isinstance(error, app_commands.CheckFailure):
+            # This covers custom checks failing (e.g., @app_commands.check decorators)
+            logger.warning(f"CheckFailure: {log_message}")
+            # Provide a generic message or tailor based on check type if needed
+            await interaction.response.send_message(
+                "❌ You do not meet the requirements to use this command.",
+                ephemeral=True
+            )
+        else:
+            # Log other/unexpected errors
+            logger.error(f"Unhandled App Command Error: {log_message}", exc_info=error)
+            try:
+                # Send a generic error message if possible
+                if interaction.response.is_done():
+                    await interaction.followup.send("❌ An unexpected error occurred while processing your command.", ephemeral=True)
+                else:
+                    await interaction.response.send_message("❌ An unexpected error occurred while processing your command.", ephemeral=True)
+            except Exception as e:
+                 logger.error(f"Failed to send generic error message to user after unhandled App Command Error: {e}")
+
+        # Increment error counter using the error type name
+        error_type_name = type(error).__name__
+        async with self.stats_lock:
+            self.stats_app_command_errors[error_type_name] += 1
 
     async def _setup_discord_logging(self):
         """Sets up the DiscordLogHandler based on environment variables."""
@@ -401,37 +594,66 @@ class SecurityBot(commands.Bot):
                 break
 
             cve_data = None
+            source_used = None # Track which source succeeded
             try:
-                # Increment lookup counter for each unique CVE attempted
                 async with self.stats_lock:
-                    self.stats_cve_lookups += 1
+                    self.stats_cve_lookups += 1 # Count total lookups attempted
 
-                if self.vulncheck_client.api_client:
-                    logging.debug(f"Attempting VulnCheck fetch for {cve}")
-                    cve_data = await self.vulncheck_client.get_cve_details(cve)
+                # --- Try VulnCheck First --- 
+                if self.vulncheck_client and self.vulncheck_client.api_client:
+                    try:
+                        logger.debug(f"Attempting VulnCheck fetch for {cve}")
+                        cve_data = await self.vulncheck_client.get_cve_details(cve)
+                        if cve_data:
+                            source_used = "VulnCheck"
+                        # No specific rate limit handling shown, assume SDK handles or log generic error
+                    except Exception as vc_error:
+                        logger.error(f"VulnCheck client error for {cve}: {vc_error}", exc_info=True)
+                        async with self.stats_lock:
+                            self.stats_api_errors_vulncheck += 1
                 else:
-                    logging.debug("VulnCheck client not available (no API key?), skipping.")
+                    logging.debug("VulnCheck client not available, skipping.")
 
-                if not cve_data:
-                    if self.vulncheck_client.api_client:
-                        logging.debug(f"VulnCheck failed for {cve}, attempting NVD fallback.")
-                    else:
-                        logging.debug(f"Attempting NVD fetch for {cve} (VulnCheck unavailable).")
-
-                    if self.nvd_client:
+                # --- Fallback to NVD --- 
+                if not cve_data and self.nvd_client:
+                    try:
+                        logger.debug(f"Attempting NVD fallback for {cve}")
                         cve_data = await self.nvd_client.get_cve_details(cve)
-                    else:
-                         logger.warning("NVD Client not available, skipping NVD lookup.")
+                        if cve_data:
+                             source_used = "NVD"
+                    # Handle potential NVD specific errors (e.g., rate limit) - requires NVDClient to raise specific exceptions or return status
+                    # For now, catch generic exception and increment general NVD error counter
+                    # TODO: Enhance NVDClient to return status/error info for better counting
+                    except Exception as nvd_error:
+                        logger.error(f"NVD client error for {cve}: {nvd_error}", exc_info=True)
+                        # Basic check if it might be a rate limit (needs improvement)
+                        is_rate_limit = "403" in str(nvd_error) or "429" in str(nvd_error)
+                        async with self.stats_lock:
+                            self.stats_api_errors_nvd += 1
+                            if is_rate_limit:
+                                self.stats_rate_limits_nvd += 1
+                elif not self.nvd_client:
+                     logger.warning("NVD Client not available, skipping NVD lookup.")
 
+                # --- Process Result --- 
                 if cve_data:
+                    # Increment success counter based on source
+                    async with self.stats_lock:
+                        if source_used == "VulnCheck":
+                             self.stats_vulncheck_success += 1
+                        elif source_used == "NVD":
+                             self.stats_nvd_fallback_success += 1
+
                     embeds = await self.cve_monitor.create_cve_embed(cve_data)
                     embeds_to_send.extend(embeds)
                     processed_count += 1
                 else:
+                    # Lookup failed from all sources
                     logging.warning(f"Could not retrieve details for {cve} from any source.")
 
             except Exception as e:
-                logging.error(f"Failed to process CVE {cve} after checking sources: {e}", exc_info=True)
+                # Catch errors in the loop logic itself
+                logging.error(f"Error processing CVE {cve} in on_message loop: {e}", exc_info=True)
 
             await asyncio.sleep(0.2)
 
