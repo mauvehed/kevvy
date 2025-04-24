@@ -12,10 +12,11 @@
 <br />
 
 <a href= "https://discord.com/api/oauth2/authorize?client_id=1363214368648724630&permissions=277025459200&scope=bot%20applications.commands">
-  <img src="https://img.shields.io/badge/Add Me To Your Discord-purple?style=for-the-badge&logo=python&logoColor=white" /
+  <img src="https://img.shields.io/badge/Add Me To Your Discord-purple?style=for-the-badge&logo=python&logoColor=white" />
 </a>
 
 [![Build](https://github.com/mauvehed/kevvy/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/mauvehed/kevvy/actions/workflows/docker-publish.yml)
+[![Test](https://github.com/mauvehed/kevvy/actions/workflows/python-tests.yml/badge.svg)](https://github.com/mauvehed/kevvy/actions/workflows/python-tests.yml)
 [![CodeQL](https://github.com/mauvehed/kevvy/actions/workflows/codeql-analysis.yml/badge.svg?branch=main)](https://github.com/mauvehed/kevvy/actions/workflows/codeql-analysis.yml)
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/4ec1fc69d8a14048a80124167f6f7664)](https://www.codacy.com/gh/mauvehed/kevvy/dashboard)
 </div>
@@ -50,8 +51,8 @@
 
 1.  **Automatic CVE Detection:** It automatically monitors chat messages for CVE (Common Vulnerabilities and Exposures) identifiers (e.g., `CVE-2023-12345`). When a CVE is detected, the bot fetches detailed information primarily from the [VulnCheck API](https://vulncheck.com/) (if an API key is provided). If VulnCheck is unavailable or doesn't return data, it falls back to the [NIST National Vulnerability Database (NVD) API v2.0](https://nvd.nist.gov/developers/vulnerabilities).
 2.  **Direct CVE Lookup:** Users can explicitly request details for a specific CVE using the `/cve lookup` command.
-
-Additionally, the bot can monitor the [CISA Known Exploited Vulnerabilities (KEV) catalog](https://www.cisa.gov/known-exploited-vulnerabilities-catalog). Server administrators can enable this feature per server using slash commands, designating a channel for new KEV alerts.
+3.  **CISA KEV Monitoring:** Optionally monitors the [CISA Known Exploited Vulnerabilities (KEV) catalog](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) and sends alerts for new entries to configured channels.
+4.  **Web Dashboard:** Includes a companion web application (`kevvy-web`) that displays real-time statistics and diagnostics reported by the bot, such as uptime, API usage, KEV check status, and internal errors.
 
 Key features:
 *   Automatic detection of CVE IDs in messages.
@@ -60,6 +61,7 @@ Key features:
 *   Displays CVSS score (v3.1/v3.0/v2.0), vector string, description, publication dates, CWEs, and reference links.
 *   Consolidates responses for messages containing multiple CVEs (max 5 embeds per message by default) to prevent spam.
 *   Optionally checks the CISA KEV catalog periodically and posts alerts for new entries to a designated channel (configurable per server).
+*   Provides a web dashboard (`kevvy-web`) for monitoring bot statistics and health.
 
 ### Built With
 
@@ -71,6 +73,7 @@ Key features:
 *   <img src="https://img.shields.io/badge/VulnCheck SDK-blue?style=for-the-badge&logo=python&logoColor=white" />
 *   <img src="https://img.shields.io/badge/NVD API v2.0-darkgreen?style=for-the-badge&logo=python&logoColor=white" />
 *   <img src="https://img.shields.io/badge/CISA KEV Catalog-red?style=for-the-badge&logo=python&logoColor=white" />
+*   **Web:** <img src="https://img.shields.io/badge/Node.js-43853d?style=for-the-badge&logo=node.js&logoColor=white" /> <img src="https://img.shields.io/badge/Express.js-404d59?style=for-the-badge&logo=express&logoColor=white" /> <img src="https://img.shields.io/badge/Vue.js-35495e?style=for-the-badge&logo=vue.js&logoColor=white" /> <img src="https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white" /> <img src="https://img.shields.io/badge/SQLite-07405e?style=for-the-badge&logo=sqlite&logoColor=white" />
 
 ## Usage
 
@@ -92,6 +95,10 @@ Here's the bot in action:
 **CISA KEV Alert Notification:**
 
 ![KEV Alert Notification](docs/images/KEV%20Alert.png)
+
+**Web Dashboard:**
+
+![Web Dashboard Preview](docs/images/kevvy_dashboard.png)
 
 ## Getting Started
 
@@ -117,43 +124,55 @@ Then, edit the `.env` file:
 *   `DISCORD_COMMAND_PREFIX` (Optional): The prefix for traditional commands (if any are added later). Defaults to `!`. The primary interaction is automatic detection and slash commands.
 *   `LOGGING_CHANNEL_ID` (Optional): The ID of the Discord channel to which log messages should be sent.
 *   `DISABLE_DISCORD_LOGGING` (Optional): Set to `true` to disable sending logs to the Discord channel specified by `LOGGING_CHANNEL_ID`. Defaults to `false`.
+*   `KEVVY_WEB_URL` (Optional, Used by Bot): The URL the bot uses to send status/stats updates to the web server. Defaults to `http://localhost:5253` but should be `http://kevvy_web:5253` when using the provided `docker-compose.yml`.
+*   `KEVVY_WEB_SHARED_SECRET` (Optional): A shared secret string that the bot must send to the web server for authentication when posting data. If set, it must match the `SHARED_SECRET` environment variable set for the `kevvy-web` service.
 
 ### Running with Docker (Recommended)
 
 1.  Ensure Docker and Docker Compose are installed.
-2.  Make sure you have configured your `.env` file.
-3.  Pull the latest image and start the container in detached mode:
+2.  Make sure you have configured your `.env` file (especially `DISCORD_TOKEN`). The `docker-compose.yml` file is already set up to pass the necessary environment variables (like `KEVVY_WEB_URL=http://kevvy_web:5253`) to the bot container.
+3.  Start both the bot and the web server container in detached mode:
     ```bash
-    docker-compose up -d
+    docker-compose up -d --build
     ```
-    _(This will automatically pull the `ghcr.io/mauvehed/kevvy:latest` image if you don't have it locally)._
-    
-4.  To view logs:
+    _(This will automatically pull the `ghcr.io/mauvehed/kevvy:latest` image for the bot if you don't have it locally, and build the `kevvy-web` image)._
+4.  **Access Web Dashboard:** Open your browser to `http://localhost:5253` (or the port you mapped if you changed `docker-compose.yml`).
+5.  **Check Health:** You can check the web service health at `http://localhost:5253/api/v1/health`.
+6.  **View Logs:**
     ```bash
+    # View combined logs
     docker-compose logs -f
+    # View only bot logs
+    docker-compose logs -f kevvy-bot
+    # View only web server logs
+    docker-compose logs -f kevvy-web
     ```
-5.  To stop the container:
+7.  **Stop Containers:**
     ```bash
     docker-compose down
     ```
 
 ### Running Locally with Poetry
 
+This setup is primarily for development. Running both the bot and the web server requires separate steps.
+
+**Bot:**
 1.  Ensure Python 3.10+ and Poetry are installed.
-2.  Clone the repository:
-    ```bash
-    git clone https://github.com/mauvehed/kevvy.git
-    cd kevvy
-    ```
-3.  Install dependencies:
-    ```bash
-    poetry install
-    ```
-4.  Configure your `.env` file.
-5.  Run the bot:
-    ```bash
-    poetry run python main.py
-    ```
+2.  Clone the repository: `git clone https://github.com/mauvehed/kevvy.git && cd kevvy`
+3.  Install bot dependencies: `poetry install`
+4.  Configure your `.env` file (ensure `KEVVY_WEB_URL` points to where your local web server will run, e.g., `http://localhost:5253`).
+5.  Run the bot: `poetry run python main.py`
+
+**Web Server (`kevvy-web`):**
+1.  Ensure Node.js and npm are installed.
+2.  Navigate to the web server directory: `cd kevvy-web`
+3.  Install backend dependencies: `npm install`
+4.  (Optional) Configure environment variables for the web server if needed (e.g., `PORT`, `SHARED_SECRET`).
+5.  Start the backend server: `node server.js`
+6.  Navigate to the frontend directory: `cd frontend`
+7.  Install frontend dependencies: `npm install`
+8.  Build the frontend for production: `npm run build` (The backend server serves the built files from `frontend/dist`)
+9.  OR Run the frontend in development mode (connects to backend automatically if running): `npm run dev`
 
 ## Roadmap
 
@@ -174,8 +193,9 @@ Reach out to the maintainer at one of the following places:
 
 First off, thanks for taking the time to contribute! Contributions are what make the open-source community such an amazing place to learn, inspire, and create. Any contributions you make will benefit everybody else and are **greatly appreciated**.
 
-
 Please read [our contribution guidelines](docs/CONTRIBUTING.md), and thank you for being involved!
+
+The project includes automated testing using `pytest` and CI checks via GitHub Actions to help maintain code quality.
 
 ## Authors & contributors
 
