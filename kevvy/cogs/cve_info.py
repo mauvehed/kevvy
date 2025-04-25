@@ -3,7 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 import aiohttp
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 # Use absolute imports for type checking
@@ -47,9 +47,9 @@ class CVEInfoCog(commands.Cog):
 
         try:
             params = {
-                'resultsPerPage': 10,
-                'sortBy': 'publishedDate', # Correct parameter for sorting
-                'sortOrder': 'DESC'       # Get the latest first
+                'resultsPerPage': '10',
+                'sortBy': 'publishedDate',
+                'sortOrder': 'DESC'
             }
             # Use bot's session and pass headers
             async with self.bot.http_session.get(NVD_API_URL, params=params, headers=headers) as response:
@@ -64,7 +64,7 @@ class CVEInfoCog(commands.Cog):
                 embed = discord.Embed(
                     title="Latest 10 CVEs",
                     color=discord.Color.orange(),
-                    timestamp=datetime.utcnow()
+                    timestamp=datetime.now(timezone.utc)
                 )
                 embed.set_footer(text="Data sourced from NVD")
 
