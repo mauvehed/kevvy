@@ -86,7 +86,7 @@ class CVEInfoCog(commands.Cog):
                 await interaction.followup.send(embed=embed)
 
         except aiohttp.ClientResponseError as e: # Catch more specific error for status
-            logger.error(f"HTTP error fetching CVEs: {e.status} {e.message}")
+            logger.error(f"HTTP error fetching CVEs: {e.status} {str(e)}")
             await interaction.followup.send(f"Failed to fetch CVE data: Network error ({e.status}). Please try again later.", ephemeral=True)
         except aiohttp.ClientError as e: # Catch other client errors
             logger.error(f"HTTP error fetching CVEs: {e}")
