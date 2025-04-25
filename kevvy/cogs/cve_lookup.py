@@ -19,10 +19,12 @@ CVE_REGEX = re.compile(r'^CVE-\d{4}-\d{4,}$', re.IGNORECASE)
 class CVELookupCog(commands.Cog):
     """Cog for handling CVE lookup commands."""
 
+    # Define the group at the class level again
+    cve_group = app_commands.Group(name="cve", description="Commands related to CVE information.")
+
     def __init__(self, bot: 'SecurityBot'):
         self.bot = bot
         self.nvd_client: Optional['NVDClient'] = self.bot.nvd_client
-        self.cve_group = bot.cve_command_group
 
     def create_cve_embed(self, cve_data: dict) -> discord.Embed:
         """Creates a Discord embed from fetched CVE data."""
@@ -68,7 +70,7 @@ class CVELookupCog(commands.Cog):
 
         return embed
 
-    @self.cve_group.command(name="lookup", description="Look up details for a specific CVE ID from NVD.")
+    @cve_group.command(name="lookup", description="Look up details for a specific CVE ID from NVD.")
     @app_commands.describe(cve_id="The CVE ID (e.g., CVE-2023-12345)")
     async def lookup_subcommand(self, interaction: discord.Interaction, cve_id: str):
         """Handles the /cve lookup subcommand."""

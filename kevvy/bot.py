@@ -30,9 +30,6 @@ class SecurityBot(commands.Bot):
         prefix = os.getenv('DISCORD_COMMAND_PREFIX', '!')
         super().__init__(command_prefix=prefix, intents=intents, enable_debug_events=True)
 
-        # Define the central CVE command group here
-        self.cve_command_group = app_commands.Group(name="cve", description="Commands related to CVE information.")
-
         self.http_session: aiohttp.ClientSession | None = None
         self.cisa_kev_client: CisaKevClient | None = None
         self.db: KEVConfigDB | None = None
@@ -126,15 +123,6 @@ class SecurityBot(commands.Bot):
             logger.info(f"Initialized CVEMonitor (KEV support: {'enabled' if self.cisa_kev_client else 'disabled'}).")
         else:
             logger.error("Could not initialize CVEMonitor because NVDClient failed to initialize.")
-
-        # Add the central command group to the tree BEFORE loading cogs
-        try:
-             self.tree.add_command(self.cve_command_group)
-             logger.info("Registered central 'cve' command group.")
-        except Exception as e:
-             # Log error if group registration fails, but maybe continue?
-             logger.error(f"Failed to register central 'cve' command group: {e}", exc_info=True)
-             # Depending on severity, you might want to stop here
 
         # Load Cogs (they will access self.cve_command_group)
         initial_extensions = [

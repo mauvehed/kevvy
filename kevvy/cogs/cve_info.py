@@ -19,12 +19,15 @@ NVD_API_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 class CVEInfoCog(commands.Cog):
     """Cog for fetching CVE information."""
 
+    # Define the group at the class level again
+    cve_group = app_commands.Group(name="cve", description="Commands related to CVE information.")
+
     def __init__(self, bot: 'SecurityBot'):
         self.bot = bot
-        # Store the central group instance from the bot
-        self.cve_group = bot.cve_command_group
+        # REMOVED storing central group instance
+        # self.cve_group = bot.cve_command_group
 
-    @self.cve_group.command(name="latest", description="Fetches the 10 latest CVEs from NVD.")
+    @cve_group.command(name="latest", description="Fetches the 10 latest CVEs from NVD.")
     async def latest_subcommand(self, interaction: discord.Interaction):
         """Handles the /cve latest subcommand."""
         await interaction.response.defer() # Acknowledge interaction while fetching
