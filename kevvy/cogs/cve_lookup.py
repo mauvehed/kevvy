@@ -12,17 +12,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# REMOVED module-level group definition
-# cve_group = app_commands.Group(name="cve", description="Commands related to CVE information.")
+# Define the group at the MODULE level
+cve_group = app_commands.Group(name="cve", description="Commands related to CVE information.")
 
 # Basic regex for CVE ID format
 CVE_REGEX = re.compile(r'^CVE-\d{4}-\d{4,}$', re.IGNORECASE)
 
 class CVELookupCog(commands.Cog):
     """Cog for handling CVE lookup commands."""
-
-    # Define the group within the class
-    cve_group = app_commands.Group(name="cve", description="Commands related to CVE information.")
 
     def __init__(self, bot: 'SecurityBot'):
         self.bot = bot
@@ -72,7 +69,6 @@ class CVELookupCog(commands.Cog):
 
         return embed
 
-    # Decorate using the class-level group object
     @cve_group.command(name="lookup", description="Look up details for a specific CVE ID from NVD.")
     @app_commands.guild_only()
     @app_commands.default_permissions(send_messages=True)

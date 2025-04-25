@@ -6,6 +6,9 @@ import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
+# Import the module-level group object from cve_lookup
+from .cve_lookup import cve_group as imported_cve_group
+
 # Use absolute imports for type checking
 if TYPE_CHECKING:
     from kevvy.bot import SecurityBot
@@ -19,13 +22,14 @@ NVD_API_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 class CVEInfoCog(commands.Cog):
     """Cog for fetching CVE information."""
 
-    # Define the group within the class (matching name)
-    cve_group = app_commands.Group(name="cve", description="Commands related to CVE information.")
+    # REMOVED Group definition from class
+    # cve_group = app_commands.Group(name="cve", description="Commands related to CVE information.")
 
     def __init__(self, bot: 'SecurityBot'):
         self.bot = bot
 
-    @cve_group.command(name="latest", description="Fetches the 10 latest CVEs from NVD.")
+    # Decorate using the IMPORTED module-level group object
+    @imported_cve_group.command(name="latest", description="Fetches the 10 latest CVEs from NVD.")
     @app_commands.guild_only()
     @app_commands.default_permissions(send_messages=True)
     async def latest_subcommand(self, interaction: discord.Interaction):

@@ -30,6 +30,9 @@ class SecurityBot(commands.Bot):
         prefix = os.getenv('DISCORD_COMMAND_PREFIX', '!')
         super().__init__(command_prefix=prefix, intents=intents, enable_debug_events=True)
 
+        # Define the shared CVE command group here
+        self.cve_group = app_commands.Group(name="cve", description="Commands related to CVE information.")
+
         self.http_session: aiohttp.ClientSession | None = None
         self.cisa_kev_client: CisaKevClient | None = None
         self.db: KEVConfigDB | None = None
