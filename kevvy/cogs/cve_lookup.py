@@ -12,15 +12,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Define the group at the MODULE level
+cve_group = app_commands.Group(name="cve", description="Commands related to CVE information.")
+
 # Basic regex for CVE ID format
 CVE_REGEX = re.compile(r'^CVE-\d{4}-\d{4,}$', re.IGNORECASE)
 
-# Define the command group
 class CVELookupCog(commands.Cog):
     """Cog for handling CVE lookup commands."""
-
-    # Define the group ONLY in this cog
-    cve_group = app_commands.Group(name="cve", description="Commands related to CVE information.")
 
     def __init__(self, bot: 'SecurityBot'):
         self.bot = bot
@@ -70,10 +69,10 @@ class CVELookupCog(commands.Cog):
 
         return embed
 
-    # Decorate using the class-level group object
+    # Decorate using the MODULE-level group object
     @cve_group.command(name="lookup", description="Look up details for a specific CVE ID from NVD.")
-    @app_commands.guild_only() # Assuming these should be guild only, adjust if not
-    @app_commands.default_permissions(send_messages=True) # Add reasonable default permissions
+    @app_commands.guild_only()
+    @app_commands.default_permissions(send_messages=True)
     @app_commands.describe(cve_id="The CVE ID (e.g., CVE-2023-12345)")
     async def lookup_subcommand(self, interaction: discord.Interaction, cve_id: str):
         """Handles the /cve lookup subcommand."""
