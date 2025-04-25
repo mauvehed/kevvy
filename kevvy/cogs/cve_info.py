@@ -26,6 +26,8 @@ class CVEInfoCog(commands.Cog):
         self.bot = bot
 
     @imported_cve_group.command(name="latest", description="Fetches the 10 latest CVEs from NVD.")
+    @app_commands.guild_only()
+    @app_commands.default_permissions(send_messages=True)
     async def latest_subcommand(self, interaction: discord.Interaction):
         """Handles the /cve latest subcommand."""
         await interaction.response.defer() # Acknowledge interaction while fetching
