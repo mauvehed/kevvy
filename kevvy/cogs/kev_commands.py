@@ -64,6 +64,7 @@ class KEVCog(commands.Cog):
                  await interaction.response.send_message("An error occurred while disabling KEV monitoring.", ephemeral=True)
 
     @kev_group.command(name="status", description="Check KEV alert status for this server.")
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def kev_status_command(self, interaction: discord.Interaction):
         """Check the CISA KEV monitoring status for this server."""
         if not self.db:
