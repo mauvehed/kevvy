@@ -65,23 +65,20 @@ class CVEInfoCog(commands.Cog):
                     # Truncate description if too long
                     max_desc_len = 150
                     if len(description) > max_desc_len:
-                        description = description[:max_desc_len] + "..."
+                        description = f"{description[:max_desc_len]}..."
 
                     # Get CVSS v3.1 score
                     cvss_score = "N/A"
                     metrics = cve_data.get('metrics', {})
-                    cvss_v31 = metrics.get('cvssMetricV31', [])
-                    if cvss_v31:
-                        cvss_score = cvss_v31[0].get('cvssData', {}).get('baseScore', 'N/A')
-                        # Also include severity for context if available
-                        severity = cvss_v31[0].get('cvssData', {}).get('baseSeverity', '')
-                        if severity:
+                    if cvss_v31 := metrics.get('cvssMetricV31', []):
+                        cvss_data = cvss_v31[0].get('cvssData', {})
+                        cvss_score = cvss_data.get('baseScore', 'N/A')
+
+                        if severity := cvss_data.get('baseSeverity', ''):
                              cvss_score = f"{cvss_score} ({severity})"
 
-                    # Correctly format the multi-line f-string
                     description_lines.append(
-                        f"**[{cve_id}]** (Score: {cvss_score})\\n"
-                        f"{description}\\n"
+                        f"**[{cve_id}]** (Score: {cvss_score})\\n{description}\\n"
                     )
 
                 embed.description = "\\n".join(description_lines) if description_lines else "No CVEs found."
