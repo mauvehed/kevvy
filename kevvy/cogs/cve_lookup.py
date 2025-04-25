@@ -22,10 +22,7 @@ class CVELookupCog(commands.Cog):
     def __init__(self, bot: 'SecurityBot'):
         self.bot = bot
         self.nvd_client: Optional['NVDClient'] = self.bot.nvd_client
-
-    # Define the base group - this won't be directly callable
-    # You can add a description here if desired
-    cve_group = app_commands.Group(name="cve", description="Commands related to CVE information.")
+        self.cve_group = bot.cve_command_group
 
     def create_cve_embed(self, cve_data: dict) -> discord.Embed:
         """Creates a Discord embed from fetched CVE data."""
@@ -71,7 +68,7 @@ class CVELookupCog(commands.Cog):
 
         return embed
 
-    @cve_group.command(name="lookup", description="Look up details for a specific CVE ID from NVD.")
+    @self.cve_group.command(name="lookup", description="Look up details for a specific CVE ID from NVD.")
     @app_commands.describe(cve_id="The CVE ID (e.g., CVE-2023-12345)")
     async def lookup_subcommand(self, interaction: discord.Interaction, cve_id: str):
         """Handles the /cve lookup subcommand."""
