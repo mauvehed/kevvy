@@ -2,8 +2,9 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 import aiohttp
+from aiohttp import ClientTimeout
 from .cve_monitor import CVEMonitor
-from .nvd_client import NVDClient
+from .nvd_client import NVDClient, NVDRateLimitError
 from .vulncheck_client import VulnCheckClient
 from .cisa_kev_client import CisaKevClient
 from .db_utils import KEVConfigDB
@@ -38,6 +39,11 @@ class SecurityBot(commands.Bot):
         self.stats_cve_lookups = 0
         self.stats_kev_alerts_sent = 0
         self.stats_messages_processed = 0
+        self.stats_vulncheck_success = 0
+        self.stats_api_errors_vulncheck = 0
+        self.stats_nvd_fallback_success = 0
+        self.stats_rate_limits_nvd = 0
+        self.stats_api_errors_nvd = 0
         # --- End Statistics Counters --- Added Section
 
         # VulnCheck doesn't need session, can init here
@@ -88,13 +94,17 @@ class SecurityBot(commands.Bot):
 
         # Load Cogs
         initial_extensions = [
-            'kevvy.cogs.kev_commands'
+            'kevvy.cogs.kev_commands',
+            'kevvy.cogs.cve_lookup',
+            'kevvy.cogs.cve_config',
             # Add other cogs here if needed
         ]
+        self.loaded_cogs = [] # Reset on setup
         for extension in initial_extensions:
             try:
                 await self.load_extension(extension)
                 logger.info(f"Successfully loaded extension: {extension}")
+                self.loaded_cogs.append(extension)
             except commands.ExtensionError as e:
                 logger.error(f"Failed to load extension {extension}: {e}", exc_info=True)
             except Exception as e:
@@ -229,16 +239,31 @@ class SecurityBot(commands.Bot):
             cve_lookups = self.stats_cve_lookups
             kev_alerts = self.stats_kev_alerts_sent
             messages_processed = self.stats_messages_processed
+            vulncheck_success = self.stats_vulncheck_success
+            api_errors_vulncheck = self.stats_api_errors_vulncheck
+            nvd_fallback_success = self.stats_nvd_fallback_success
+            rate_limits_nvd = self.stats_rate_limits_nvd
+            api_errors_nvd = self.stats_api_errors_nvd
             # Reset counters after reading
             self.stats_cve_lookups = 0
             self.stats_kev_alerts_sent = 0
             self.stats_messages_processed = 0
+            self.stats_vulncheck_success = 0
+            self.stats_api_errors_vulncheck = 0
+            self.stats_nvd_fallback_success = 0
+            self.stats_rate_limits_nvd = 0
+            self.stats_api_errors_nvd = 0
 
         stats_data = {
             "timestamp": now.isoformat(),
             "cve_lookups_since_last": cve_lookups,
             "kev_alerts_sent_since_last": kev_alerts,
-            "messages_processed_since_last": messages_processed
+            "messages_processed_since_last": messages_processed,
+            "vulncheck_success_since_last": vulncheck_success,
+            "api_errors_vulncheck_since_last": api_errors_vulncheck,
+            "nvd_fallback_success_since_last": nvd_fallback_success,
+            "rate_limits_nvd_since_last": rate_limits_nvd,
+            "api_errors_nvd_since_last": api_errors_nvd
         }
 
         # Send status
@@ -272,8 +297,12 @@ class SecurityBot(commands.Bot):
             'X-API-Key': self.kevvy_web_api_key
         }
 
+        # Use ClientTimeout object
+        request_timeout = ClientTimeout(total=10)
+
         try:
-            async with self.http_session.post(target_url, json=data, headers=headers, timeout=10) as response:
+            # Pass the ClientTimeout object
+            async with self.http_session.post(target_url, json=data, headers=headers, timeout=request_timeout) as response:
                 if 200 <= response.status < 300:
                     logger.debug(f"Successfully sent data to kevvy-web endpoint {endpoint}. Status: {response.status}")
                 else:
@@ -380,69 +409,164 @@ class SecurityBot(commands.Bot):
         async with self.stats_lock:
             self.stats_messages_processed += 1
 
+        # Ignore messages not in guilds for CVE auto-response check
+        if not message.guild:
+            await self.process_commands(message)
+            return
+
         if not self.cve_monitor:
              logger.debug("CVEMonitor not initialized, skipping CVE scan.")
              await self.process_commands(message)
              return
 
+        # --- Check Guild Configuration for CVE Auto-Response ---
+        if not self.db:
+             logger.error(f"Database unavailable during on_message for guild {message.guild.id}. Skipping CVE response check.")
+             # Fallback: Should we process commands or just return?
+             # Let's process commands but skip the auto-response part.
+        else:
+            try:
+                response_mode = self.db.get_cve_response_mode(message.guild.id)
+
+                if response_mode is None:
+                    logger.debug(f"CVE auto-response disabled for guild {message.guild.id}. Skipping response.")
+                    await self.process_commands(message)
+                    return # Don't process CVEs in this message for auto-response
+
+                elif response_mode == "all":
+                    logger.debug(f"CVE auto-response enabled for all channels in guild {message.guild.id}.")
+                    # Proceed to CVE detection
+
+                elif response_mode.isdigit():
+                    allowed_channel_id = int(response_mode)
+                    if message.channel.id != allowed_channel_id:
+                        logger.debug(f"CVE {message.id} found in channel {message.channel.id}, but response only allowed in {allowed_channel_id} for guild {message.guild.id}. Skipping response.")
+                        await self.process_commands(message)
+                        return # Don't process CVEs in this message for auto-response
+                    else:
+                         logger.debug(f"CVE auto-response permitted in channel {message.channel.id} for guild {message.guild.id}.")
+                         # Proceed to CVE detection
+                else:
+                    logger.warning(f"Invalid CVE response mode '{response_mode}' found for guild {message.guild.id}. Skipping response.")
+                    await self.process_commands(message)
+                    return # Don't process CVEs
+
+            except Exception as db_err:
+                 logger.error(f"Error checking CVE response mode for guild {message.guild.id}: {db_err}", exc_info=True)
+                 # Decide fallback behavior: maybe skip response to be safe?
+                 await self.process_commands(message)
+                 return
+
+        # --- CVE Detection and Processing (only runs if checks above pass) ---
         cves_found = self.cve_monitor.find_cves(message.content)
 
         if not cves_found:
             await self.process_commands(message)
             return
 
-        unique_cves = sorted(list(set(cves_found)), key=lambda x: cves_found.index(x))
+        # Normalize CVEs to uppercase for consistent lookup
+        unique_cves_upper = sorted(list(set(cve.upper() for cve in cves_found)), key=lambda x: cves_found.index(next(c for c in cves_found if c.upper() == x)))
+        # Keep original case list for logging/display if needed, but use upper for processing
+        original_unique_cves = sorted(list(set(cves_found)), key=lambda x: cves_found.index(x))
+
+        guild_name = message.guild.name if message.guild else "DM"
+        guild_id = message.guild.id if message.guild else "N/A"
+        # Use getattr for safer access to channel name in log message
+        channel_name = getattr(message.channel, 'name', f'ID:{message.channel.id}')
+        channel_id = message.channel.id if message.channel else "N/A"
+
+        logger.info(f"Found {len(unique_cves_upper)} unique CVE mentions in message {message.id} from {message.author} in {message.guild.name}/{channel_name}: {original_unique_cves}")
 
         embeds_to_send = []
         processed_count = 0
-        for cve in unique_cves:
+        # Use the uppercase list for processing
+        for cve_id in unique_cves_upper:
             if processed_count >= MAX_EMBEDS_PER_MESSAGE:
-                logging.warning(f"Max embeds reached for message {message.id}. Found {len(unique_cves)} unique CVEs, processing first {MAX_EMBEDS_PER_MESSAGE}.")
+                logging.warning(f"Max embeds reached for message {message.id}. Found {len(unique_cves_upper)} unique CVEs, processing first {MAX_EMBEDS_PER_MESSAGE}.")
                 break
 
             cve_data = None
+            source_used = None # Track which source succeeded
             try:
                 # Increment lookup counter for each unique CVE attempted
                 async with self.stats_lock:
                     self.stats_cve_lookups += 1
 
-                if self.vulncheck_client.api_client:
-                    logging.debug(f"Attempting VulnCheck fetch for {cve}")
-                    cve_data = await self.vulncheck_client.get_cve_details(cve)
+                if self.vulncheck_client and self.vulncheck_client.api_client:
+                    logging.debug(f"Attempting VulnCheck fetch for {cve_id}")
+                    try:
+                        cve_data = await self.vulncheck_client.get_cve_details(cve_id)
+                        if cve_data:
+                            source_used = "VulnCheck"
+                            async with self.stats_lock:
+                                self.stats_vulncheck_success += 1 # Increment VulnCheck success
+                    except Exception as e_vc:
+                        logger.error(f"Error during VulnCheck API call for {cve_id}: {e_vc}", exc_info=True)
+                        async with self.stats_lock:
+                            self.stats_api_errors_vulncheck += 1
+                        cve_data = None # Ensure cve_data is None if exception occurred
                 else:
                     logging.debug("VulnCheck client not available (no API key?), skipping.")
 
                 if not cve_data:
-                    if self.vulncheck_client.api_client:
-                        logging.debug(f"VulnCheck failed for {cve}, attempting NVD fallback.")
-                    else:
-                        logging.debug(f"Attempting NVD fetch for {cve} (VulnCheck unavailable).")
+                    log_msg_prefix = f"VulnCheck failed for {cve_id}," if self.vulncheck_client and self.vulncheck_client.api_client else ""
+                    logging.debug(f"{log_msg_prefix} Attempting NVD fetch for {cve_id} (VulnCheck unavailable or failed).")
 
                     if self.nvd_client:
-                        cve_data = await self.nvd_client.get_cve_details(cve)
+                        try:
+                            cve_data = await self.nvd_client.get_cve_details(cve_id)
+                            if cve_data:
+                                source_used = "NVD"
+                                async with self.stats_lock:
+                                    self.stats_nvd_fallback_success += 1 # Increment NVD fallback success
+                        # Catch Rate Limit specifically
+                        except NVDRateLimitError as e_rate_limit:
+                            logger.warning(f"NVD rate limit encountered for {cve_id}: {e_rate_limit}")
+                            async with self.stats_lock:
+                                self.stats_rate_limits_nvd += 1
+                            cve_data = None
+                        # Catch other NVD client errors
+                        except Exception as e_nvd:
+                            logger.error(f"Error during NVD API call for {cve_id}: {e_nvd}", exc_info=True)
+                            async with self.stats_lock:
+                                self.stats_api_errors_nvd += 1
+                            cve_data = None # Ensure cve_data is None if exception occurred
                     else:
                          logger.warning("NVD Client not available, skipping NVD lookup.")
 
                 if cve_data:
+                    # Add source info if not already present from client
+                    if 'source' not in cve_data and source_used:
+                         cve_data['source'] = source_used
                     embeds = await self.cve_monitor.create_cve_embed(cve_data)
                     embeds_to_send.extend(embeds)
                     processed_count += 1
                 else:
-                    logging.warning(f"Could not retrieve details for {cve} from any source.")
+                    logging.warning(f"Could not retrieve details for {cve_id} from any source.")
 
             except Exception as e:
-                logging.error(f"Failed to process CVE {cve} after checking sources: {e}", exc_info=True)
+                logging.error(f"Failed to process CVE {cve_id} after checking sources: {e}", exc_info=True)
 
             await asyncio.sleep(0.2)
 
         if embeds_to_send:
             logging.info(f"Sending {len(embeds_to_send)} embeds for message {message.id}")
-            for i, embed in enumerate(embeds_to_send):
-                await message.channel.send(embed=embed)
-                if i < len(embeds_to_send) - 1:
-                    await asyncio.sleep(0.5)
+            try:
+                for i, embed in enumerate(embeds_to_send):
+                    await message.channel.send(embed=embed)
+                    if i < len(embeds_to_send) - 1:
+                        await asyncio.sleep(0.5)
 
-            if len(unique_cves) > MAX_EMBEDS_PER_MESSAGE:
-                await message.channel.send(f"*Found {len(unique_cves)} unique CVEs, showing details for the first {MAX_EMBEDS_PER_MESSAGE}.*", allowed_mentions=discord.AllowedMentions.none())
+                if len(unique_cves_upper) > MAX_EMBEDS_PER_MESSAGE:
+                    await message.channel.send(f"*Found {len(unique_cves_upper)} unique CVEs, showing details for the first {MAX_EMBEDS_PER_MESSAGE}.*", allowed_mentions=discord.AllowedMentions.none())
+            except discord.Forbidden:
+                 # Use getattr for safer access to channel name in log message
+                 log_channel_name_error = getattr(message.channel, 'name', f'ID:{message.channel.id}')
+                 logger.error(f"Missing permissions to send CVE response in channel {message.channel.id} ({log_channel_name_error}) in guild {message.guild.id} ({message.guild.name})")
+            except discord.HTTPException as e:
+                 logger.error(f"Failed to send CVE embeds for message {message.id} to channel {message.channel.id}: {e}")
+            except Exception as e:
+                 logger.error(f"Unexpected error sending CVE embeds for message {message.id}: {e}", exc_info=True)
 
+        # Ensure commands are processed regardless of CVE processing result
         await self.process_commands(message)

@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'bot_config.db')
 
 class KEVConfigDB:
-    """Handles database operations for CISA KEV per-guild configurations."""
+    """Handles database operations for CISA KEV and CVE Response per-guild configurations."""
 
     def __init__(self, db_path: str = DEFAULT_DB_PATH):
         """Initializes the database connection.
@@ -28,6 +28,7 @@ class KEVConfigDB:
         self._conn = None
         self._ensure_connection()
         self._initialize_db()
+        self._initialize_cve_response_settings_table()
 
     def _ensure_connection(self):
         """Establishes connection to the database if not already connected."""
@@ -43,7 +44,7 @@ class KEVConfigDB:
                 raise
 
     def _initialize_db(self):
-        """Creates the necessary tables if they don't exist."""
+        """Creates the KEV-related tables if they don't exist."""
         if not self._conn:
             logger.error("Cannot initialize DB, no connection.")
             return
@@ -70,9 +71,29 @@ class KEVConfigDB:
                 )
             """)
 
-            logger.debug("Database tables initialized successfully.")
+            logger.debug("KEV-related database tables initialized successfully.")
         except sqlite3.Error as e:
-            logger.error(f"Database initialization error: {e}", exc_info=True)
+            logger.error(f"Database initialization error (KEV tables): {e}", exc_info=True)
+
+    def _initialize_cve_response_settings_table(self):
+        """Creates the CVE response settings table if it doesn't exist."""
+        if not self._conn:
+            logger.error("Cannot initialize CVE response settings table, no connection.")
+            return
+
+        try:
+            cursor = self._conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS cve_response_settings (
+                    guild_id INTEGER PRIMARY KEY,
+                    response_mode TEXT NOT NULL
+                )
+            """)
+            # Note: response_mode can store a channel ID (as text) or the literal string "all"
+            # Absence of a row implies CVE responses are disabled for the guild.
+            logger.debug("CVE response settings table initialized successfully.")
+        except sqlite3.Error as e:
+            logger.error(f"Database initialization error (CVE response settings table): {e}", exc_info=True)
 
     def set_kev_config(self, guild_id: int, channel_id: int):
         """Enables or updates KEV monitoring config for a guild."""
@@ -174,6 +195,65 @@ class KEVConfigDB:
         except sqlite3.Error as e:
             logger.error(f"Error adding seen KEVs: {e}", exc_info=True)
 
+    # --- Methods for CVE Response Settings ---
+
+    def set_cve_response_mode(self, guild_id: int, mode: Optional[str]):
+        """Sets or updates the CVE auto-response mode for a guild.
+
+        Args:
+            guild_id: The ID of the guild.
+            mode: The response mode. Can be a channel ID (as str), "all", or None.
+                  Setting mode to None disables auto-responses by deleting the setting.
+        """
+        if not self._conn:
+            logger.error("No DB connection to set CVE response mode.")
+            return
+
+        try:
+            cursor = self._conn.cursor()
+            if mode is None:
+                # Delete the setting to disable
+                cursor.execute("DELETE FROM cve_response_settings WHERE guild_id = ?", (guild_id,))
+                if cursor.rowcount > 0:
+                    logger.info(f"Disabled CVE auto-response for guild {guild_id}.")
+                else:
+                    logger.info(f"Attempted to disable CVE auto-response for guild {guild_id}, but no setting was found.")
+            elif mode == "all" or mode.isdigit():
+                # Insert or update the setting
+                cursor.execute("""
+                    INSERT INTO cve_response_settings (guild_id, response_mode)
+                    VALUES (?, ?)
+                    ON CONFLICT(guild_id) DO UPDATE SET
+                        response_mode = excluded.response_mode;
+                """, (guild_id, mode))
+                logger.info(f"Set CVE auto-response mode for guild {guild_id} to '{mode}'.")
+            else:
+                logger.warning(f"Invalid CVE response mode '{mode}' provided for guild {guild_id}. Not saving.")
+        except sqlite3.Error as e:
+            logger.error(f"Error setting CVE response mode for guild {guild_id}: {e}", exc_info=True)
+
+    def get_cve_response_mode(self, guild_id: int) -> Optional[str]:
+        """Gets the CVE auto-response mode for a guild.
+
+        Args:
+            guild_id: The ID of the guild.
+
+        Returns:
+            The response mode ("all", channel ID as str) or None if disabled/not set.
+        """
+        if not self._conn:
+            logger.error("No DB connection to get CVE response mode.")
+            return None
+        try:
+            cursor = self._conn.cursor()
+            cursor.execute("SELECT response_mode FROM cve_response_settings WHERE guild_id = ?", (guild_id,))
+            row = cursor.fetchone()
+            return row['response_mode'] if row else None
+        except sqlite3.Error as e:
+            logger.error(f"Error getting CVE response mode for guild {guild_id}: {e}", exc_info=True)
+            return None
+
+    # --- Connection Management ---
     def close(self):
         """Closes the database connection."""
         if self._conn:
