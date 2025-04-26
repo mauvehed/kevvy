@@ -4,7 +4,7 @@ from discord import app_commands
 import aiohttp
 from aiohttp import ClientTimeout
 from .cve_monitor import CVEMonitor
-from .nvd_client import NVDClient, NVDRateLimitError
+from .nvd_client import NVDClient
 from .vulncheck_client import VulnCheckClient
 from .cisa_kev_client import CisaKevClient
 from .db_utils import KEVConfigDB
@@ -94,8 +94,9 @@ class SecurityBot(commands.Bot):
 
         # Load Cogs
         initial_extensions = [
+            # Load from the 'cogs' sub-package within the 'kevvy' package
             'kevvy.cogs.kev_commands',
-            'kevvy.cogs.cve_lookup',
+            # 'kevvy.cogs.cve_lookup', # Removed as file doesn't exist
             'kevvy.cogs.cve_config',
             # Add other cogs here if needed
         ]
@@ -519,12 +520,6 @@ class SecurityBot(commands.Bot):
                                 source_used = "NVD"
                                 async with self.stats_lock:
                                     self.stats_nvd_fallback_success += 1 # Increment NVD fallback success
-                        # Catch Rate Limit specifically
-                        except NVDRateLimitError as e_rate_limit:
-                            logger.warning(f"NVD rate limit encountered for {cve_id}: {e_rate_limit}")
-                            async with self.stats_lock:
-                                self.stats_rate_limits_nvd += 1
-                            cve_data = None
                         # Catch other NVD client errors
                         except Exception as e_nvd:
                             logger.error(f"Error during NVD API call for {cve_id}: {e_nvd}", exc_info=True)
