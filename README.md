@@ -12,14 +12,24 @@
 <br />
 
 <a href= "https://discord.com/api/oauth2/authorize?client_id=1363214368648724630&permissions=277025459200&scope=bot%20applications.commands">
-  <img src="https://img.shields.io/badge/Add Me To Your Discord-purple?style=for-the-badge&logo=python&logoColor=white" /
+  <img src="https://img.shields.io/badge/Add Me To Your Discord-purple?style=for-the-badge&logo=python&logoColor=white" />
 </a>
 
+<a href="https://kevvy.mauve.haus/">
+  <img src="https://img.shields.io/badge/Live Dashboard-blue?style=for-the-badge&logo=vue.js&logoColor=white" />
+</a>
+
+<br />
+
+[![Build](https://github.com/mauvehed/kevvy/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/mauvehed/kevvy/actions/workflows/docker-publish.yml)
+[![Test](https://github.com/mauvehed/kevvy/actions/workflows/python-tests.yml/badge.svg)](https://github.com/mauvehed/kevvy/actions/workflows/python-tests.yml)
 [![CodeQL](https://github.com/mauvehed/kevvy/actions/workflows/codeql-analysis.yml/badge.svg?branch=main)](https://github.com/mauvehed/kevvy/actions/workflows/codeql-analysis.yml)
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/4ec1fc69d8a14048a80124167f6f7664)](https://www.codacy.com/gh/mauvehed/kevvy/dashboard)
-[![Project license](https://img.shields.io/github/license/mauvehed/kevvy.svg?style=flat-square)](LICENSE)
-
 </div>
+
+<hr />
+
+<br />
 
 <details open="open">
 <summary>Table of Contents</summary>
@@ -47,12 +57,15 @@
 
 ## About
 
-**kevvy** is a Discord bot that automatically monitors chat messages for CVE (Common Vulnerabilities and Exposures) identifiers (e.g., `CVE-2023-12345`). When a CVE is detected, the bot fetches detailed information primarily from the [VulnCheck API](https://vulncheck.com/) (if an API key is provided). If VulnCheck is unavailable or doesn't return data, it falls back to the [NIST National Vulnerability Database (NVD) API v2.0](https://nvd.nist.gov/developers/vulnerabilities).
+**kevvy** is a Discord bot with the following main functions:
 
-Additionally, the bot can monitor the [CISA Known Exploited Vulnerabilities (KEV) catalog](https://www.cisa.gov/known-exploited-vulnerabilities-catalog). Server administrators can enable this feature per server using slash commands, designating a channel for new KEV alerts.
+1.  **Automatic CVE Detection:** It automatically monitors chat messages for CVE (Common Vulnerabilities and Exposures) identifiers (e.g., `CVE-2023-12345`). When a CVE is detected, the bot fetches detailed information primarily from the [VulnCheck API](https://vulncheck.com/) (if an API key is provided). If VulnCheck is unavailable or doesn't return data, it falls back to the [NIST National Vulnerability Database (NVD) API v2.0](https://nvd.nist.gov/developers/vulnerabilities).
+2.  **Direct CVE Lookup:** Users can explicitly request details for a specific CVE using the `/cve lookup` command.
+3.  **CISA KEV Monitoring:** Optionally monitors the [CISA Known Exploited Vulnerabilities (KEV) catalog](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) and sends alerts for new entries to configured channels.
 
 Key features:
 *   Automatic detection of CVE IDs in messages.
+*   Direct lookup of specific CVEs via `/cve lookup`.
 *   Fetches details primarily from VulnCheck (if available), falling back to NVD.
 *   Displays CVSS score (v3.1/v3.0/v2.0), vector string, description, publication dates, CWEs, and reference links.
 *   Consolidates responses for messages containing multiple CVEs (max 5 embeds per message by default) to prevent spam.
@@ -60,20 +73,22 @@ Key features:
 
 ### Built With
 
-*   <img src="https://img.shields.io/badge/Python-3.10-3776AB?style=for-the-badge&logo=python&logoColor=white" />
-*   <img src="https://img.shields.io/badge/discord.py-2.5.2-5865F2?style=for-the-badge&logo=discord&logoColor=white" />
-*   <img src="https://img.shields.io/badge/Poetry-1.8-60A5FA?style=for-the-badge&logo=poetry&logoColor=white" />
-*   <img src="https://img.shields.io/badge/Docker-26.1-0db7ed?style=for-the-badge&logo=docker&logoColor=white" />
+*   <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" />
+*   <img src="https://img.shields.io/badge/discord.py-2.x-5865F2?style=for-the-badge&logo=discord&logoColor=white" />
+*   <img src="https://img.shields.io/badge/Poetry-1.8+-60A5FA?style=for-the-badge&logo=poetry&logoColor=white" />
+*   <img src="https://img.shields.io/badge/Docker-26.1+-0db7ed?style=for-the-badge&logo=docker&logoColor=white" />
 *   <img src="https://img.shields.io/badge/aiohttp-library-blueviolet?style=for-the-badge&logo=python&logoColor=white" />
 *   <img src="https://img.shields.io/badge/VulnCheck SDK-blue?style=for-the-badge&logo=python&logoColor=white" />
 *   <img src="https://img.shields.io/badge/NVD API v2.0-darkgreen?style=for-the-badge&logo=python&logoColor=white" />
+*   <img src="https://img.shields.io/badge/CISA KEV Catalog-red?style=for-the-badge&logo=python&logoColor=white" />
 
 ## Usage
 
 1.  **Invite the Bot:** Invite the configured bot to your Discord server.
 2.  **Automatic Detection:** Simply type or paste a message containing one or more CVE IDs (e.g., `Check out CVE-2024-1234 and CVE-2024-5678`). The bot will automatically detect them and post embed(s) with the details.
     *   If multiple unique CVEs are in one message, the bot will post details for up to 5 of them (by default) and indicate if more were found.
-3.  **CISA KEV Alerts (Optional Setup):**
+3.  **Direct Lookup:** Use the slash command `/cve lookup cve_id:<CVE-ID>` (e.g., `/cve lookup cve_id:CVE-2024-0001`) to get details for a specific vulnerability.
+4.  **CISA KEV Alerts (Optional Setup):**
     *   `/kev enable channel:<#your-alert-channel>`: A server administrator with 'Manage Server' permissions can run this command to enable KEV monitoring and designate a specific channel for alerts.
 
 ## Screenshots
@@ -116,18 +131,17 @@ Then, edit the `.env` file:
 ### Running with Docker (Recommended)
 
 1.  Ensure Docker and Docker Compose are installed.
-2.  Make sure you have configured your `.env` file.
-3.  Pull the latest image and start the container in detached mode:
+2.  Make sure you have configured your `.env` file (especially `DISCORD_TOKEN`).
+3.  Start the bot container in detached mode:
     ```bash
-    docker-compose up -d
+    docker-compose up -d --build
     ```
     _(This will automatically pull the `ghcr.io/mauvehed/kevvy:latest` image if you don't have it locally)._
-    
-4.  To view logs:
+4.  **View Logs:**
     ```bash
-    docker-compose logs -f
+    docker-compose logs -f kevvy-bot
     ```
-5.  To stop the container:
+5.  **Stop Container:**
     ```bash
     docker-compose down
     ```
@@ -135,20 +149,10 @@ Then, edit the `.env` file:
 ### Running Locally with Poetry
 
 1.  Ensure Python 3.10+ and Poetry are installed.
-2.  Clone the repository:
-    ```bash
-    git clone https://github.com/mauvehed/kevvy.git
-    cd kevvy
-    ```
-3.  Install dependencies:
-    ```bash
-    poetry install
-    ```
+2.  Clone the repository: `git clone https://github.com/mauvehed/kevvy.git && cd kevvy`
+3.  Install bot dependencies: `poetry install`
 4.  Configure your `.env` file.
-5.  Run the bot:
-    ```bash
-    poetry run python main.py
-    ```
+5.  Run the bot: `poetry run python main.py`
 
 ## Roadmap
 
@@ -169,8 +173,9 @@ Reach out to the maintainer at one of the following places:
 
 First off, thanks for taking the time to contribute! Contributions are what make the open-source community such an amazing place to learn, inspire, and create. Any contributions you make will benefit everybody else and are **greatly appreciated**.
 
-
 Please read [our contribution guidelines](docs/CONTRIBUTING.md), and thank you for being involved!
+
+The project includes automated testing using `pytest` and CI checks via GitHub Actions to help maintain code quality.
 
 ## Authors & contributors
 
@@ -183,7 +188,7 @@ For a full list of all authors and contributors, see [the contributors page](htt
 - **kevvy** follows good practices of security, but 100% security cannot be assured.
 - **kevvy** is provided **"as is"** without any **warranty**. Use at your own risk.
 
-_For more information and to report security issues, please refer to our [security documentation](docs/SECURITY.md)._
+_Please report security vulnerabilities privately via **GitHub's Private Vulnerability Reporting feature** (go to the 'Security' tab -> 'Report a vulnerability'). For more information on our security practices, see our [security policy](docs/SECURITY.md)._
 
 ## License
 
