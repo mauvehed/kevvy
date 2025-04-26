@@ -1,0 +1,16 @@
+services:
+  cve-bot-dev:
+    # Build the image locally using the Dockerfile in the current directory
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kevvy-dev
+    env_file:
+      - .env
+    volumes:
+      # Mount local source code into the container for live updates
+      - .:/app
+      # Mount the data volume for database persistence
+      - ./data:/app/data
+    # Restart only on failure during development
+    restart: on-failure 
