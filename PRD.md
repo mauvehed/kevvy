@@ -157,22 +157,33 @@ Latest CVEs (Last 7 days):
 /cve latest in_kev:true
 ```
 
-#### 3.1.4 `/cve verbose` Group
-**Purpose:** Configure verbosity of automatic CVE alerts triggered by messages.
+#### 3.1.4 `/verbose` Group (Top-Level)
+**Purpose:** Configure global and per-channel verbosity of automatic CVE alerts triggered by messages.
 **Permission:** Requires "Manage Server" permission
 
-##### Subcommands:
-- `/cve verbose enable`: Enable detailed CVE alerts.
-- `/cve verbose disable`: Disable detailed CVE alerts (use standard format).
+**Default Behavior:**
+- By default, all channels use the global verbosity setting.
+- The default global setting is **non-verbose** (standard format).
+
+**Subcommands:**
+- `/verbose enable_global`: Enable detailed (verbose) CVE alerts globally for the server.
+- `/verbose disable_global`: Disable detailed (verbose) CVE alerts globally (use standard format).
+- `/verbose set <channel> <verbosity: True|False>`: Set a verbosity override for a specific channel.
+- `/verbose unset <channel>`: Remove the verbosity override for a specific channel, reverting it to the global setting.
+- `/verbose setall <verbosity: True|False>`: Set a verbosity override for **all** configured channels in the server.
+- `/verbose status [channel]`: Show the current global verbosity setting and any channel-specific overrides. If a channel is specified, shows the effective setting for that channel.
 
 **Verbose Mode Differences (Automatic Message Responses):**
-- **Standard Mode (Default):**
+- **Standard Mode:**
   - **CVE Embed:** Shows: CVE ID, Title, CVSS Score. Description contains a link to the NVD page.
   - **KEV Embed (if applicable):** Shows: Title, Confirmation, NVD link.
-  
 - **Verbose Mode:**
   - **CVE Embed:** Shows: CVE ID, Title, Full Description, CVSS Score, Published Date, Last Modified Date, CVSS Vector (if available), CWE IDs (if available), References (limited count).
   - **KEV Embed (if applicable):** Shows full details (Vulnerability Name, Vendor, Product, Dates, Action, Ransomware Use, Notes).
+
+**Interaction:**
+- Per-channel settings (`/verbose set`) take precedence over the global setting (`/verbose enable_global`/`disable_global`).
+- `/verbose setall` overrides all existing per-channel settings.
 
 #### 3.1.5 `/cve threshold` Group (Future)
 **Purpose:** Allow servers to set minimum severity levels for alerts
