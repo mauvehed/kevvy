@@ -129,9 +129,10 @@ CVE Monitoring Channels:
 - `count`: (Optional) Number of CVEs to display (default: 5, max: 10)
 - `days`: (Optional) Look back period in days (default: 7, max: 30)
 **Behavior:**
-- Fetches recent CVEs from primary source
-- Displays in chronological order
-- Includes basic information for each CVE
+- Fetches recent CVEs from NVD based on the publication date range (`days` parameter).
+- Displays in chronological order (most recent first).
+- Includes basic information for each CVE (ID, Score, Title excerpt, Published date).
+- Supports filtering (severity, vendor[basic], product[basic], in_kev).
 **Response Format:**
 ```
 Latest CVEs (Last 7 days):
@@ -157,31 +158,21 @@ Latest CVEs (Last 7 days):
 ```
 
 #### 3.1.4 `/cve verbose` Group
-**Purpose:** Configure verbosity of CVE alerts
+**Purpose:** Configure verbosity of automatic CVE alerts triggered by messages.
 **Permission:** Requires "Manage Server" permission
 
 ##### Subcommands:
-- `/cve verbose enable`: Enable detailed CVE alerts
-- `/cve verbose disable`: Disable detailed CVE alerts
+- `/cve verbose enable`: Enable detailed CVE alerts.
+- `/cve verbose disable`: Disable detailed CVE alerts (use standard format).
 
-**Verbose Mode Differences:**
-- **Standard Mode:**
-  ```
-  New CVE: CVE-2024-XXXX
-  Title: [Brief title]
-  Severity: [CVSS Score]
-  ```
-
+**Verbose Mode Differences (Automatic Message Responses):**
+- **Standard Mode (Default):**
+  - **CVE Embed:** Shows: CVE ID, Title, CVSS Score. Description contains a link to the NVD page.
+  - **KEV Embed (if applicable):** Shows: Title, Confirmation, NVD link.
+  
 - **Verbose Mode:**
-  ```
-  New CVE: CVE-2024-XXXX
-  Title: [Full title]
-  Description: [Detailed description]
-  Severity: [CVSS Score]
-  CVSS Vector: [Full vector]
-  Affected Products: [List]
-  References: [Links]
-  ```
+  - **CVE Embed:** Shows: CVE ID, Title, Full Description, CVSS Score, Published Date, Last Modified Date, CVSS Vector (if available), CWE IDs (if available), References (limited count).
+  - **KEV Embed (if applicable):** Shows full details (Vulnerability Name, Vendor, Product, Dates, Action, Ransomware Use, Notes).
 
 #### 3.1.5 `/cve threshold` Group (Future)
 **Purpose:** Allow servers to set minimum severity levels for alerts
@@ -312,6 +303,7 @@ CREATE TABLE kev_latest_queries (
 - Add proper permission checks
 - Implement rate limiting for API calls
 - Add error handling and user feedback
+- **Bot `on_message` handler must check guild's `verbose_mode` setting before generating CVE embed.**
 
 ### 5.2 Database Integration
 - Add new tables to existing SQLite database
@@ -319,9 +311,10 @@ CREATE TABLE kev_latest_queries (
 - Add monitoring history tracking
 
 ### 5.3 API Integration
-- Maintain existing VulnCheck and NVD API integration
-- Add caching for recent CVEs and KEV entries
-- Implement fallback mechanisms
+- Maintain existing VulnCheck and NVD API integration.
+- **NVDClient includes `get_recent_cves` method for fetching CVEs by date range.**
+- Add caching for recent CVEs and KEV entries.
+- Implement fallback mechanisms.
 
 ## 6. Success Metrics
 - Command response time < 2 seconds
