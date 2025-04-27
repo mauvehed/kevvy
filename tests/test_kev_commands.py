@@ -42,8 +42,7 @@ def mock_bot(mock_db, mock_kev_client): # Inject mocks
 @pytest.fixture
 def kev_cog(mock_bot):
     """Fixture to create an instance of the KEVCog with the mock bot."""
-    cog = KEVCog(mock_bot)
-    return cog
+    return KEVCog(mock_bot)
 
 @pytest.fixture
 def mock_interaction():
@@ -138,7 +137,7 @@ async def test_feed_status_no_config(kev_cog: KEVCog, mock_interaction: AsyncMoc
 async def test_latest_success_defaults(kev_cog: KEVCog, mock_interaction: AsyncMock, mock_kev_client: AsyncMock, mock_db: MagicMock):
     """Test /kev latest with default count and days."""
     mock_kev_client.get_full_kev_catalog.return_value = SAMPLE_KEV_CATALOG
-    
+
     # Default days is 7, so CVE-2024-0003 should be filtered out by date
     expected_results = SAMPLE_KEV_CATALOG[:2] 
 
@@ -147,14 +146,14 @@ async def test_latest_success_defaults(kev_cog: KEVCog, mock_interaction: AsyncM
     mock_interaction.response.defer.assert_called_once_with(ephemeral=True)
     mock_kev_client.get_full_kev_catalog.assert_called_once()
     mock_db.log_kev_latest_query.assert_called_once() # Check logging happens
-    
+
     # Check embed sent via followup
     mock_interaction.followup.send.assert_called_once()
     args, kwargs = mock_interaction.followup.send.call_args
     assert 'embed' in kwargs
     embed = kwargs['embed']
     assert isinstance(embed, discord.Embed)
-    assert embed.title == f"Latest KEV Entries (Last 7 days)" # Default days
+    assert embed.title == "Latest KEV Entries (Last 7 days)"
     # Check that the 2 recent entries are in the description
     assert SAMPLE_KEV_CATALOG[0]['cveID'] in embed.description
     assert SAMPLE_KEV_CATALOG[1]['cveID'] in embed.description
@@ -234,7 +233,8 @@ async def test_latest_no_results(kev_cog: KEVCog, mock_interaction: AsyncMock, m
     mock_interaction.response.defer.assert_called_once_with(ephemeral=True)
     mock_kev_client.get_full_kev_catalog.assert_called_once()
     mock_interaction.followup.send.assert_called_once_with(
-        f"⚪ No KEV entries found matching your criteria in the last 10 days.", ephemeral=True
+        "⚪ No KEV entries found matching your criteria in the last 10 days.",
+        ephemeral=True,
     )
 
 @pytest.mark.asyncio

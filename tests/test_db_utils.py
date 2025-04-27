@@ -143,14 +143,10 @@ def test_get_enabled_kev_configs(kev_db: KEVConfigDB):
         (1, 101), # guild_id, channel_id
         (3, 103)
     }
-    actual_configs = set()
-    for config in enabled_configs:
-        # Access by key because we used sqlite3.Row
-        actual_configs.add((
-            config['guild_id'],
-            config['channel_id']
-        ))
-
+    actual_configs = {
+        (config['guild_id'], config['channel_id'])
+        for config in enabled_configs
+    }
     assert actual_configs == expected_configs
 
 def test_get_enabled_kev_configs_when_none(kev_db: KEVConfigDB):

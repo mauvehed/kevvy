@@ -474,7 +474,9 @@ class CVELookupCog(commands.Cog):
 
         try:
             self.db.set_cve_severity_threshold(interaction.guild_id, 'all')
-            await interaction.response.send_message(f"✅ CVE alert severity threshold reset to **all**.", ephemeral=True)
+            await interaction.response.send_message(
+                "✅ CVE alert severity threshold reset to **all**.", ephemeral=True
+            )
         except Exception as e:
             logger.error(f"Error resetting CVE threshold for guild {interaction.guild_id}: {e}", exc_info=True)
             await interaction.response.send_message("❌ An error occurred while resetting the severity threshold.", ephemeral=True)

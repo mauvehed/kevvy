@@ -52,28 +52,25 @@ class CVEMonitor:
         if verbose:
             description = cve_data.get('description', "No description available.")
             if len(description) > MAX_DESCRIPTION_LENGTH:
-                description = description[:MAX_DESCRIPTION_LENGTH - 3] + "..."
+                description = f"{description[:MAX_DESCRIPTION_LENGTH - 3]}..."
             embed.description = description # Set description only in verbose
 
             embed.add_field(name="Published", value=self._format_date(cve_data.get('published')), inline=True)
             # Add another inline field to balance
             embed.add_field(name="Last Modified", value=self._format_date(cve_data.get('modified')), inline=True)
 
-            cvss_vector = cve_data.get('cvss_vector')
-            if cvss_vector:
+            if cvss_vector := cve_data.get('cvss_vector'):
                 if len(cvss_vector) > MAX_FIELD_LENGTH:
-                     cvss_vector = cvss_vector[:MAX_FIELD_LENGTH - 3] + "..."
+                    cvss_vector = f"{cvss_vector[:MAX_FIELD_LENGTH - 3]}..."
                 embed.add_field(name="CVSS Vector", value=f"`{cvss_vector}`", inline=False) 
 
-            cwe_ids = cve_data.get('cwe_ids')
-            if cwe_ids:
+            if cwe_ids := cve_data.get('cwe_ids'):
                 cwe_display = ", ".join(cwe_ids)
                 if len(cwe_display) > MAX_FIELD_LENGTH:
-                    cwe_display = cwe_display[:MAX_FIELD_LENGTH - 3] + "..."
+                    cwe_display = f"{cwe_display[:MAX_FIELD_LENGTH - 3]}..."
                 embed.add_field(name="Weaknesses (CWE)", value=cwe_display, inline=False)
 
-            references = cve_data.get('references', [])
-            if references:
+            if references := cve_data.get('references', []):
                 ref_links = []
                 count = 0
                 for ref in references:
@@ -81,14 +78,14 @@ class CVEMonitor:
                         link_text = f"- [{ref.get('source', 'Link')}]({ref['url']})"
                         ref_links.append(link_text)
                         count += 1
-                
+
                 if ref_links:
                     ref_display = "\n".join(ref_links)
                     if len(references) > MAX_REFERENCE_LINKS:
                         ref_display += f"\n*({len(references) - MAX_REFERENCE_LINKS} more references not shown)*"
-                    
+
                     if len(ref_display) > MAX_FIELD_LENGTH:
-                        ref_display = ref_display[:MAX_FIELD_LENGTH - 3] + "..."
+                        ref_display = f"{ref_display[:MAX_FIELD_LENGTH - 3]}..."
                     embed.add_field(name="References", value=ref_display, inline=False)
         else: # Non-verbose: Add a simple link to NVD if available
             if link:
@@ -121,9 +118,8 @@ class CVEMonitor:
                         kev_embed.add_field(name="Due Date", value=kev_entry.get('dueDate', 'N/A'), inline=True)
                         kev_embed.add_field(name="Known Ransomware Use", value=kev_entry.get('knownRansomwareCampaignUse', 'N/A'), inline=True)
                         if notes := kev_entry.get('notes', ''):
-                            notes_display = notes[:1020] + '...' if len(notes) > 1024 else notes
+                            notes_display = f'{notes[:1020]}...' if len(notes) > 1024 else notes
                             kev_embed.add_field(name="Notes", value=notes_display, inline=False)
-                        kev_embed.set_footer(text="Source: CISA KEV Catalog")
                     else:
                         # --- Terse KEV Embed (New Logic) ---
                         kev_embed = discord.Embed(
@@ -132,8 +128,7 @@ class CVEMonitor:
                             url=f"https://nvd.nist.gov/vuln/detail/{cve_id}", # Redundant but good practice
                             color=discord.Color.dark_red()
                         )
-                        kev_embed.set_footer(text="Source: CISA KEV Catalog")
-                    
+                    kev_embed.set_footer(text="Source: CISA KEV Catalog")
                     # Append the created KEV embed
                     embeds.append(kev_embed)
 

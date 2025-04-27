@@ -118,11 +118,11 @@ class NVDClient:
         """Fetches CVEs published within the last N days."""
         if days <= 0:
             return []
-        
+
         # NVD API uses UTC dates
         now = datetime.now(timezone.utc)
         start_date = now - timedelta(days=days)
-        
+
         # Format for NVD API (ISO 8601)
         # NVD Example: 2021-08-04T00:00:00.000 or 2021-08-04T00:00:00
         # Let's omit milliseconds for simplicity and add Z for UTC
@@ -135,7 +135,7 @@ class NVDClient:
             'pubEndDate': end_date_str,
             'resultsPerPage': self.MAX_RESULTS_PER_PAGE # Get max results in one go
         }
-        
+
         all_parsed_cves: List[Dict[str, Any]] = []
         start_index = 0
         total_results = -1 # Sentinel value
@@ -147,8 +147,8 @@ class NVDClient:
                 if not data:
                     logger.error("Failed to fetch recent CVEs batch.")
                     # Return what we have so far, or None if first attempt failed
-                    return all_parsed_cves if all_parsed_cves else None 
-                
+                    return all_parsed_cves or None 
+
                 if total_results == -1: # First request
                      total_results = data.get('totalResults', 0)
                      if total_results == 0:
@@ -162,10 +162,9 @@ class NVDClient:
 
                 logger.info(f"Fetched batch of {len(vulnerabilities)} CVEs (startIndex: {start_index}, total: {total_results}).")
                 for item in vulnerabilities:
-                    parsed = self._parse_cve_data(item['cve'], self.BASE_URL)
-                    if parsed:
-                         all_parsed_cves.append(parsed)
-                
+                    if parsed := self._parse_cve_data(item['cve'], self.BASE_URL):
+                        all_parsed_cves.append(parsed)
+
                 # Check if we need to fetch more pages
                 start_index += len(vulnerabilities)
                 if start_index >= total_results:
@@ -173,18 +172,18 @@ class NVDClient:
                 if len(vulnerabilities) < self.MAX_RESULTS_PER_PAGE:
                      logger.warning("NVD returned fewer results than requested per page, stopping pagination early.")
                      break # Stop if NVD returns fewer than requested (might indicate end)
-                
+
                 # Small delay before next page request
                 await asyncio.sleep(self.retry_delay) 
 
             except NVDRateLimitError as e:
                 logger.warning(f"Rate limit hit while fetching recent CVEs: {e}")
                 # Return what we managed to get before hitting the limit
-                return all_parsed_cves if all_parsed_cves else None 
+                return all_parsed_cves or None
             except Exception as e:
                 logger.error(f"Unexpected error fetching recent CVEs batch: {e}", exc_info=True)
                 # Return what we have so far or None
-                return all_parsed_cves if all_parsed_cves else None
+                return all_parsed_cves or None
 
         logger.info(f"Finished fetching recent CVEs. Total parsed: {len(all_parsed_cves)}")
         return all_parsed_cves

@@ -38,8 +38,7 @@ def mock_bot(mock_db): # Inject mock_db into mock_bot
 @pytest.fixture
 def cve_lookup_cog(mock_bot):
     """Fixture to create an instance of the CVELookupCog with the mock bot."""
-    cog = CVELookupCog(mock_bot)
-    return cog
+    return CVELookupCog(mock_bot)
 
 @pytest.fixture
 def mock_interaction():
@@ -448,7 +447,7 @@ async def test_threshold_reset(cve_lookup_cog: CVELookupCog, mock_interaction: A
     await cve_lookup_cog.threshold_reset_command.callback(cve_lookup_cog, mock_interaction)
     mock_db.set_cve_severity_threshold.assert_called_once_with(mock_interaction.guild_id, 'all')
     mock_interaction.response.send_message.assert_called_once_with(
-        f"✅ CVE alert severity threshold reset to **all**.", ephemeral=True
+        "✅ CVE alert severity threshold reset to **all**.", ephemeral=True
     )
 
 # --- NEW Tests for /cve latest --- 
@@ -516,7 +515,7 @@ async def test_cve_latest_no_results(cve_lookup_cog: CVELookupCog, mock_interact
 
     mock_bot.nvd_client.get_recent_cves.assert_called_once_with(days=3)
     mock_interaction.followup.send.assert_called_once_with(
-        f"⚪ No CVEs found published in the last 3 days.", ephemeral=True
+        "⚪ No CVEs found published in the last 3 days.", ephemeral=True
     )
 
 @pytest.mark.asyncio

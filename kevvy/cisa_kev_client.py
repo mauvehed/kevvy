@@ -103,11 +103,7 @@ class CisaKevClient:
             logger.warning("Could not get KEV catalog while checking for specific CVE.")
             return None
 
-        for vuln in catalog:
-            if vuln.get('cveID') == cve_id:
-                return vuln
-
-        return None
+        return next((vuln for vuln in catalog if vuln.get('cveID') == cve_id), None)
 
     async def get_new_kev_entries(self) -> List[Dict[str, Any]]:
         """
@@ -129,10 +125,7 @@ class CisaKevClient:
 
         new_vuln_details = []
 
-        # Now new_ids is guaranteed to be set[str]
-        new_ids: Set[str] = current_kev_ids - self.seen_kev_ids
-
-        if new_ids:
+        if new_ids := current_kev_ids - self.seen_kev_ids:
             logger.info(f"Found {len(new_ids)} new CISA KEV entries: {', '.join(sorted(list(new_ids)))}")
 
             try:

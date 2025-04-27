@@ -44,26 +44,17 @@ class DiscordLogHandler(logging.Handler):
             if self._channel is None:
                 self._channel = self.bot.get_channel(self.channel_id)
 
-            channel = self._channel
-
-            if channel:
-                 # Ensure message is within Discord embed description limits (4096 chars)
+            if channel := self._channel:
                 max_len = 4096
                 if len(log_entry) > max_len:
-                    log_entry = log_entry[:max_len-4] + "..."
+                    log_entry = f"{log_entry[:max_len - 4]}..."
 
                 # Create task to send message without blocking handler
                 asyncio.create_task(self._send_log_embed(channel, log_entry, log_level))
-            else:
-                # Log error locally if channel could not be fetched/found.
-                # We will retry fetching on the next log record.
-                if not hasattr(self, '_channel_fetch_error_logged'): # Log only periodically
-                     logger.error(f"DiscordLogHandler: Could not find/fetch configured logging channel with ID {self.channel_id}. Will retry later.")
-                     # Set a temporary flag to avoid spamming, could potentially reset this after a delay
-                     self._channel_fetch_error_logged = True
-                 # else: # Optional: logic to reset the flag after some time/attempts
-                 #    pass
-
+            elif not hasattr(self, '_channel_fetch_error_logged'): # Log only periodically
+                logger.error(f"DiscordLogHandler: Could not find/fetch configured logging channel with ID {self.channel_id}. Will retry later.")
+                # Set a temporary flag to avoid spamming, could potentially reset this after a delay
+                self._channel_fetch_error_logged = True
         except Exception:
             # Catch-all for formatting errors etc.
             self.handleError(record)
