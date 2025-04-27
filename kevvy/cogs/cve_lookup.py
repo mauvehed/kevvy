@@ -29,9 +29,12 @@ class CVELookupCog(commands.Cog):
         self.nvd_client: Optional['NVDClient'] = self.bot.nvd_client
         self.db: Optional['KEVConfigDB'] = self.bot.db # Add DB reference
 
-    # Define the base group - this won't be directly callable
-    # You can add a description here if desired
+    # Define the base /cve group 
     cve_group = app_commands.Group(name="cve", description="Commands related to CVE information.")
+    
+    # --- NEW Top-Level /verbose Group --- 
+    verbose_group = app_commands.Group(name="verbose", description="Configure global and per-channel verbosity of CVE alerts.", guild_only=True)
+    # Note: Removed parent=cve_group to make it top-level
 
     def create_cve_embed(self, cve_data: dict) -> discord.Embed:
         """Creates a Discord embed from fetched CVE data."""
@@ -137,7 +140,6 @@ class CVELookupCog(commands.Cog):
     @app_commands.describe(
         count="Number of CVEs to show (default 5, max 10)",
         days="Look back N days (default 7, max 30)",
-        severity="Filter by minimum severity (critical, high, medium, low)",
         vendor="Filter by vendor name (case-insensitive match)",
         product="Filter by product name (case-insensitive match)",
         # type="Filter by vulnerability type (e.g., rce, xss) - NOT IMPLEMENTED",
@@ -154,7 +156,7 @@ class CVELookupCog(commands.Cog):
         self, interaction: discord.Interaction,
         count: app_commands.Range[int, 1, 10] = 5,
         days: app_commands.Range[int, 1, 30] = 7,
-        severity: Optional[SeverityLevelChoices] = None, # Re-added severity
+        severity: Optional[SeverityLevelChoices] = None,
         vendor: Optional[str] = None,
         product: Optional[str] = None,
         # type: Optional[str] = None, # Not implemented yet
@@ -293,27 +295,38 @@ class CVELookupCog(commands.Cog):
 
     async def _update_cve_channel(self, interaction: discord.Interaction, channel: discord.TextChannel) -> None:
         """Private helper to handle the logic for enabling/setting the CVE channel."""
-        if not self.db:
-            await interaction.response.send_message("❌ Database connection is not available.", ephemeral=True)
-            return
-        if interaction.guild_id is None:
-            # This check might be redundant with guild_only=True, but good practice
-            await interaction.response.send_message("❌ Cannot determine server ID.", ephemeral=True)
+        if not self.db or not interaction.guild_id:
+            await interaction.response.send_message("❌ Bot error: Cannot access database or Guild ID.", ephemeral=True)
             return
         
+        guild_id = interaction.guild_id
         try:
-            # Get current config to preserve other settings like threshold/verbose
-            config = self.db.get_cve_channel_config(interaction.guild_id)
-            verbose = config.get('verbose_mode', False) if config else False
-            threshold = config.get('severity_threshold', 'all') if config else 'all'
-            
-            self.db.set_cve_channel_config(interaction.guild_id, channel.id, enabled=True, verbose_mode=verbose, severity_threshold=threshold)
-            await interaction.response.send_message(f"✅ CVE monitoring enabled. Alerts will be sent to {channel.mention}.", ephemeral=True)
+            # 1. Ensure global guild config exists (or create default)
+            guild_config = self.db.get_cve_guild_config(guild_id)
+            if not guild_config:
+                self.db.set_cve_guild_config(guild_id, enabled=True, verbose_mode=False, severity_threshold='all')
+                logger.info(f"Initialized default CVE guild config for {guild_id} while enabling/setting channel.")
+            # Ensure global monitoring is enabled for the guild when setting a channel
+            elif not guild_config.get('enabled', False):
+                self.db.update_cve_guild_enabled(guild_id, True)
+                logger.info(f"Globally enabled CVE monitoring for guild {guild_id} as channel was being set.")
+
+            # 2. Add or update the specific channel configuration
+            # We mainly set it as enabled=True here. Other settings (verbose, threshold, format) 
+            # are handled by other commands, so we pass None to avoid overwriting them unintentionally.
+            self.db.add_or_update_cve_channel(
+                guild_id=guild_id, 
+                channel_id=channel.id, 
+                enabled=True,
+                verbose_mode=None,      # Don't change verbosity here
+                severity_threshold=None,# Don't change threshold here
+                alert_format=None       # Don't change format here
+            )
+            await interaction.response.send_message(f"✅ CVE monitoring configured for channel {channel.mention}.", ephemeral=True)
         except Exception as e:
-            logger.error(f"Error enabling/setting CVE channel for guild {interaction.guild_id}: {e}", exc_info=True)
-            # Avoid sending another response if one was already sent
+            logger.error(f"Error enabling/setting CVE channel for guild {guild_id}: {e}", exc_info=True)
             if not interaction.response.is_done():
-                 await interaction.response.send_message("❌ An error occurred while setting the CVE monitoring channel.", ephemeral=True)
+                 await interaction.response.send_message("❌ An error occurred while configuring the CVE monitoring channel.", ephemeral=True)
 
     @channel_group.command(name="enable", description="Enable CVE monitoring alerts in the specified channel.")
     @app_commands.checks.has_permissions(manage_guild=True)
@@ -366,59 +379,133 @@ class CVELookupCog(commands.Cog):
             channel_mention = channel.mention if isinstance(channel, discord.TextChannel) else f"ID: {channel_id} (Not Found?)"
             await interaction.response.send_message(f"ℹ️ CVE monitoring is **enabled** in: {channel_mention}", ephemeral=True)
         else:
-            await interaction.response.send_message("ℹ️ CVE monitoring is currently **disabled** for this server.", ephemeral=True)
+            await interaction.response.send_message(f"ℹ️ CVE monitoring is currently **disabled** for this server.", ephemeral=True)
 
-    # --- NEW /cve verbose Group (PRD Section 3.1.4) ---
-    verbose_group = app_commands.Group(name="verbose", description="Configure verbosity of CVE alerts.", parent=cve_group, guild_only=True)
-
-    @verbose_group.command(name="enable", description="Enable detailed (verbose) CVE alerts.")
+    # --- Commands under the top-level /verbose Group --- 
+    
+    @verbose_group.command(name="enable_global", description="Enable detailed CVE alerts globally for the server.")
     @app_commands.checks.has_permissions(manage_guild=True)
-    async def verbose_enable_command(self, interaction: discord.Interaction):
-        if not self.db:
-            await interaction.response.send_message("❌ Database connection is not available.", ephemeral=True)
+    async def verbose_enable_global_command(self, interaction: discord.Interaction):
+        if not self.db or not interaction.guild_id:
+            await interaction.response.send_message("❌ Bot error: Cannot access database or guild ID.", ephemeral=True)
             return
-        if interaction.guild_id is None:
-            await interaction.response.send_message("❌ Cannot determine server ID.", ephemeral=True)
-            return
-        
         try:
-            config = self.db.get_cve_channel_config(interaction.guild_id)
-            if not config or not config.get('enabled'):
-                 await interaction.response.send_message("ℹ️ Please enable CVE monitoring first using `/cve channel enable` before setting verbosity.", ephemeral=True)
-                 return
-
-            channel_id = config.get('channel_id', 0)
-            threshold = config.get('severity_threshold', 'all')
-            
-            self.db.set_cve_channel_config(interaction.guild_id, channel_id, enabled=True, verbose_mode=True, severity_threshold=threshold)
-            await interaction.response.send_message("✅ Verbose CVE alerts **enabled**.", ephemeral=True)
+            self.db.update_cve_guild_verbose_mode(interaction.guild_id, True)
+            await interaction.response.send_message("✅ Global verbose CVE alerts **enabled**. Specific channel settings may override this.", ephemeral=True)
         except Exception as e:
-            logger.error(f"Error enabling verbose CVE alerts for guild {interaction.guild_id}: {e}", exc_info=True)
-            await interaction.response.send_message("❌ An error occurred while enabling verbose alerts.", ephemeral=True)
+            logger.error(f"Error enabling global verbose CVE alerts for guild {interaction.guild_id}: {e}", exc_info=True)
+            await interaction.response.send_message("❌ An error occurred while enabling global verbose alerts.", ephemeral=True)
 
-    @verbose_group.command(name="disable", description="Disable detailed (verbose) CVE alerts, use standard format.")
+    @verbose_group.command(name="disable_global", description="Disable detailed CVE alerts globally (uses standard format)." )
     @app_commands.checks.has_permissions(manage_guild=True)
-    async def verbose_disable_command(self, interaction: discord.Interaction):
-        if not self.db:
-            await interaction.response.send_message("❌ Database connection is not available.", ephemeral=True)
+    async def verbose_disable_global_command(self, interaction: discord.Interaction):
+        if not self.db or not interaction.guild_id:
+            await interaction.response.send_message("❌ Bot error: Cannot access database or guild ID.", ephemeral=True)
             return
-        if interaction.guild_id is None:
-            await interaction.response.send_message("❌ Cannot determine server ID.", ephemeral=True)
-            return
-        
         try:
-            config = self.db.get_cve_channel_config(interaction.guild_id)
-            # If config doesn't exist or not enabled, disabling verbose doesn't really do anything
-            # but we can still set the flag in the DB for consistency if they enable later.
-            channel_id = config.get('channel_id', 0) if config else 0
-            enabled = config.get('enabled', False) if config else False
-            threshold = config.get('severity_threshold', 'all') if config else 'all'
-
-            self.db.set_cve_channel_config(interaction.guild_id, channel_id, enabled=enabled, verbose_mode=False, severity_threshold=threshold)
-            await interaction.response.send_message("✅ Verbose CVE alerts **disabled**. Standard format will be used.", ephemeral=True)
+            self.db.update_cve_guild_verbose_mode(interaction.guild_id, False)
+            await interaction.response.send_message("✅ Global verbose CVE alerts **disabled**. Standard format will be used (unless channels override).", ephemeral=True)
         except Exception as e:
-            logger.error(f"Error disabling verbose CVE alerts for guild {interaction.guild_id}: {e}", exc_info=True)
-            await interaction.response.send_message("❌ An error occurred while disabling verbose alerts.", ephemeral=True)
+            logger.error(f"Error disabling global verbose CVE alerts for guild {interaction.guild_id}: {e}", exc_info=True)
+            await interaction.response.send_message("❌ An error occurred while disabling global verbose alerts.", ephemeral=True)
+
+    @verbose_group.command(name="set", description="Set verbosity override for a specific channel.")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.describe(
+        channel="The channel to configure.",
+        verbosity="Whether to use verbose (True) or standard (False) alerts."
+    )
+    async def verbose_channel_set_command(self, interaction: discord.Interaction, channel: discord.TextChannel, verbosity: bool):
+        if not self.db or not interaction.guild_id:
+            await interaction.response.send_message("❌ Bot error: Cannot access database or guild ID.", ephemeral=True)
+            return
+        try:
+            if not self.db.get_cve_guild_config(interaction.guild_id):
+                 self.db.set_cve_guild_config(interaction.guild_id, enabled=True, verbose_mode=False, severity_threshold='all')
+                 logger.info(f"Initialized default CVE guild config for {interaction.guild_id} while setting channel verbosity.")
+
+            self.db.set_channel_verbosity(interaction.guild_id, channel.id, verbosity)
+            status_text = "verbose" if verbosity else "standard (non-verbose)"
+            await interaction.response.send_message(f"✅ Verbosity for {channel.mention} set to **{status_text}**. This overrides the global setting.", ephemeral=True)
+        except Exception as e:
+            logger.error(f"Error setting channel verbosity for {channel.id} in guild {interaction.guild_id}: {e}", exc_info=True)
+            await interaction.response.send_message("❌ An error occurred while setting channel verbosity.", ephemeral=True)
+
+    @verbose_group.command(name="unset", description="Remove verbosity override for a channel (uses global setting)." )
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.describe(channel="The channel to reset to global verbosity setting.")
+    async def verbose_channel_unset_command(self, interaction: discord.Interaction, channel: discord.TextChannel):
+        if not self.db or not interaction.guild_id:
+            await interaction.response.send_message("❌ Bot error: Cannot access database or guild ID.", ephemeral=True)
+            return
+        try:
+            self.db.set_channel_verbosity(interaction.guild_id, channel.id, None)
+            await interaction.response.send_message(f"✅ Verbosity override for {channel.mention} **removed**. It will now use the global server setting.", ephemeral=True)
+        except Exception as e:
+            logger.error(f"Error unsetting channel verbosity for {channel.id} in guild {interaction.guild_id}: {e}", exc_info=True)
+            await interaction.response.send_message("❌ An error occurred while unsetting channel verbosity.", ephemeral=True)
+
+    @verbose_group.command(name="setall", description="Set verbosity override for ALL configured channels in this server.")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.describe(verbosity="Set all channels to verbose (True) or standard (False).")
+    async def verbose_channel_setall_command(self, interaction: discord.Interaction, verbosity: bool):
+        if not self.db or not interaction.guild_id:
+            await interaction.response.send_message("❌ Bot error: Cannot access database or guild ID.", ephemeral=True)
+            return
+        try:
+            self.db.set_all_channel_verbosity(interaction.guild_id, verbosity)
+            status_text = "verbose" if verbosity else "standard (non-verbose)"
+            await interaction.response.send_message(f"✅ Verbosity override for **all configured channels** set to **{status_text}**. This may differ from the global setting.", ephemeral=True)
+        except Exception as e:
+            logger.error(f"Error setting all channel verbosity for guild {interaction.guild_id}: {e}", exc_info=True)
+            await interaction.response.send_message("❌ An error occurred while setting verbosity for all channels.", ephemeral=True)
+
+    @verbose_group.command(name="status", description="Show global and per-channel verbosity status." )
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.describe(channel="(Optional) Specific channel to check status for.")
+    async def verbose_channel_status_command(self, interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None):
+        if not self.db or not interaction.guild_id:
+            await interaction.response.send_message("❌ Bot error: Cannot access database or guild ID.", ephemeral=True)
+            return
+
+        guild_id = interaction.guild_id
+        guild_config = self.db.get_cve_guild_config(guild_id)
+        global_verbose = guild_config.get('verbose_mode', False) if guild_config else False
+        global_status_text = "Verbose" if global_verbose else "Standard (Non-Verbose)"
+
+        embed = discord.Embed(title="CVE Alert Verbosity Status", color=discord.Color.blurple())
+        embed.description = f"Global Setting: **{global_status_text}**\n\n" # Double newline
+
+        if channel:
+            channel_config = self.db.get_cve_channel_config(guild_id, channel.id)
+            override = channel_config.get('verbose_mode') if channel_config else None
+            if override is None:
+                status = f"Inheriting Global ({global_status_text})"
+            else:
+                status = "Verbose (Override)" if override else "Standard (Override)"
+            embed.add_field(name=f"#{channel.name}", value=status, inline=False)
+        else:
+            all_channel_configs = self.db.get_all_cve_channel_configs_for_guild(guild_id)
+            override_count = 0
+            status_lines = []
+            if all_channel_configs:
+                for config in all_channel_configs:
+                    chan_id = config.get('channel_id')
+                    override = config.get('verbose_mode')
+                    chan_obj = self.bot.get_channel(chan_id)
+                    chan_name = f"#{chan_obj.name}" if chan_obj else f"ID: {chan_id}"
+                    if override is not None:
+                        override_count += 1
+                        status = "**Verbose**" if override else "**Standard**"
+                        status_lines.append(f"{chan_name}: {status} (Override)")
+
+            if override_count > 0:
+                 embed.add_field(name="Channel Overrides", value="\n".join(status_lines), inline=False)
+            else:
+                 embed.add_field(name="Channel Overrides", value="No channels have specific verbosity overrides. All are using the global setting.", inline=False)
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    # --- End /verbose Group ---
 
     # --- NEW /cve threshold Group (PRD Section 3.1.5) ---
     threshold_group = app_commands.Group(name="threshold", description="Configure minimum severity for CVE alerts.", parent=cve_group, guild_only=True)
@@ -434,16 +521,14 @@ class CVELookupCog(commands.Cog):
         app_commands.Choice(name="All (Default)", value="all"),
     ])
     async def threshold_set_command(self, interaction: discord.Interaction, level: SeverityLevelChoices):
-        if not self.db:
-            await interaction.response.send_message("❌ Database connection is not available.", ephemeral=True)
-            return
-        if interaction.guild_id is None:
-            await interaction.response.send_message("❌ Cannot determine server ID.", ephemeral=True)
+        if not self.db or not interaction.guild_id:
+            await interaction.response.send_message("❌ Database connection or Guild ID missing.", ephemeral=True)
             return
         
         try:
-            self.db.set_cve_severity_threshold(interaction.guild_id, level)
-            await interaction.response.send_message(f"✅ CVE alert severity threshold set to **{level}**.", ephemeral=True)
+            # Use the updated method for guild-level severity
+            self.db.update_cve_guild_severity_threshold(interaction.guild_id, level)
+            await interaction.response.send_message(f"✅ Global CVE alert severity threshold set to **{level}**.", ephemeral=True)
         except Exception as e:
             logger.error(f"Error setting CVE threshold for guild {interaction.guild_id}: {e}", exc_info=True)
             await interaction.response.send_message("❌ An error occurred while setting the severity threshold.", ephemeral=True)
@@ -451,31 +536,27 @@ class CVELookupCog(commands.Cog):
     @threshold_group.command(name="view", description="View the current minimum severity level for CVE alerts.")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def threshold_view_command(self, interaction: discord.Interaction):
-        if not self.db:
-            await interaction.response.send_message("❌ Database connection is not available.", ephemeral=True)
-            return
-        if interaction.guild_id is None:
-            await interaction.response.send_message("❌ Cannot determine server ID.", ephemeral=True)
+        if not self.db or not interaction.guild_id:
+            await interaction.response.send_message("❌ Database connection or Guild ID missing.", ephemeral=True)
             return
 
-        config = self.db.get_cve_channel_config(interaction.guild_id)
-        current_threshold = config.get('severity_threshold', 'all') if config else 'all'
-        await interaction.response.send_message(f"ℹ️ Current CVE alert severity threshold is **{current_threshold}**.", ephemeral=True)
+        # Use the correct method to get the global guild config
+        config = self.db.get_cve_guild_config(interaction.guild_id)
+        current_threshold = config.get('severity_threshold', 'all') if config else 'all' # Default to 'all' if no config
+        await interaction.response.send_message(f"ℹ️ Current global CVE alert severity threshold is **{current_threshold}**.", ephemeral=True)
 
     @threshold_group.command(name="reset", description="Reset the CVE alert severity threshold to default ('all').")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def threshold_reset_command(self, interaction: discord.Interaction):
-        if not self.db:
-            await interaction.response.send_message("❌ Database connection is not available.", ephemeral=True)
-            return
-        if interaction.guild_id is None:
-            await interaction.response.send_message("❌ Cannot determine server ID.", ephemeral=True)
+        if not self.db or not interaction.guild_id:
+            await interaction.response.send_message("❌ Database connection or Guild ID missing.", ephemeral=True)
             return
 
         try:
-            self.db.set_cve_severity_threshold(interaction.guild_id, 'all')
+            # Use the updated method for guild-level severity
+            self.db.update_cve_guild_severity_threshold(interaction.guild_id, 'all') 
             await interaction.response.send_message(
-                "✅ CVE alert severity threshold reset to **all**.", ephemeral=True
+                "✅ Global CVE alert severity threshold reset to **all**.", ephemeral=True
             )
         except Exception as e:
             logger.error(f"Error resetting CVE threshold for guild {interaction.guild_id}: {e}", exc_info=True)

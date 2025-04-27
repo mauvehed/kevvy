@@ -593,13 +593,28 @@ class SecurityBot(commands.Bot):
 
         unique_cves = sorted(list(set(cves_found)), key=lambda x: cves_found.index(x))
 
-        # --- Get Guild Verbose Setting --- 
-        guild_verbose_setting = False # Default to non-verbose
+        # --- Get Effective Verbose Setting for the Channel --- 
+        effective_verbose_setting = False # Default to non-verbose
         if message.guild and self.db:
-            guild_config = self.db.get_cve_channel_config(message.guild.id)
-            if guild_config and guild_config.get('enabled'): # Only apply if CVE monitoring is enabled
-                guild_verbose_setting = guild_config.get('verbose_mode', False)
-        # --- End Get Guild Verbose Setting ---
+            guild_id = message.guild.id
+            channel_id = message.channel.id
+            try:
+                # Use the new method to get channel-specific or global setting
+                effective_verbose_setting = self.db.get_effective_verbosity(guild_id, channel_id)
+                # We also need to check if CVE monitoring is globally enabled for the guild
+                guild_config = self.db.get_cve_guild_config(guild_id)
+                is_guild_enabled = guild_config.get('enabled', False) if guild_config else False
+                if not is_guild_enabled:
+                     effective_verbose_setting = False # Force non-verbose if guild disabled CVE monitoring
+                     logger.debug(f"CVE monitoring disabled for guild {guild_id}, forcing non-verbose for message in channel {channel_id}.")
+
+            except Exception as db_err:
+                 logger.error(f"Error getting effective verbosity/config for guild {guild_id}, channel {channel_id}: {db_err}", exc_info=True)
+                 effective_verbose_setting = False # Default to non-verbose on error
+        else:
+             # Handle DMs or cases where DB isn't available - default to non-verbose
+             effective_verbose_setting = False
+        # --- End Get Effective Verbose Setting ---
 
         embeds_to_send = []
         processed_count = 0
@@ -665,8 +680,8 @@ class SecurityBot(commands.Bot):
                     if 'source' not in cve_data and source_used:
                          cve_data['source'] = source_used
                     
-                    # --- Pass verbose setting to embed creation --- 
-                    embeds = await self.cve_monitor.create_cve_embed(cve_data, verbose=guild_verbose_setting)
+                    # --- Pass EFFECTIVE verbose setting to embed creation --- 
+                    embeds = await self.cve_monitor.create_cve_embed(cve_data, verbose=effective_verbose_setting)
                     # --- End Pass verbose setting ---
 
                     embeds_to_send.extend(embeds)
