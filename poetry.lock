@@ -914,13 +914,15 @@ files = [
 
 [[package]]
 name = "sourcery-cli"
-version = "1.20.0"
+version = "1.18.0"
 description = "Magically refactor Python"
 optional = false
 python-versions = "*"
-groups = ["dev"]
+groups = ["sourcery"]
 files = [
-    {file = "sourcery_cli-1.20.0-py2.py3-none-macosx_10_9_universal2.whl", hash = "sha256:14cf32e5b1f380d776f1711982abe37e88bfeb034c0410a6c9f84f608a9df62b"},
+    {file = "sourcery_cli-1.18.0-py2.py3-none-macosx_10_9_universal2.whl", hash = "sha256:31dd1e786d11a65c62cb11a9b97d40a1b3576b5f07c591eb1ee582db2612732d"},
+    {file = "sourcery_cli-1.18.0-py2.py3-none-manylinux1_x86_64.whl", hash = "sha256:96c460352f6d5b524d97e7f80ccea0838499f825c0f517f7ddd807e06261a7cb"},
+    {file = "sourcery_cli-1.18.0-py2.py3-none-win_amd64.whl", hash = "sha256:7f745e8c5fa0150eb870c61c10488fec0e4959ff4aebab508034f170b44ac291"},
 ]
 
 [[package]]
@@ -1151,4 +1153,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.10"
-content-hash = "31b03ec3852277945e963d29a05baca4eb2dc74223e669cf3f86910a547b09af"
+content-hash = "b174863cf26ac6a70054e8b6684d2d411c42b8f352a67b97b99f064f7b4336ce"
