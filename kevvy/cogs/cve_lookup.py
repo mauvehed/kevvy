@@ -338,18 +338,18 @@ class CVELookupCog(commands.Cog):
     @channel_group.command(name="disable", description="Disable CVE monitoring alerts for this server.")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def channel_disable_command(self, interaction: discord.Interaction):
-        if not self.db:
-            await interaction.response.send_message("❌ Database connection is not available.", ephemeral=True)
-            return
-        if interaction.guild_id is None:
-            await interaction.response.send_message("❌ Cannot determine server ID.", ephemeral=True)
+        if not self.db or not interaction.guild_id:
+            await interaction.response.send_message("❌ Bot error: Cannot access database or Guild ID.", ephemeral=True)
             return
         
+        guild_id = interaction.guild_id
         try:
-            self.db.disable_cve_channel_config(interaction.guild_id)
+            # Update the global enabled status to False
+            self.db.update_cve_guild_enabled(guild_id, False)
+            logger.info(f"User {interaction.user} disabled global CVE monitoring for guild {guild_id}.")
             await interaction.response.send_message("❌ CVE monitoring disabled for this server.", ephemeral=True)
         except Exception as e:
-            logger.error(f"Error disabling CVE channel for guild {interaction.guild_id}: {e}", exc_info=True)
+            logger.error(f"Error disabling global CVE monitoring for guild {guild_id}: {e}", exc_info=True)
             await interaction.response.send_message("❌ An error occurred while disabling CVE monitoring.", ephemeral=True)
 
     @channel_group.command(name="set", description="Set/update the channel for CVE alerts (implicitly enables).")

@@ -274,117 +274,6 @@ def test_add_seen_kevs_empty_set(kev_db: KEVConfigDB):
     assert len(final_seen_set) == 0
     assert initial_seen_set == final_seen_set 
 
-# --- NEW Tests for cve_channel_config --- 
-
-def test_set_and_get_cve_channel_config(kev_db: KEVConfigDB, db_conn: sqlite3.Connection):
-    """Test setting a new CVE channel config and retrieving it."""
-    guild_id = 1
-    channel_id = 101
-    
-    # Set with defaults (enabled, not verbose, threshold 'all')
-    kev_db.set_cve_channel_config(guild_id, channel_id)
-    
-    config = kev_db.get_cve_channel_config(guild_id)
-    assert config is not None
-    assert config['guild_id'] == guild_id
-    assert config['channel_id'] == channel_id
-    assert config['enabled'] == 1
-    assert config['verbose_mode'] == 0
-    assert config['severity_threshold'] == 'all'
-    assert 'last_updated' in config
-
-    # Verify directly in DB
-    cursor = db_conn.cursor()
-    cursor.execute("SELECT * FROM cve_channel_config WHERE guild_id = ?", (guild_id,))
-    row = cursor.fetchone()
-    assert row is not None
-    assert row['guild_id'] == guild_id
-    assert row['channel_id'] == channel_id
-    assert row['enabled'] == 1
-    assert row['verbose_mode'] == 0
-    assert row['severity_threshold'] == 'all'
-
-def test_update_cve_channel_config(kev_db: KEVConfigDB):
-    """Test updating various fields of the CVE channel config."""
-    guild_id = 2
-    initial_channel_id = 201
-    updated_channel_id = 202
-    
-    # Initial set
-    kev_db.set_cve_channel_config(guild_id, initial_channel_id)
-    
-    # Update channel, enable verbose, set threshold
-    kev_db.set_cve_channel_config(guild_id, updated_channel_id, enabled=True, verbose_mode=True, severity_threshold='high')
-    
-    config = kev_db.get_cve_channel_config(guild_id)
-    assert config is not None
-    assert config['channel_id'] == updated_channel_id
-    assert config['enabled'] == 1
-    assert config['verbose_mode'] == 1
-    assert config['severity_threshold'] == 'high'
-
-def test_disable_cve_channel_config(kev_db: KEVConfigDB):
-    """Test disabling CVE monitoring."""
-    guild_id = 3
-    channel_id = 301
-    
-    kev_db.set_cve_channel_config(guild_id, channel_id, enabled=True)
-    config_before = kev_db.get_cve_channel_config(guild_id)
-    assert config_before is not None and config_before['enabled'] == 1
-    
-    kev_db.disable_cve_channel_config(guild_id)
-    config_after = kev_db.get_cve_channel_config(guild_id)
-    assert config_after is not None and config_after['enabled'] == 0
-    # Ensure other settings were preserved (or set to default disabled state)
-    assert config_after['channel_id'] == channel_id # Should retain original channel
-    assert config_after['verbose_mode'] == 0
-    assert config_after['severity_threshold'] == 'all'
-
-def test_disable_nonexistent_cve_channel_config(kev_db: KEVConfigDB, db_conn: sqlite3.Connection):
-    """Test disabling when no config exists (should create a disabled record)."""
-    guild_id = 4
-    
-    kev_db.disable_cve_channel_config(guild_id)
-    
-    config = kev_db.get_cve_channel_config(guild_id)
-    assert config is not None
-    assert config['guild_id'] == guild_id
-    assert config['enabled'] == 0
-    assert config['channel_id'] == 0 # Default channel ID when inserted as disabled
-    assert config['verbose_mode'] == 0
-    assert config['severity_threshold'] == 'all'
-
-    # Verify in DB
-    cursor = db_conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM cve_channel_config WHERE guild_id = ? AND enabled = 0", (guild_id,))
-    assert cursor.fetchone()[0] == 1
-
-def test_set_cve_severity_threshold(kev_db: KEVConfigDB):
-    """Test setting only the severity threshold."""
-    guild_id = 5
-    channel_id = 501
-    
-    # Set initial config
-    kev_db.set_cve_channel_config(guild_id, channel_id)
-    
-    # Set threshold
-    kev_db.set_cve_severity_threshold(guild_id, 'medium')
-    
-    config = kev_db.get_cve_channel_config(guild_id)
-    assert config is not None
-    assert config['severity_threshold'] == 'medium'
-    # Ensure other fields are unchanged
-    assert config['channel_id'] == channel_id
-    assert config['enabled'] == 1
-    assert config['verbose_mode'] == 0
-
-def test_set_cve_severity_threshold_no_config(kev_db: KEVConfigDB):
-    """Test setting threshold when no config exists (should have no effect)."""
-    guild_id = 6
-    kev_db.set_cve_severity_threshold(guild_id, 'high')
-    config = kev_db.get_cve_channel_config(guild_id)
-    assert config is None # No config should have been created
-
 # --- NEW Tests for History / Logging --- 
 
 def test_log_cve_alert_history(kev_db: KEVConfigDB, db_conn: sqlite3.Connection):
@@ -426,3 +315,197 @@ def test_log_kev_latest_query(kev_db: KEVConfigDB, db_conn: sqlite3.Connection):
     assert row['queried_at'] is not None # Check value exists
 
 # --- End New Tests --- 
+
+# --- Tests for CVE Guild and Channel Configs ---
+
+def test_set_and_get_cve_guild_config(kev_db: KEVConfigDB, db_conn: sqlite3.Connection):
+    """Test setting and getting global CVE guild config."""
+    guild_id = 11
+    
+    # Set initial config
+    kev_db.set_cve_guild_config(guild_id, enabled=True, verbose_mode=False, severity_threshold='high')
+    
+    config = kev_db.get_cve_guild_config(guild_id)
+    assert config is not None
+    assert config['guild_id'] == guild_id
+    assert config['enabled'] == True
+    assert config['verbose_mode'] == False
+    assert config['severity_threshold'] == 'high'
+
+    # Update config
+    kev_db.set_cve_guild_config(guild_id, enabled=True, verbose_mode=True, severity_threshold='critical')
+    config_updated = kev_db.get_cve_guild_config(guild_id)
+    assert config_updated['verbose_mode'] == True
+    assert config_updated['severity_threshold'] == 'critical'
+
+def test_update_specific_guild_fields(kev_db: KEVConfigDB):
+    """Test updating individual fields of the guild config."""
+    guild_id = 22
+    # Initialize with set_cve_guild_config
+    kev_db.set_cve_guild_config(guild_id, enabled=True, verbose_mode=False, severity_threshold='all')
+    
+    # Update enabled
+    kev_db.update_cve_guild_enabled(guild_id, False)
+    config = kev_db.get_cve_guild_config(guild_id)
+    assert config['enabled'] == False
+    
+    # Update verbose
+    kev_db.update_cve_guild_verbose_mode(guild_id, True)
+    config = kev_db.get_cve_guild_config(guild_id)
+    assert config['verbose_mode'] == True
+    
+    # Update threshold
+    kev_db.update_cve_guild_severity_threshold(guild_id, 'medium')
+    config = kev_db.get_cve_guild_config(guild_id)
+    assert config['severity_threshold'] == 'medium'
+
+def test_get_cve_guild_config_nonexistent(kev_db: KEVConfigDB):
+    """Test getting guild config when none exists."""
+    assert kev_db.get_cve_guild_config(999) is None
+
+def test_add_and_get_cve_channel_config(kev_db: KEVConfigDB):
+    """Test adding and retrieving a specific channel config."""
+    guild_id = 33
+    channel_id = 303
+    
+    # Add config
+    kev_db.add_or_update_cve_channel(guild_id, channel_id, enabled=True, verbose_mode=True, severity_threshold='low')
+    
+    config = kev_db.get_cve_channel_config(guild_id, channel_id)
+    assert config is not None
+    assert config['guild_id'] == guild_id
+    assert config['channel_id'] == channel_id
+    assert config['enabled'] == True
+    assert config['verbose_mode'] == True
+    assert config['severity_threshold'] == 'low'
+    assert config['alert_format'] is None # Check default
+
+def test_update_cve_channel_config(kev_db: KEVConfigDB):
+    """Test updating an existing channel config."""
+    guild_id = 44
+    channel_id = 404
+    
+    # Initial add
+    kev_db.add_or_update_cve_channel(guild_id, channel_id, enabled=True, verbose_mode=False, severity_threshold='all', alert_format='default')
+    
+    # Update
+    kev_db.add_or_update_cve_channel(guild_id, channel_id, enabled=False, verbose_mode=True, severity_threshold='critical', alert_format='custom')
+    
+    config = kev_db.get_cve_channel_config(guild_id, channel_id)
+    assert config['enabled'] == False
+    assert config['verbose_mode'] == True
+    assert config['severity_threshold'] == 'critical'
+    assert config['alert_format'] == 'custom'
+
+def test_get_all_cve_channels_for_guild(kev_db: KEVConfigDB):
+    """Test retrieving all channel configs for a specific guild."""
+    guild_id = 55
+    channel_id_1 = 501
+    channel_id_2 = 502
+    other_guild_id = 66
+    
+    # Add configs
+    kev_db.add_or_update_cve_channel(guild_id, channel_id_1)
+    kev_db.add_or_update_cve_channel(guild_id, channel_id_2, verbose_mode=True)
+    kev_db.add_or_update_cve_channel(other_guild_id, 909) # Config for another guild
+    
+    configs = kev_db.get_all_cve_channel_configs_for_guild(guild_id)
+    assert isinstance(configs, list)
+    assert len(configs) == 2
+    
+    channel_ids_found = {cfg['channel_id'] for cfg in configs}
+    assert channel_ids_found == {channel_id_1, channel_id_2}
+    # Check verbose mode of second channel
+    config_2 = next((cfg for cfg in configs if cfg['channel_id'] == channel_id_2), None)
+    assert config_2 is not None and config_2['verbose_mode'] == True
+
+def test_remove_cve_channel_config(kev_db: KEVConfigDB):
+    """Test removing a channel config."""
+    guild_id = 77
+    channel_id = 707
+    
+    kev_db.add_or_update_cve_channel(guild_id, channel_id)
+    assert kev_db.get_cve_channel_config(guild_id, channel_id) is not None
+    
+    kev_db.remove_cve_channel(guild_id, channel_id)
+    assert kev_db.get_cve_channel_config(guild_id, channel_id) is None
+
+def test_set_channel_verbosity(kev_db: KEVConfigDB):
+    """Test setting and unsetting channel verbosity override."""
+    guild_id = 88
+    channel_id = 808
+    
+    # Add initial channel row (required by ON CONFLICT update)
+    kev_db.add_or_update_cve_channel(guild_id, channel_id)
+    
+    # Set verbosity to True
+    kev_db.set_channel_verbosity(guild_id, channel_id, True)
+    config = kev_db.get_cve_channel_config(guild_id, channel_id)
+    assert config['verbose_mode'] == True
+    
+    # Set verbosity to False
+    kev_db.set_channel_verbosity(guild_id, channel_id, False)
+    config = kev_db.get_cve_channel_config(guild_id, channel_id)
+    assert config['verbose_mode'] == False
+    
+    # Unset verbosity (set to None)
+    kev_db.set_channel_verbosity(guild_id, channel_id, None)
+    config = kev_db.get_cve_channel_config(guild_id, channel_id)
+    assert config['verbose_mode'] is None
+
+def test_set_all_channel_verbosity(kev_db: KEVConfigDB):
+    """Test setting verbosity for all channels in a guild."""
+    guild_id = 99
+    channel_id_1 = 901
+    channel_id_2 = 902
+    
+    kev_db.add_or_update_cve_channel(guild_id, channel_id_1, verbose_mode=False)
+    kev_db.add_or_update_cve_channel(guild_id, channel_id_2, verbose_mode=None)
+    
+    # Set all to True
+    kev_db.set_all_channel_verbosity(guild_id, True)
+    assert kev_db.get_cve_channel_config(guild_id, channel_id_1)['verbose_mode'] == True
+    assert kev_db.get_cve_channel_config(guild_id, channel_id_2)['verbose_mode'] == True
+    
+    # Set all to False
+    kev_db.set_all_channel_verbosity(guild_id, False)
+    assert kev_db.get_cve_channel_config(guild_id, channel_id_1)['verbose_mode'] == False
+    assert kev_db.get_cve_channel_config(guild_id, channel_id_2)['verbose_mode'] == False
+
+def test_get_effective_verbosity(kev_db: KEVConfigDB):
+    """Test getting the effective verbosity considering overrides and global."""
+    guild_id = 111
+    channel_override_true = 101
+    channel_override_false = 102
+    channel_override_none = 103
+    channel_no_config = 104
+    
+    # Case 1: Global False, Overrides exist
+    kev_db.set_cve_guild_config(guild_id, enabled=True, verbose_mode=False, severity_threshold='all')
+    kev_db.add_or_update_cve_channel(guild_id, channel_override_true, verbose_mode=True)
+    kev_db.add_or_update_cve_channel(guild_id, channel_override_false, verbose_mode=False)
+    kev_db.add_or_update_cve_channel(guild_id, channel_override_none, verbose_mode=None)
+    # No config added for channel_no_config
+    
+    assert kev_db.get_effective_verbosity(guild_id, channel_override_true) == True
+    assert kev_db.get_effective_verbosity(guild_id, channel_override_false) == False
+    assert kev_db.get_effective_verbosity(guild_id, channel_override_none) == False # Inherits global False
+    assert kev_db.get_effective_verbosity(guild_id, channel_no_config) == False # Inherits global False
+    
+    # Case 2: Global True, Overrides exist
+    kev_db.update_cve_guild_verbose_mode(guild_id, True)
+    assert kev_db.get_effective_verbosity(guild_id, channel_override_true) == True
+    assert kev_db.get_effective_verbosity(guild_id, channel_override_false) == False
+    assert kev_db.get_effective_verbosity(guild_id, channel_override_none) == True # Inherits global True
+    assert kev_db.get_effective_verbosity(guild_id, channel_no_config) == True # Inherits global True
+    
+    # Case 3: No Global Config (should default to False)
+    guild_id_no_global = 222
+    kev_db.add_or_update_cve_channel(guild_id_no_global, 201, verbose_mode=True)
+    kev_db.add_or_update_cve_channel(guild_id_no_global, 202, verbose_mode=None)
+    
+    assert kev_db.get_effective_verbosity(guild_id_no_global, 201) == True # Override works
+    assert kev_db.get_effective_verbosity(guild_id_no_global, 202) == False # Inherits default False
+    assert kev_db.get_effective_verbosity(guild_id_no_global, 203) == False # No channel, inherits default False
+
+# --- Tests for Logging --- 
