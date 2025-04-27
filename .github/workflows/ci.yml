@@ -75,12 +75,14 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}/${{ env.IMAGE_NAME }} # Use repository name directly
+          images: ghcr.io/${{ github.repository }} 
           # Extract version tag from Git ref (e.g., v1.2.3 -> 1.2.3)
           # Also add 'latest' tag if pushing from main branch (optional)
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
+            # Add latest tag for version pushes as well (optional, common practice)
+            type=raw,value=latest
             # type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
 
       - name: Build and push Docker image
