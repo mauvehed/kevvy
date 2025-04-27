@@ -154,7 +154,17 @@ class KEVCog(commands.Cog):
                 date_added_str = k.get('dateAdded')
                 if isinstance(date_added_str, str):
                     try:
-                        entry_date = datetime.datetime.fromisoformat(date_added_str.replace('Z', '+00:00'))
+                        parsed_date = datetime.datetime.fromisoformat(date_added_str.replace('Z', '+00:00'))
+                        
+                        # Ensure the parsed date is offset-aware (assume UTC if naive)
+                        if parsed_date.tzinfo is None:
+                            entry_date = parsed_date.replace(tzinfo=datetime.timezone.utc)
+                            logger.debug(f"Made naive date {parsed_date} aware for KEV entry {k.get('cveID')}")
+                        else:
+                            # If already aware, ensure it's in UTC for consistent comparison
+                            entry_date = parsed_date.astimezone(datetime.timezone.utc)
+                            
+                        # Now compare offset-aware dates
                         if entry_date >= cutoff_date:
                             recent_kevs.append(k)
                     except ValueError:

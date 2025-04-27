@@ -594,6 +594,14 @@ class SecurityBot(commands.Bot):
 
         unique_cves = sorted(list(set(cves_found)), key=lambda x: cves_found.index(x))
 
+        # --- Get Guild Verbose Setting --- 
+        guild_verbose_setting = False # Default to non-verbose
+        if message.guild and self.db:
+            guild_config = self.db.get_cve_channel_config(message.guild.id)
+            if guild_config and guild_config.get('enabled'): # Only apply if CVE monitoring is enabled
+                guild_verbose_setting = guild_config.get('verbose_mode', False)
+        # --- End Get Guild Verbose Setting ---
+
         embeds_to_send = []
         processed_count = 0
         for cve_original_case in unique_cves:
@@ -657,9 +665,13 @@ class SecurityBot(commands.Bot):
                     # Add source info if not already present from client
                     if 'source' not in cve_data and source_used:
                          cve_data['source'] = source_used
-                    embeds = await self.cve_monitor.create_cve_embed(cve_data)
+                    
+                    # --- Pass verbose setting to embed creation --- 
+                    embeds = await self.cve_monitor.create_cve_embed(cve_data, verbose=guild_verbose_setting)
+                    # --- End Pass verbose setting ---
+
                     embeds_to_send.extend(embeds)
-                    processed_count += 1
+                    processed_count += 1 # Increment based on primary CVE embed, not KEV
                 else:
                     logging.warning(f"Could not retrieve details for {cve} from any source.") # Uses normalized cve
 
@@ -670,10 +682,27 @@ class SecurityBot(commands.Bot):
 
         if embeds_to_send:
             logging.info(f"Sending {len(embeds_to_send)} embeds for message {message.id}")
+            # Ensure we don't exceed Discord embed limits per message batch (usually 10)
+            # This logic sends one embed per message, which is safer but slower.
+            # Consider batching embeds up to 10 per message if needed.
             for i, embed in enumerate(embeds_to_send):
-                await message.channel.send(embed=embed)
-                if i < len(embeds_to_send) - 1:
-                    await asyncio.sleep(0.5)
+                if i >= MAX_EMBEDS_PER_MESSAGE:
+                    logging.warning(f"Stopping embed sending at {i} due to MAX_EMBEDS_PER_MESSAGE limit.")
+                    break 
+                try:
+                     await message.channel.send(embed=embed)
+                     if i < len(embeds_to_send) - 1:
+                          await asyncio.sleep(0.5)
+                except discord.Forbidden:
+                     guild_id_str = message.guild.id if message.guild else 'DM'
+                     logger.error(f"Missing permissions to send embed in channel {message.channel.id} (Guild: {guild_id_str})")
+                     break 
+                except discord.HTTPException as http_err:
+                     logger.error(f"HTTP Error sending embed {i+1}/{len(embeds_to_send)} for message {message.id}: {http_err}")
+                     await asyncio.sleep(1)
+                except Exception as send_err:
+                     logger.error(f"Unexpected error sending embed {i+1}/{len(embeds_to_send)}: {send_err}", exc_info=True)
+                     await asyncio.sleep(1)
 
             if len(unique_cves) > MAX_EMBEDS_PER_MESSAGE:
                 await message.channel.send(f"*Found {len(unique_cves)} unique CVEs, showing details for the first {MAX_EMBEDS_PER_MESSAGE}.*", allowed_mentions=discord.AllowedMentions.none())
@@ -696,17 +725,13 @@ class SecurityBot(commands.Bot):
                 "api_errors_nvd_since_last": self.stats_api_errors_nvd,
                 "api_errors_cisa_since_last": self.stats_api_errors_cisa,
                 "rate_limits_nvd_since_last": self.stats_rate_limits_nvd,
-                # Convert defaultdict to regular dict for JSON serialization before sending
                 "app_command_errors_since_last": dict(self.stats_app_command_errors)
             }
 
     async def _get_current_diagnostics(self) -> Dict[str, Any]:
         """Gathers current diagnostic information."""
-        # Gather non-counter diagnostics (DB access outside lock)
         enabled_kev_guilds = self.db.count_enabled_guilds() if self.db else 0
 
-        # No lock needed here as these lists/timestamps are updated less frequently
-        # or are assumed atomic reads/writes for basic types.
         return {
             "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "bot_id": self.user.id if self.user else None,
