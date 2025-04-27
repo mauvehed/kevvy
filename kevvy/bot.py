@@ -87,7 +87,7 @@ class SecurityBot(commands.Bot):
                 loop.add_signal_handler(
                     sig, lambda s=sig: asyncio.create_task(self._handle_signal(s))
                 )
-            logger.info(f"Registered signal handlers for SIGINT and SIGTERM.")
+            logger.info("Registered signal handlers for SIGINT and SIGTERM.")
         except NotImplementedError:
             logger.warning("Signal handlers are not supported on this platform (likely Windows). Graceful shutdown via signals is disabled.")
         except Exception as e:
@@ -150,7 +150,7 @@ class SecurityBot(commands.Bot):
         # Sync the commands
         try:
             await self.tree.sync()
-            logging.info(f"Synced application commands.")
+            logging.info("Synced application commands.")
         except Exception as e:
             logger.error(f"Failed to sync application commands: {e}", exc_info=True)
             # Consider adding this failure to failed_cogs or a separate status
@@ -213,11 +213,7 @@ class SecurityBot(commands.Bot):
                 # No return needed here, let it reach the success update
             else:
                 logger.info(f"Found {len(new_entries)} new KEV entries. Checking configured guilds...")
-                enabled_configs = self.db.get_enabled_kev_configs()
-
-                if not enabled_configs:
-                    logger.info("No guilds have KEV monitoring enabled.")
-                else:
+                if enabled_configs := self.db.get_enabled_kev_configs():
                     alerts_sent_this_run = 0
                     for config in enabled_configs:
                         guild_id = config['guild_id']
@@ -257,6 +253,8 @@ class SecurityBot(commands.Bot):
                         async with self.stats_lock:
                             self.stats_kev_alerts_sent += alerts_sent_this_run
 
+                else:
+                    logger.info("No guilds have KEV monitoring enabled.")
             # Update success timestamp if the fetch didn't raise an exception
             if success:
                  self.timestamp_last_kev_check_success = task_start_time
@@ -415,7 +413,7 @@ class SecurityBot(commands.Bot):
         embed.add_field(name="Known Ransomware Use", value=kev_data.get('knownRansomwareCampaignUse', 'N/A'), inline=True)
 
         if notes := kev_data.get('notes', ''):
-            notes_display = notes[:1020] + '...' if len(notes) > 1024 else notes
+            notes_display = f'{notes[:1020]}...' if len(notes) > 1024 else notes
             embed.add_field(name="Notes", value=notes_display, inline=False)
 
         embed.set_footer(text="Source: CISA Known Exploited Vulnerabilities Catalog")
@@ -547,13 +545,14 @@ class SecurityBot(commands.Bot):
                     logging.debug(f"DiscordLogHandler for channel {log_channel_id} already configured.")
                     return
 
-                # Find existing console handler to copy its formatter
-                formatter = None
-                for handler in root_logger.handlers:
-                    if isinstance(handler, logging.StreamHandler):
-                        formatter = handler.formatter
-                        break
-
+                formatter = next(
+                    (
+                        handler.formatter
+                        for handler in root_logger.handlers
+                        if isinstance(handler, logging.StreamHandler)
+                    ),
+                    None,
+                )
                 discord_handler = DiscordLogHandler(bot=self, channel_id=log_channel_id)
 
                 # Set formatter if found, otherwise use default

@@ -913,6 +913,17 @@ files = [
 ]
 
 [[package]]
+name = "sourcery-cli"
+version = "1.20.0"
+description = "Magically refactor Python"
+optional = false
+python-versions = "*"
+groups = ["dev"]
+files = [
+    {file = "sourcery_cli-1.20.0-py2.py3-none-macosx_10_9_universal2.whl", hash = "sha256:14cf32e5b1f380d776f1711982abe37e88bfeb034c0410a6c9f84f608a9df62b"},
+]
+
+[[package]]
 name = "tomli"
 version = "2.2.1"
 description = "A lil' TOML parser"
@@ -1140,4 +1151,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.10"
-content-hash = "e1aaf3b52a83880247ae6a38cf878ceb847fa9fc384969cf25adb2d7d73a54f3"
+content-hash = "31b03ec3852277945e963d29a05baca4eb2dc74223e669cf3f86910a547b09af"
