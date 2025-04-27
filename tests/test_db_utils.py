@@ -408,7 +408,7 @@ def test_log_cve_alert_history(kev_db: KEVConfigDB, db_conn: sqlite3.Connection)
     assert row['guild_id'] == guild_id
     assert row['channel_id'] == channel_id
     assert row['cve_id'] == cve_id
-    assert 'detected_at' in row
+    assert row['detected_at'] is not None # Check value exists
 
 def test_log_kev_latest_query(kev_db: KEVConfigDB, db_conn: sqlite3.Connection):
     """Test logging a /kev latest query."""
@@ -427,6 +427,6 @@ def test_log_kev_latest_query(kev_db: KEVConfigDB, db_conn: sqlite3.Connection):
     assert row['guild_id'] == guild_id
     assert row['user_id'] == user_id
     assert row['query_params'] == '{"count": 3, "days": 14, "vendor": "TestVendor"}'
-    assert 'queried_at' in row
+    assert row['queried_at'] is not None # Check value exists
 
 # --- End New Tests --- 

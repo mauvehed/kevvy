@@ -315,17 +315,19 @@ async def test_channel_disable(cve_lookup_cog: CVELookupCog, mock_interaction: A
 
 @pytest.mark.asyncio
 async def test_channel_set(cve_lookup_cog: CVELookupCog, mock_interaction: AsyncMock, mock_db: MagicMock):
-    # Test that 'set' calls the same logic as 'enable'
+    """Test that /cve channel set calls the enable logic."""
     mock_channel = MagicMock(spec=discord.TextChannel, id=1003, mention="#set-channel")
-    mock_db.get_cve_channel_config.return_value = None
+    mock_db.get_cve_channel_config.return_value = None # Simulate no prior config
 
+    # Call the set command
     await cve_lookup_cog.channel_set_command.callback(cve_lookup_cog, mock_interaction, mock_channel)
 
+    # Assert that the underlying DB method (called by enable) was called correctly
     mock_db.get_cve_channel_config.assert_called_once_with(mock_interaction.guild_id)
     mock_db.set_cve_channel_config.assert_called_once_with(
         mock_interaction.guild_id, mock_channel.id, enabled=True, verbose_mode=False, severity_threshold='all'
     )
-    # Check response came from the enable command that was awaited
+    # Assert the final response message (which comes from the enable logic)
     mock_interaction.response.send_message.assert_called_once_with(
          f"✅ CVE monitoring enabled. Alerts will be sent to {mock_channel.mention}.", ephemeral=True
     )

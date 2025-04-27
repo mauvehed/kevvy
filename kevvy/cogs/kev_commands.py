@@ -142,8 +142,12 @@ class KEVCog(commands.Cog):
 
             # Fetch all KEV data (client likely caches this)
             all_kevs = await self.kev_client.get_full_kev_catalog()
-            if not all_kevs:
+            if all_kevs is None: # Check for client failure first
                 await interaction.followup.send("❌ Could not retrieve KEV data.", ephemeral=True)
+                return
+            # NEW CHECK: Check if the list is empty *after* confirming it's not None
+            if not all_kevs:
+                await interaction.followup.send(f"⚪ No KEV entries found matching your criteria in the last {days} days.", ephemeral=True)
                 return
 
             # Filter by date
@@ -184,6 +188,7 @@ class KEVCog(commands.Cog):
             # Take the top N results
             results_to_show = recent_kevs[:count]
 
+            # Final check if filters removed everything
             if not results_to_show:
                 await interaction.followup.send(f"⚪ No KEV entries found matching your criteria in the last {days} days.", ephemeral=True)
                 return

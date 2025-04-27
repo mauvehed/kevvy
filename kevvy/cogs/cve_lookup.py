@@ -291,14 +291,13 @@ class CVELookupCog(commands.Cog):
     # --- NEW /cve channel Group (PRD Section 3.1.2) ---
     channel_group = app_commands.Group(name="channel", description="Configure the channel for CVE monitoring.", parent=cve_group, guild_only=True)
 
-    @channel_group.command(name="enable", description="Enable CVE monitoring alerts in the specified channel.")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    @app_commands.describe(channel="The channel where CVE alerts should be sent.")
-    async def channel_enable_command(self, interaction: discord.Interaction, channel: discord.TextChannel):
+    async def _update_cve_channel(self, interaction: discord.Interaction, channel: discord.TextChannel) -> None:
+        """Private helper to handle the logic for enabling/setting the CVE channel."""
         if not self.db:
             await interaction.response.send_message("❌ Database connection is not available.", ephemeral=True)
             return
         if interaction.guild_id is None:
+            # This check might be redundant with guild_only=True, but good practice
             await interaction.response.send_message("❌ Cannot determine server ID.", ephemeral=True)
             return
         
@@ -311,8 +310,17 @@ class CVELookupCog(commands.Cog):
             self.db.set_cve_channel_config(interaction.guild_id, channel.id, enabled=True, verbose_mode=verbose, severity_threshold=threshold)
             await interaction.response.send_message(f"✅ CVE monitoring enabled. Alerts will be sent to {channel.mention}.", ephemeral=True)
         except Exception as e:
-            logger.error(f"Error enabling CVE channel for guild {interaction.guild_id}: {e}", exc_info=True)
-            await interaction.response.send_message("❌ An error occurred while enabling CVE monitoring.", ephemeral=True)
+            logger.error(f"Error enabling/setting CVE channel for guild {interaction.guild_id}: {e}", exc_info=True)
+            # Avoid sending another response if one was already sent
+            if not interaction.response.is_done():
+                 await interaction.response.send_message("❌ An error occurred while setting the CVE monitoring channel.", ephemeral=True)
+
+    @channel_group.command(name="enable", description="Enable CVE monitoring alerts in the specified channel.")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.describe(channel="The channel where CVE alerts should be sent.")
+    async def channel_enable_command(self, interaction: discord.Interaction, channel: discord.TextChannel):
+        """Enable CVE alerts and set the channel."""
+        await self._update_cve_channel(interaction, channel)
 
     @channel_group.command(name="disable", description="Disable CVE monitoring alerts for this server.")
     @app_commands.checks.has_permissions(manage_guild=True)
@@ -335,11 +343,9 @@ class CVELookupCog(commands.Cog):
     @app_commands.checks.has_permissions(manage_guild=True)
     @app_commands.describe(channel="The channel where CVE alerts should be sent.")
     async def channel_set_command(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        # This is functionally the same as enable, just different feedback perhaps?
-        # Let's just reuse the enable logic for simplicity.
-        await self.channel_enable_command(interaction, channel)
-        # Or provide slightly different feedback:
-        # await interaction.response.send_message(f"✅ CVE monitoring channel set to {channel.mention}. Monitoring is enabled.", ephemeral=True) 
+        """Set CVE alert channel (effectively same as enable)."""
+        # Reuse the helper logic
+        await self._update_cve_channel(interaction, channel)
 
     @channel_group.command(name="all", description="List channels configured for CVE alerts (currently only one per server).")
     @app_commands.checks.has_permissions(manage_guild=True)

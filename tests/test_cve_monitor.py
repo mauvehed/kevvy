@@ -106,7 +106,7 @@ async def test_create_cve_embed_non_verbose(monitor: CVEMonitor, mock_kev_client
     # Check essential fields are present
     assert embed.title == SAMPLE_CVE_DATA['title']
     assert embed.url == SAMPLE_CVE_DATA['link']
-    assert embed.color == 0xFF8C00 # High severity color
+    assert embed.color.value == 0xFF8C00 # Compare .value
     assert len(embed.fields) == 2 # Only CVE ID and CVSS Score
     assert embed.fields[0].name == "CVE ID" and embed.fields[0].value == SAMPLE_CVE_DATA['id']
     assert embed.fields[1].name == "CVSS Score" and embed.fields[1].value == f"{SAMPLE_CVE_DATA['cvss']} (v{SAMPLE_CVE_DATA['cvss_version']})"
@@ -127,7 +127,7 @@ async def test_create_cve_embed_verbose(monitor: CVEMonitor, mock_kev_client):
     assert embed.title == SAMPLE_CVE_DATA['title']
     assert embed.url == SAMPLE_CVE_DATA['link']
     assert embed.description == SAMPLE_CVE_DATA['description']
-    assert embed.color == 0xFF8C00
+    assert embed.color.value == 0xFF8C00 # Compare .value
     
     # Check all expected verbose fields are present
     assert len(embed.fields) >= 6 # ID, Score, Published, Modified, Vector, CWE, References (if present)
