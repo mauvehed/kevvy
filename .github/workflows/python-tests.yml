@@ -39,8 +39,8 @@ jobs:
         cache: 'poetry'
         cache-dependency-path: 'poetry.lock'
 
-    - name: Install dependencies via Poetry
-      run: poetry install --no-interaction
+    - name: Install dependencies via Poetry (including dev)
+      run: poetry install --no-interaction --with dev
 
     - name: Run tests with pytest
       run: poetry run pytest -v

@@ -1,0 +1,18 @@
+services:
+  kevvy_bot:
+    build:
+      context: .
+      # Optionally specify Dockerfile if not named Dockerfile
+      # dockerfile: Dockerfile 
+    container_name: kevvy-bot-dev
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    networks:
+      kevvy_services:
+
+networks:
+  kevvy_services:
+    external: true

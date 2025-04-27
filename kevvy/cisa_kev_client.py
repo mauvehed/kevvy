@@ -4,6 +4,7 @@ import asyncio
 from aiohttp import ClientTimeout
 from typing import Set, List, Dict, Any, Optional
 from .db_utils import KEVConfigDB
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +15,7 @@ class CisaKevClient:
     """
     KEV_CATALOG_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
     HEADERS = {'User-Agent': 'kevvy-bot/1.0'}
+    CACHE_DURATION_SECONDS = 300 # Cache KEV catalog for 5 minutes
 
     def __init__(self, session: aiohttp.ClientSession, db: KEVConfigDB):
         """
@@ -26,6 +28,8 @@ class CisaKevClient:
         self.session = session
         self.db = db
         self.seen_kev_ids: Set[str] = self.db.load_seen_kevs()
+        self._cache: Optional[List[Dict[str, Any]]] = None
+        self._cache_time: float = 0
 
     async def _fetch_kev_data(self) -> Optional[Dict[str, Any]]:
         """Fetches the raw KEV data from CISA."""
@@ -54,9 +58,39 @@ class CisaKevClient:
             logger.error(f"Unexpected error fetching CISA KEV data: {e}", exc_info=True)
             return None
 
+    async def get_full_kev_catalog(self) -> Optional[List[Dict[str, Any]]]:
+        """Fetches the full KEV catalog, using a time-based cache."""
+        now = time.monotonic()
+        if self._cache is not None and (now - self._cache_time < self.CACHE_DURATION_SECONDS):
+            logger.debug("Returning cached KEV catalog.")
+            return self._cache
+
+        logger.debug("Fetching fresh KEV catalog data.")
+        data = await self._fetch_kev_data()
+        if not data or 'vulnerabilities' not in data:
+            logger.warning("Could not fetch or parse CISA KEV data for full catalog.")
+            # Return old cache if fetch fails but cache exists
+            return self._cache if self._cache is not None else None
+
+        fetched_vulns = data.get('vulnerabilities', [])
+        self._cache = fetched_vulns
+        self._cache_time = now
+        # Check before len call
+        cache_len = len(self._cache) # self._cache assigned above, should not be None here, but check anyway for safety?
+        # Let's be explicit: 
+        if self._cache is not None:
+             cache_len = len(self._cache)
+             logger.info(f"Fetched and cached {cache_len} KEV entries.")
+        else:
+             logger.warning("Fetched KEV data but cache ended up None unexpectedly.")
+             # This case should ideally not happen if data.get worked
+
+        return self._cache
+
     async def get_kev_entry(self, cve_id: str) -> Optional[Dict[str, Any]]:
         """
         Fetches the KEV entry for a specific CVE if it exists in the catalog.
+        Uses the cached catalog if available.
         
         Args:
             cve_id: The CVE ID to look up (e.g., 'CVE-2021-44228')
@@ -64,29 +98,30 @@ class CisaKevClient:
         Returns:
             Optional[Dict[str, Any]]: The KEV entry if found, None otherwise
         """
-        data = await self._fetch_kev_data()
-        if not data or 'vulnerabilities' not in data:
-            logger.warning("Could not fetch or parse CISA KEV data while checking for specific CVE.")
+        catalog = await self.get_full_kev_catalog()
+        if not catalog:
+            logger.warning("Could not get KEV catalog while checking for specific CVE.")
             return None
 
-        for vuln in data.get('vulnerabilities', []):
-            if vuln.get('cveID') == cve_id:
-                return vuln
-
-        return None
+        return next((vuln for vuln in catalog if vuln.get('cveID') == cve_id), None)
 
     async def get_new_kev_entries(self) -> List[Dict[str, Any]]:
         """
         Fetches the latest KEV catalog and returns a list of vulnerabilities
         that are new since the last check or initial load.
+        Uses the cached catalog if available and up-to-date for efficiency.
         """
-        logger.info("Fetching CISA KEV catalog...")
-        data = await self._fetch_kev_data()
-        if not data or 'vulnerabilities' not in data:
-            logger.warning("Could not fetch or parse CISA KEV data, or data format unexpected.")
+        logger.info("Checking for new CISA KEV entries...")
+        # Use the cached fetch method
+        catalog = await self.get_full_kev_catalog()
+        if not catalog:
+            logger.warning("Could not get KEV catalog data to check for new entries.")
             return []
 
-        current_kev_ids = {vuln.get('cveID') for vuln in data.get('vulnerabilities', []) if vuln.get('cveID')}
+        # Get all potential IDs, including None
+        all_catalog_ids: Set[Optional[str]] = {vuln.get('cveID') for vuln in catalog}
+        # Filter out None values explicitly
+        current_kev_ids: Set[str] = {cid for cid in all_catalog_ids if isinstance(cid, str)}
 
         new_vuln_details = []
 
@@ -98,9 +133,10 @@ class CisaKevClient:
             except Exception as e:
                 logger.error(f"Failed to persist new KEV IDs to database: {e}", exc_info=True)
 
-            for vuln in data.get('vulnerabilities', []):
+            for vuln in catalog:
                 cve_id = vuln.get('cveID')
-                if cve_id in new_ids:
+                # Check cve_id is not None before adding
+                if cve_id and cve_id in new_ids:
                     new_vuln_details.append(vuln)
                     self.seen_kev_ids.add(cve_id)
         else:

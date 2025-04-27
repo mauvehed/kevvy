@@ -85,11 +85,28 @@ Key features:
 ## Usage
 
 1.  **Invite the Bot:** Invite the configured bot to your Discord server.
-2.  **Automatic Detection:** Simply type or paste a message containing one or more CVE IDs (e.g., `Check out CVE-2024-1234 and CVE-2024-5678`). The bot will automatically detect them and post embed(s) with the details.
+2.  **Automatic Detection:** Simply type or paste a message containing one or more CVE IDs (e.g., `Check out CVE-2024-1234 and CVE-2024-5678`). The bot will automatically detect them and post embed(s) with the details. The verbosity of the details depends on server and channel settings (see `/verbose` commands).
     *   If multiple unique CVEs are in one message, the bot will post details for up to 5 of them (by default) and indicate if more were found.
-3.  **Direct Lookup:** Use the slash command `/cve lookup cve_id:<CVE-ID>` (e.g., `/cve lookup cve_id:CVE-2024-0001`) to get details for a specific vulnerability.
+3.  **Direct CVE Lookup:** Use the slash command `/cve lookup cve_id:<CVE-ID>` (e.g., `/cve lookup cve_id:CVE-2024-0001`) to get details for a specific vulnerability.
 4.  **CISA KEV Alerts (Optional Setup):**
-    *   `/kev enable channel:<#your-alert-channel>`: A server administrator with 'Manage Server' permissions can run this command to enable KEV monitoring and designate a specific channel for alerts.
+    *   `/kev feed enable channel:<#your-alert-channel>`: A server administrator with 'Manage Server' permissions can run this command to enable KEV monitoring and designate a specific channel for alerts.
+    *   `/kev feed disable`: Disables KEV alerts for the server.
+    *   `/kev feed status`: Checks the status of KEV monitoring.
+    *   `/kev latest [count] [days] ...`: Shows the latest KEV entries with optional filters.
+5.  **CVE Monitoring Channel Configuration (Optional Setup):**
+    *   `/cve channel enable channel:<#your-primary-cve-channel>`: Enables CVE monitoring (currently only affects `/cve latest` results, automatic detection is global). *Note: Future versions may use this for targeted alerts.* 
+    *   `/cve channel disable`: Disables the specific channel setting.
+    *   `/cve channel set channel:<#your-primary-cve-channel>`: Sets the primary channel (same as enable).
+    *   `/cve channel all`: Lists configured channels (currently max 1).
+6.  **Alert Verbosity Configuration:**
+    *   `/verbose enable_global`: Sets the default alert style to **verbose** for the whole server.
+    *   `/verbose disable_global`: Sets the default alert style to **standard** (non-verbose) for the whole server.
+    *   `/verbose set channel:<#channel> verbosity:<True|False>`: Overrides the verbosity setting for a specific channel.
+    *   `/verbose unset channel:<#channel>`: Removes the override for a specific channel (it uses the global setting).
+    *   `/verbose setall verbosity:<True|False>`: Sets an override for **all** channels.
+    *   `/verbose status [channel]`: Shows the current global and channel-specific verbosity settings.
+7.  **CVE Threshold Configuration (Future):**
+    *   Commands like `/cve threshold set <level>` may be added to filter alerts by severity.
 
 ## Screenshots
 

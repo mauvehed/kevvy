@@ -52,8 +52,7 @@ class VulnCheckClient:
         loop = asyncio.get_running_loop()
         pfunc = functools.partial(func, *args, **kwargs)
         try:
-            result = await loop.run_in_executor(None, pfunc)
-            return result
+            return await loop.run_in_executor(None, pfunc)
         except Exception as e:
             logger.debug(f"Error during executor run for {func.__name__}: {e}")
             raise # Re-raise the exception for the caller to handle
@@ -121,10 +120,9 @@ class VulnCheckClient:
                 else:
                     # Otherwise, try to use the hostname from the URL
                     try:
-                        hostname = urlparse(url).netloc
-                        if hostname:
+                        if hostname := urlparse(url).netloc:
                             display_source = hostname
-                        # else: keep default 'Link'
+                                        # else: keep default 'Link'
                     except Exception:
                         # Keep default 'Link' if URL parsing fails
                         pass

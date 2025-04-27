@@ -3,7 +3,7 @@ import asyncio
 import logging
 
 from typing import Optional, Dict, List, Any
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from aiohttp import ClientTimeout
 
 logger = logging.getLogger(__name__)
@@ -19,6 +19,9 @@ class NVDClient:
     RETRY_DELAY_PUBLIC = 6
     RETRY_DELAY_API_KEY = 1
     REQUEST_TIMEOUT = 15
+    # NVD recommends max 120 days range, let's default to something smaller
+    DEFAULT_RECENT_DAYS = 7 
+    MAX_RESULTS_PER_PAGE = 2000 # Max allowed by NVD API v2
 
     def __init__(self, session: aiohttp.ClientSession, api_key: Optional[str] = None):
         self.session = session
@@ -30,82 +33,172 @@ class NVDClient:
         else:
             self.retry_delay = self.RETRY_DELAY_PUBLIC
 
-    async def get_cve_details(self, cve_id: str) -> Dict[str, Any] | None:
-        """Fetches CVE details from the NVD API v2."""
-        params = {'cveId': cve_id}
+    async def _make_request(self, params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Makes a request to the NVD API with retry logic."""
         retries = 0
         request_timeout = ClientTimeout(total=self.REQUEST_TIMEOUT)
-        last_status_code = None # Variable to store the status code that caused the last retry
+        last_status_code = None
 
         while retries <= self.MAX_RETRIES:
-            last_status_code = None # Reset for this attempt
+            last_status_code = None
             try:
-                logger.debug(f"Querying NVD API for {cve_id} at {self.BASE_URL}")
+                logger.debug(f"Querying NVD API with params: {params}")
                 async with self.session.get(
                     self.BASE_URL,
                     params=params,
                     headers=self.headers,
                     timeout=request_timeout
                 ) as response:
-                    last_status_code = response.status # Store the status code
+                    last_status_code = response.status
                     if response.status == 200:
-                        data = await response.json()
-                        if data.get('vulnerabilities'):
-                            cve_item = data['vulnerabilities'][0]['cve']
-                            logger.info(f"Successfully fetched details for {cve_id} from NVD.")
-                            return self._parse_cve_data(cve_item, self.BASE_URL)
-                        else:
-                            logger.warning(f"NVD API returned 200 for {cve_id}, but no 'vulnerabilities' key found in response.")
-                            return None
+                        return await response.json()
                     elif response.status in [403, 429, 503, 504] and retries < self.MAX_RETRIES:
                         retries += 1
-                        logger.warning(f"NVD API error for {cve_id} (status {response.status}). Retrying in {self.retry_delay}s... ({retries}/{self.MAX_RETRIES})")
+                        logger.warning(f"NVD API error (status {response.status}). Retrying in {self.retry_delay}s... ({retries}/{self.MAX_RETRIES})")
                         await asyncio.sleep(self.retry_delay)
                         continue
                     else:
-                        logger.error(f"HTTP error fetching CVE details for {cve_id} from NVD: {response.status} {response.reason}", exc_info=True)
-                        # Check if this final failure was due to a rate limit status
+                        logger.error(f"HTTP error fetching from NVD: {response.status} {response.reason}")
                         if response.status in [403, 429]:
-                            raise NVDRateLimitError(f"NVD API rate limit hit for {cve_id} (Status: {response.status})")
+                            raise NVDRateLimitError(f"NVD API rate limit hit (Status: {response.status})")
                         return None
-
             except asyncio.TimeoutError:
-                logger.error(f"Timeout fetching CVE details for {cve_id} from NVD.")
+                logger.warning("Timeout fetching from NVD.")
                 if retries < self.MAX_RETRIES:
                     retries += 1
-                    logger.warning(f"Retrying NVD fetch for {cve_id} after timeout... ({retries}/{self.MAX_RETRIES})")
+                    logger.warning(f"Retrying NVD fetch after timeout... ({retries}/{self.MAX_RETRIES})")
                     await asyncio.sleep(self.retry_delay)
                     continue
                 else:
-                    logger.error(f"Timeout fetching {cve_id} from NVD after {self.MAX_RETRIES} retries.")
+                    logger.error(f"Timeout fetching from NVD after {self.MAX_RETRIES} retries.")
                     return None
             except aiohttp.ClientError as e:
-                logger.warning(f"Network/Client error fetching NVD for {cve_id} ({e}).")
+                logger.warning(f"Network/Client error fetching NVD ({e}).")
                 if retries < self.MAX_RETRIES:
                     retries += 1
                     logger.warning(f"Retrying... ({retries}/{self.MAX_RETRIES})")
                     await asyncio.sleep(self.retry_delay)
                     continue
                 else:
-                    logger.error(f"Network/Client error fetching {cve_id} from NVD after {self.MAX_RETRIES} retries: {e}", exc_info=True)
+                    logger.error(f"Network/Client error fetching from NVD after {self.MAX_RETRIES} retries: {e}", exc_info=True)
                     return None
-            except (KeyError, IndexError, TypeError) as e:
-                logger.error(f"Error parsing NVD response for {cve_id}. Type: {type(e).__name__}, Details: {e}", exc_info=True)
-                return None
             except Exception as e:
-                logger.error(f"An unexpected error occurred while processing {cve_id} with NVD: {e}", exc_info=True)
+                logger.error(f"An unexpected error occurred during NVD request: {e}", exc_info=True)
                 return None
 
-        logger.error(f"Failed to fetch CVE details for {cve_id} from NVD after {self.MAX_RETRIES} retries.")
-        # Check the status code from the *last* failed attempt within the loop
+        logger.error(f"Failed to fetch from NVD after {self.MAX_RETRIES} retries.")
         if last_status_code in [403, 429]:
-            raise NVDRateLimitError(f"NVD API rate limit hit for {cve_id} after max retries (Last Status: {last_status_code})")
-        
-        # If the loop finished due to other retryable errors (503/504) or other exceptions leading to 'continue'
-        # we ultimately return None here.
+            raise NVDRateLimitError(f"NVD API rate limit hit after max retries (Last Status: {last_status_code})")
         return None
 
-    def _parse_cve_data(self, cve_item: Dict[str, Any], url: str) -> Dict[str, Any]:
+    async def get_cve_details(self, cve_id: str) -> Dict[str, Any] | None:
+        """Fetches CVE details from the NVD API v2."""
+        params = {'cveId': cve_id}
+        try:
+            data = await self._make_request(params)
+            if data and data.get('vulnerabilities'):
+                cve_item = data['vulnerabilities'][0]['cve']
+                logger.info(f"Successfully fetched details for {cve_id} from NVD.")
+                return self._parse_cve_data(cve_item, self.BASE_URL)
+            elif data:
+                logger.warning(f"NVD API returned data for {cve_id}, but no 'vulnerabilities' key found.")
+                return None
+            else:
+                # Error already logged by _make_request or NVDRateLimitError raised
+                return None
+        except NVDRateLimitError as e:
+            logger.warning(e) # Log rate limit warning
+            raise # Re-raise for the bot to handle potentially
+        except Exception as e:
+            logger.error(f"Unexpected error in get_cve_details for {cve_id}: {e}", exc_info=True)
+            return None
+
+    # --- NEW Method: get_recent_cves ---
+    async def get_recent_cves(self, days: int = DEFAULT_RECENT_DAYS) -> List[Dict[str, Any]] | None:
+        """Fetches CVEs published within the last N days."""
+        if days <= 0:
+            return []
+
+        # NVD API uses UTC dates
+        now = datetime.now(timezone.utc)
+        start_date = now - timedelta(days=days)
+
+        # Format for NVD API (ISO 8601)
+        # NVD Example: 2021-08-04T00:00:00.000 or 2021-08-04T00:00:00
+        # Let's omit milliseconds for simplicity and add Z for UTC
+        nvd_date_format = "%Y-%m-%dT%H:%M:%SZ"
+        start_date_str = start_date.strftime(nvd_date_format)
+        end_date_str = now.strftime(nvd_date_format)
+
+        params = {
+            'pubStartDate': start_date_str,
+            'pubEndDate': end_date_str,
+            'resultsPerPage': self.MAX_RESULTS_PER_PAGE # Get max results in one go
+        }
+
+        all_parsed_cves: List[Dict[str, Any]] = []
+        start_index = 0
+        total_results = -1 # Sentinel value
+
+        while True:
+            params['startIndex'] = start_index
+            try:
+                data = await self._make_request(params)
+                if not data:
+                    logger.error("Failed to fetch recent CVEs batch.")
+                    # Return what we have so far, or None if first attempt failed
+                    return all_parsed_cves or None 
+
+                if total_results == -1: # First request
+                     total_results = data.get('totalResults', 0)
+                     if total_results == 0:
+                          logger.info(f"No CVEs found published between {start_date_str} and {end_date_str}.")
+                          return []
+
+                vulnerabilities = data.get('vulnerabilities', [])
+                if not vulnerabilities:
+                    logger.warning(f"NVD response for recent CVEs had no vulnerabilities list (startIndex: {start_index}).")
+                    break # Exit loop if no vulnerabilities returned
+
+                logger.info(f"Fetched batch of {len(vulnerabilities)} CVEs (startIndex: {start_index}, total: {total_results}).")
+                for item in vulnerabilities:
+                    if parsed := self._parse_cve_data(item['cve'], self.BASE_URL):
+                        all_parsed_cves.append(parsed)
+
+                # Check if we need to fetch more pages
+                start_index += len(vulnerabilities)
+                if start_index >= total_results:
+                    break # Got all results
+                if len(vulnerabilities) < self.MAX_RESULTS_PER_PAGE:
+                     logger.warning("NVD returned fewer results than requested per page, stopping pagination early.")
+                     break # Stop if NVD returns fewer than requested (might indicate end)
+
+                # Small delay before next page request
+                await asyncio.sleep(self.retry_delay) 
+
+            except NVDRateLimitError as e:
+                logger.warning(f"Rate limit hit while fetching recent CVEs: {e}")
+                # Return what we managed to get before hitting the limit
+                return all_parsed_cves or None
+            except Exception as e:
+                logger.error(f"Unexpected error fetching recent CVEs batch: {e}", exc_info=True)
+                # Return what we have so far or None
+                return all_parsed_cves or None
+
+        logger.info(f"Finished fetching recent CVEs. Total parsed: {len(all_parsed_cves)}")
+        return all_parsed_cves
+
+    def _parse_cve_data(self, cve_item: Dict[str, Any], url: str) -> Dict[str, Any] | None:
+        # Check if cve_item is None or not a dict before proceeding
+        if not cve_item or not isinstance(cve_item, dict):
+            logger.warning("_parse_cve_data received invalid input")
+            return None
+
+        cve_id = cve_item.get('id')
+        if not cve_id:
+             logger.warning("CVE item missing required 'id' field in _parse_cve_data")
+             return None
+
         description = "No description available"
         for desc in cve_item.get('descriptions', []):
             if desc.get('lang') == 'en':
@@ -140,9 +233,9 @@ class NVDClient:
         for weakness in cve_item.get('weaknesses', []):
             for desc in weakness.get('description', []):
                 if desc.get('lang') == 'en':
-                    cwe_id = desc.get('value')
-                    if cwe_id and cwe_id.startswith('CWE-'):
-                        cwe_ids.append(cwe_id)
+                    cwe_id_val = desc.get('value') # Renamed variable
+                    if cwe_id_val and cwe_id_val.startswith('CWE-'):
+                        cwe_ids.append(cwe_id_val)
         cwe_ids = sorted(list(set(cwe_ids)))
 
         references = []
@@ -180,8 +273,8 @@ class NVDClient:
                 cvss_version = f"{cvss_version.split(' (')[0]} ({severity})"
 
         return {
-            'id': cve_item.get('id'),
-            'title': f"NVD Details for {cve_item.get('id')}",
+            'id': cve_id, # Use the validated cve_id
+            'title': f"NVD Details for {cve_id}",
             'description': description,
             'published': published,
             'modified': modified,
@@ -190,6 +283,6 @@ class NVDClient:
             'cvss_vector': cvss_vector,
             'cwe_ids': cwe_ids,
             'references': references,
-            'link': f"https://nvd.nist.gov/vuln/detail/{cve_item.get('id')}",
+            'link': f"https://nvd.nist.gov/vuln/detail/{cve_id}",
             'source': 'NVD'
         } 

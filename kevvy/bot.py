@@ -87,7 +87,7 @@ class SecurityBot(commands.Bot):
                 loop.add_signal_handler(
                     sig, lambda s=sig: asyncio.create_task(self._handle_signal(s))
                 )
-            logger.info(f"Registered signal handlers for SIGINT and SIGTERM.")
+            logger.info("Registered signal handlers for SIGINT and SIGTERM.")
         except NotImplementedError:
             logger.warning("Signal handlers are not supported on this platform (likely Windows). Graceful shutdown via signals is disabled.")
         except Exception as e:
@@ -150,7 +150,7 @@ class SecurityBot(commands.Bot):
         # Sync the commands
         try:
             await self.tree.sync()
-            logging.info(f"Synced application commands.")
+            logging.info("Synced application commands.")
         except Exception as e:
             logger.error(f"Failed to sync application commands: {e}", exc_info=True)
             # Consider adding this failure to failed_cogs or a separate status
@@ -213,11 +213,7 @@ class SecurityBot(commands.Bot):
                 # No return needed here, let it reach the success update
             else:
                 logger.info(f"Found {len(new_entries)} new KEV entries. Checking configured guilds...")
-                enabled_configs = self.db.get_enabled_kev_configs()
-
-                if not enabled_configs:
-                    logger.info("No guilds have KEV monitoring enabled.")
-                else:
+                if enabled_configs := self.db.get_enabled_kev_configs():
                     alerts_sent_this_run = 0
                     for config in enabled_configs:
                         guild_id = config['guild_id']
@@ -257,6 +253,8 @@ class SecurityBot(commands.Bot):
                         async with self.stats_lock:
                             self.stats_kev_alerts_sent += alerts_sent_this_run
 
+                else:
+                    logger.info("No guilds have KEV monitoring enabled.")
             # Update success timestamp if the fetch didn't raise an exception
             if success:
                  self.timestamp_last_kev_check_success = task_start_time
@@ -415,7 +413,7 @@ class SecurityBot(commands.Bot):
         embed.add_field(name="Known Ransomware Use", value=kev_data.get('knownRansomwareCampaignUse', 'N/A'), inline=True)
 
         if notes := kev_data.get('notes', ''):
-            notes_display = notes[:1020] + '...' if len(notes) > 1024 else notes
+            notes_display = f'{notes[:1020]}...' if len(notes) > 1024 else notes
             embed.add_field(name="Notes", value=notes_display, inline=False)
 
         embed.set_footer(text="Source: CISA Known Exploited Vulnerabilities Catalog")
@@ -547,13 +545,14 @@ class SecurityBot(commands.Bot):
                     logging.debug(f"DiscordLogHandler for channel {log_channel_id} already configured.")
                     return
 
-                # Find existing console handler to copy its formatter
-                formatter = None
-                for handler in root_logger.handlers:
-                    if isinstance(handler, logging.StreamHandler):
-                        formatter = handler.formatter
-                        break
-
+                formatter = next(
+                    (
+                        handler.formatter
+                        for handler in root_logger.handlers
+                        if isinstance(handler, logging.StreamHandler)
+                    ),
+                    None,
+                )
                 discord_handler = DiscordLogHandler(bot=self, channel_id=log_channel_id)
 
                 # Set formatter if found, otherwise use default
@@ -593,6 +592,29 @@ class SecurityBot(commands.Bot):
             return
 
         unique_cves = sorted(list(set(cves_found)), key=lambda x: cves_found.index(x))
+
+        # --- Get Effective Verbose Setting for the Channel --- 
+        effective_verbose_setting = False # Default to non-verbose
+        if message.guild and self.db:
+            guild_id = message.guild.id
+            channel_id = message.channel.id
+            try:
+                # Use the new method to get channel-specific or global setting
+                effective_verbose_setting = self.db.get_effective_verbosity(guild_id, channel_id)
+                # We also need to check if CVE monitoring is globally enabled for the guild
+                guild_config = self.db.get_cve_guild_config(guild_id)
+                is_guild_enabled = guild_config.get('enabled', False) if guild_config else False
+                if not is_guild_enabled:
+                     effective_verbose_setting = False # Force non-verbose if guild disabled CVE monitoring
+                     logger.debug(f"CVE monitoring disabled for guild {guild_id}, forcing non-verbose for message in channel {channel_id}.")
+
+            except Exception as db_err:
+                 logger.error(f"Error getting effective verbosity/config for guild {guild_id}, channel {channel_id}: {db_err}", exc_info=True)
+                 effective_verbose_setting = False # Default to non-verbose on error
+        else:
+             # Handle DMs or cases where DB isn't available - default to non-verbose
+             effective_verbose_setting = False
+        # --- End Get Effective Verbose Setting ---
 
         embeds_to_send = []
         processed_count = 0
@@ -657,9 +679,13 @@ class SecurityBot(commands.Bot):
                     # Add source info if not already present from client
                     if 'source' not in cve_data and source_used:
                          cve_data['source'] = source_used
-                    embeds = await self.cve_monitor.create_cve_embed(cve_data)
+                    
+                    # --- Pass EFFECTIVE verbose setting to embed creation --- 
+                    embeds = await self.cve_monitor.create_cve_embed(cve_data, verbose=effective_verbose_setting)
+                    # --- End Pass verbose setting ---
+
                     embeds_to_send.extend(embeds)
-                    processed_count += 1
+                    processed_count += 1 # Increment based on primary CVE embed, not KEV
                 else:
                     logging.warning(f"Could not retrieve details for {cve} from any source.") # Uses normalized cve
 
@@ -670,10 +696,27 @@ class SecurityBot(commands.Bot):
 
         if embeds_to_send:
             logging.info(f"Sending {len(embeds_to_send)} embeds for message {message.id}")
+            # Ensure we don't exceed Discord embed limits per message batch (usually 10)
+            # This logic sends one embed per message, which is safer but slower.
+            # Consider batching embeds up to 10 per message if needed.
             for i, embed in enumerate(embeds_to_send):
-                await message.channel.send(embed=embed)
-                if i < len(embeds_to_send) - 1:
-                    await asyncio.sleep(0.5)
+                if i >= MAX_EMBEDS_PER_MESSAGE:
+                    logging.warning(f"Stopping embed sending at {i} due to MAX_EMBEDS_PER_MESSAGE limit.")
+                    break 
+                try:
+                     await message.channel.send(embed=embed)
+                     if i < len(embeds_to_send) - 1:
+                          await asyncio.sleep(0.5)
+                except discord.Forbidden:
+                     guild_id_str = message.guild.id if message.guild else 'DM'
+                     logger.error(f"Missing permissions to send embed in channel {message.channel.id} (Guild: {guild_id_str})")
+                     break 
+                except discord.HTTPException as http_err:
+                     logger.error(f"HTTP Error sending embed {i+1}/{len(embeds_to_send)} for message {message.id}: {http_err}")
+                     await asyncio.sleep(1)
+                except Exception as send_err:
+                     logger.error(f"Unexpected error sending embed {i+1}/{len(embeds_to_send)}: {send_err}", exc_info=True)
+                     await asyncio.sleep(1)
 
             if len(unique_cves) > MAX_EMBEDS_PER_MESSAGE:
                 await message.channel.send(f"*Found {len(unique_cves)} unique CVEs, showing details for the first {MAX_EMBEDS_PER_MESSAGE}.*", allowed_mentions=discord.AllowedMentions.none())
@@ -696,17 +739,13 @@ class SecurityBot(commands.Bot):
                 "api_errors_nvd_since_last": self.stats_api_errors_nvd,
                 "api_errors_cisa_since_last": self.stats_api_errors_cisa,
                 "rate_limits_nvd_since_last": self.stats_rate_limits_nvd,
-                # Convert defaultdict to regular dict for JSON serialization before sending
                 "app_command_errors_since_last": dict(self.stats_app_command_errors)
             }
 
     async def _get_current_diagnostics(self) -> Dict[str, Any]:
         """Gathers current diagnostic information."""
-        # Gather non-counter diagnostics (DB access outside lock)
         enabled_kev_guilds = self.db.count_enabled_guilds() if self.db else 0
 
-        # No lock needed here as these lists/timestamps are updated less frequently
-        # or are assumed atomic reads/writes for basic types.
         return {
             "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "bot_id": self.user.id if self.user else None,

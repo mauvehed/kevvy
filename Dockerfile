@@ -9,8 +9,7 @@ COPY pyproject.toml poetry.lock ./
 # Copying files first ensures README.md is present for project installation
 RUN pip install --no-cache-dir poetry && \
     poetry config virtualenvs.create false && \
-    # poetry install --no-interaction --no-ansi # Install project + dependencies
-    poetry install --no-root --no-interaction --no-ansi # Reverted to --no-root, removed -vvv
+    poetry install --only main --no-root --no-interaction --no-ansi
 
 # Copy the rest of the application code
 COPY . .
