@@ -360,26 +360,50 @@ class CVELookupCog(commands.Cog):
         # Reuse the helper logic
         await self._update_cve_channel(interaction, channel)
 
-    @channel_group.command(name="all", description="List channels configured for CVE alerts (currently only one per server).")
+    @channel_group.command(name="all", description="List channels configured for CVE alerts.")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def channel_all_command(self, interaction: discord.Interaction):
-        # Note: Current implementation only supports one channel per guild.
-        # The PRD description for this command might anticipate future multi-channel support.
-        if not self.db:
-            await interaction.response.send_message("❌ Database connection is not available.", ephemeral=True)
-            return
-        if interaction.guild_id is None:
-            await interaction.response.send_message("❌ Cannot determine server ID.", ephemeral=True)
+        if not self.db or not interaction.guild_id:
+            await interaction.response.send_message("❌ Bot error: Cannot access database or Guild ID.", ephemeral=True)
             return
 
-        config = self.db.get_cve_channel_config(interaction.guild_id)
-        if config and config.get('enabled'):
-            channel_id = config.get('channel_id')
-            channel = self.bot.get_channel(channel_id) if channel_id else None
-            channel_mention = channel.mention if isinstance(channel, discord.TextChannel) else f"ID: {channel_id} (Not Found?)"
-            await interaction.response.send_message(f"ℹ️ CVE monitoring is **enabled** in: {channel_mention}", ephemeral=True)
-        else:
-            await interaction.response.send_message(f"ℹ️ CVE monitoring is currently **disabled** for this server.", ephemeral=True)
+        guild_id = interaction.guild_id
+        try:
+            guild_config = self.db.get_cve_guild_config(guild_id)
+            globally_enabled = guild_config.get('enabled', False) if guild_config else False
+
+            if globally_enabled:
+                channel_configs = self.db.get_all_cve_channel_configs_for_guild(guild_id)
+                if not channel_configs:
+                    await interaction.response.send_message(
+                        "ℹ️ CVE monitoring is **enabled** globally, but no specific channels are configured yet. Use `/cve channel enable`.", 
+                        ephemeral=True
+                    )
+                    return
+
+                channel_mentions = []
+                for config in channel_configs:
+                    # Only list channels specifically marked as enabled in their row
+                    if config.get('enabled', True): 
+                        channel_id = config.get('channel_id')
+                        channel = self.bot.get_channel(channel_id) if channel_id else None
+                        channel_mentions.append(channel.mention if isinstance(channel, discord.TextChannel) else f"ID: {channel_id} (Not Found?)")
+                
+                if not channel_mentions:
+                     # This case handles if channels were added but later marked disabled individually
+                     message = "ℹ️ CVE monitoring is **enabled** globally, but no specific channels are currently active or configured."
+                else:
+                     message = f"ℹ️ CVE monitoring is **enabled** globally.\nConfigured channels:\n- {'\\n- '.join(channel_mentions)}"
+                
+                await interaction.response.send_message(message, ephemeral=True)
+
+            else:
+                await interaction.response.send_message(
+                    "ℹ️ CVE monitoring is currently **disabled** globally for this server.", ephemeral=True
+                )
+        except Exception as e:
+            logger.error(f"Error fetching CVE channel list for guild {guild_id}: {e}", exc_info=True)
+            await interaction.response.send_message("❌ An error occurred while fetching the channel list.", ephemeral=True)
 
     # --- Commands under the top-level /verbose Group --- 
     
