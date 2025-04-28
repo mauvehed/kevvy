@@ -5,6 +5,7 @@ import re
 import logging
 from typing import Optional, TYPE_CHECKING, Literal, Dict, Any
 import datetime
+import sqlite3
 
 # Use absolute imports for type checking
 if TYPE_CHECKING:
@@ -405,21 +406,22 @@ class CVELookupCog(commands.Cog):
         
         guild_id = interaction.guild_id
         try:
-            # Call DB function to disable/delete the channel config entry
-            # Assuming disable_cve_channel sets enabled=False or deletes row
-            # Let's assume it sets enabled=False for now.
-            updated = self.db.disable_cve_channel(guild_id, channel.id) # Assumes this function exists and returns True/False or count
+            # Call the correct DB function to *delete* the channel config entry
+            self.db.remove_cve_channel(guild_id, channel.id) 
+            # Since remove_cve_channel doesn't return status, 
+            # we assume success if no exception was raised.
+            # The function in db_utils might need adjustment if it should indicate if a row was actually deleted.
+            
+            logger.info(f"User {interaction.user} removed channel {channel.id} from CVE monitoring in guild {guild_id}.")
+            # Update response message to reflect removal
+            await interaction.response.send_message(f"✅ Automatic CVE monitoring configuration **removed** for channel {channel.mention}.", ephemeral=True)
 
-            if updated: # Or check if count > 0 etc. depending on DB function
-                logger.info(f"User {interaction.user} removed/disabled channel {channel.id} for CVE monitoring in guild {guild_id}.")
-                await interaction.response.send_message(f"✅ Automatic CVE monitoring disabled for channel {channel.mention}.", ephemeral=True)
-            else:
-                # Channel might not have been configured
-                await interaction.response.send_message(f"ℹ️ Channel {channel.mention} was not configured for CVE monitoring.", ephemeral=True)
-
+        except sqlite3.Error as db_err: # Catch specific DB errors if possible
+            logger.error(f"Database error removing CVE channel {channel.id} for guild {guild_id}: {db_err}", exc_info=True)
+            await interaction.response.send_message("❌ A database error occurred while removing the CVE monitoring channel.", ephemeral=True)
         except Exception as e:
-            logger.error(f"Error removing CVE channel {channel.id} for guild {guild_id}: {e}", exc_info=True)
-            await interaction.response.send_message("❌ An error occurred while removing the CVE monitoring channel.", ephemeral=True)
+            logger.error(f"Unexpected error removing CVE channel {channel.id} for guild {guild_id}: {e}", exc_info=True)
+            await interaction.response.send_message("❌ An unexpected error occurred while removing the CVE monitoring channel.", ephemeral=True)
 
     @channels_group.command(name="list", description="List all channels currently configured for CVE monitoring.")
     @app_commands.checks.has_permissions(manage_guild=True)
@@ -741,66 +743,80 @@ class CVELookupCog(commands.Cog):
         if not message.guild:  # Ignore DMs
             return
         if not self.db or not self.nvd_client: # Ensure DB and NVD client are available
-            # Log this scenario, as it indicates a setup issue
             if not hasattr(self, '_logged_missing_dependency_warn'):
                 logger.warning("CVE automatic detection skipped: DB or NVDClient not available in CVELookupCog.")
-                self._logged_missing_dependency_warn = True # Avoid log spam
+                self._logged_missing_dependency_warn = True
             return
         if not message.content: # Ignore messages without text content
             return
             
-        # 2. Check Guild Enablement
+        # 2. Check Guild Enablement & Get Global Config
         guild_id = message.guild.id
         guild_config = self.db.get_cve_guild_config(guild_id)
         if not guild_config or not guild_config.get('cve_monitoring_enabled', False):
-            #logger.debug(f"CVE auto-detection skipped in guild {guild_id}: Globally disabled.")
             return # Global setting is disabled
 
         # 3. Check Channel Configuration / Filtering
         channel_configs = self.db.get_all_cve_channel_configs_for_guild(guild_id)
         if channel_configs: # If specific channels ARE configured...
-            is_channel_configured = False
+            is_channel_configured_and_enabled = False
             for conf in channel_configs:
-                if conf.get('channel_id') == message.channel.id and conf.get('enabled', True):
-                    is_channel_configured = True
+                # Check if it's the current channel AND explicitly enabled
+                if conf.get('channel_id') == message.channel.id and conf.get('enabled', False):
+                    is_channel_configured_and_enabled = True
                     break
-            if not is_channel_configured:
-                #logger.debug(f"CVE auto-detection skipped in channel {message.channel.id}: Not in configured list for guild {guild_id}.")
-                return # This channel is not in the allowed list
+            if not is_channel_configured_and_enabled:
+                return # This channel is not in the allowed list or is disabled
+        # If channel_configs is empty, it means monitoring is global (all channels allowed)
 
         # 4. Find CVEs in Message
-        # Find all potential CVEs, convert to uppercase, make unique, and limit
         found_cves_set = {match.upper() for match in CVE_SCAN_REGEX.findall(message.content)}
         cves_to_process = list(found_cves_set)[:MAX_CVES_PER_MESSAGE]
 
         if not cves_to_process:
-            return # No valid CVEs found
+            return
 
         logger.info(f"Detected CVEs {cves_to_process} in message {message.id} (channel {message.channel.id}, guild {guild_id}).")
+
+        # Get global severity threshold ONCE before the loop
+        global_threshold_str = guild_config.get('cve_severity_threshold', 'all')
+        min_score_threshold = {
+            "critical": 9.0,
+            "high": 7.0,
+            "medium": 4.0,
+            "low": 0.1,
+            "all": 0.0
+        }.get(global_threshold_str, 0.0)
+        logger.debug(f"Guild {guild_id} severity threshold: {global_threshold_str} (Score >= {min_score_threshold})")
 
         # 5. Process Found CVEs
         processed_count = 0
         for cve_id in cves_to_process:
-            # Basic validation just in case regex picked up something weird (though unlikely with this regex)
-            if not CVE_VALIDATE_REGEX.match(cve_id): 
+            if not CVE_VALIDATE_REGEX.match(cve_id):
                 logger.warning(f"Skipping invalid CVE format found by SCAN_REGEX: {cve_id}")
                 continue
 
             try:
-                # --- Add Stat Increment for Attempt ---
                 async with self.bot.stats_lock:
                     self.bot.stats_cve_lookups += 1
-                # --- End Stat Increment ---
 
                 cve_details = await self.nvd_client.get_cve_details(cve_id)
 
                 if cve_details:
-                    # --- Add Stat Increment for Success ---
                     async with self.bot.stats_lock:
                         self.bot.stats_nvd_fallback_success += 1
-                    # --- End Stat Increment ---
 
-                    # --- KEV Check --- 
+                    # --- Severity Threshold Check ---
+                    cve_score = cve_details.get('cvss')
+                    if isinstance(cve_score, (int, float)):
+                        if cve_score < min_score_threshold:
+                            logger.debug(f"Skipping CVE {cve_id} (Score: {cve_score}) due to guild threshold ({global_threshold_str} >= {min_score_threshold})")
+                            continue # Skip this CVE
+                    elif global_threshold_str != 'all':
+                        logger.warning(f"Skipping CVE {cve_id}: Severity score missing, cannot compare against threshold '{global_threshold_str}'.")
+                        continue
+                    # --- End Severity Threshold Check ---
+
                     is_kev = False
                     kev_entry_data = None
                     if self.bot.cisa_kev_client:
@@ -811,41 +827,29 @@ class CVELookupCog(commands.Cog):
                                 logger.info(f"CVE {cve_id} found in KEV catalog during automatic scan.")
                         except Exception as kev_err:
                             logger.error(f"Error checking KEV status for {cve_id}: {kev_err}", exc_info=True)
-                    # --- End KEV Check ---
                     
-                    # Get effective verbosity for this channel
                     verbose = self.db.get_effective_verbosity(guild_id, message.channel.id)
-
-                    # Always send the standard CVE details embed first if details were found
-                    # Pass the verbosity setting to the embed creation function
                     embed = self.create_cve_embed(cve_details, verbose=verbose)
                     await message.channel.send(embed=embed)
 
-                    # If it's also in KEV, send the KEV alert embed additionally
-                    # KEV embed does not need verbosity flag for now
-                    if is_kev and kev_entry_data: 
-                        # Pass verbosity setting to KEV embed creation
+                    if is_kev and kev_entry_data:
                         kev_embed = self.create_kev_embed(cve_id, kev_entry_data, verbose=verbose)
                         await message.channel.send(embed=kev_embed)
                         
                     processed_count += 1
                 else:
                     logger.debug(f"No details found for CVE {cve_id} during automatic scan.")
-                    # Optionally send a "not found" message, but can be spammy. Logged instead.
             
             except Exception as e:
                 logger.error(f"Error processing CVE {cve_id} from message {message.id}: {e}", exc_info=True)
-                # --- Add Stat Increment for Error ---
                 async with self.bot.stats_lock:
                     self.bot.stats_api_errors_nvd += 1
-                # --- End Stat Increment ---
-                # Optionally notify channel about the error, but could be spammy.
 
         if len(found_cves_set) > MAX_CVES_PER_MESSAGE:
              try:
                   await message.channel.send(f"ℹ️ Found {len(found_cves_set)} unique CVEs, showing details for the first {MAX_CVES_PER_MESSAGE}.", delete_after=30)
              except discord.HTTPException:
-                  pass # Ignore if we can't send the notice
+                  pass
         elif processed_count > 0:
              logger.info(f"Successfully processed {processed_count} CVE(s) automatically from message {message.id}.")
 

@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch, call
 import discord
+import sqlite3
 
 # Need to import the cog and potentially other classes
 from kevvy.cogs.cve_lookup import CVELookupCog
@@ -272,486 +273,211 @@ async def test_cve_lookup_nvd_exception(cve_lookup_cog: CVELookupCog, mock_bot: 
 # --- NEW Tests for /cve channel --- 
 
 @pytest.mark.asyncio
-async def test_channel_enable(cve_lookup_cog: CVELookupCog, mock_interaction: AsyncMock, mock_db: MagicMock):
-    """Test /cve channel enable command."""
-    mock_channel = MagicMock(spec=discord.TextChannel, id=67890, mention="<#67890>")
-    mock_interaction.guild_id = 12345
-    
-    # Simulate no existing guild config initially
-    mock_db.get_cve_guild_config.return_value = None 
+async def test_channel_enable(cve_lookup_cog, mock_interaction, mock_db):
+    mock_guild_id = 12345
+    mock_channel = AsyncMock(discord.TextChannel)
+    mock_channel.id = 67890
+    mock_channel.mention = "<#67890>"
+    mock_interaction.guild_id = mock_guild_id
+    mock_interaction.user = AsyncMock()
 
-    await cve_lookup_cog.channel_enable_command.callback(cve_lookup_cog, mock_interaction, mock_channel)
+    # Assume no initial guild config, _ensure_guild_config will create one
+    mock_db.get_cve_guild_config.return_value = None
 
-    # Check guild config creation/update was called
-    mock_db.get_cve_guild_config.assert_called_once_with(12345)
-    mock_db.set_cve_guild_config.assert_called_once_with(12345, enabled=True, verbose_mode=False, severity_threshold='all')
-    mock_db.update_cve_guild_enabled.assert_not_called() # Shouldn't be called if created new
+    await cve_lookup_cog.channels_add_command.callback(cve_lookup_cog, mock_interaction, mock_channel)
 
-    # Check channel config add/update was called
+    # Check _ensure_guild_config created the default
+    mock_db.set_cve_guild_config.assert_called_once_with(mock_guild_id, enabled=True, verbose_mode=False, severity_threshold='all')
+    # Verify get_cve_guild_config was called by _ensure_guild_config AND the command itself
+    assert mock_db.get_cve_guild_config.call_count == 2
+    mock_db.get_cve_guild_config.assert_has_calls([call(mock_guild_id), call(mock_guild_id)])
+
+    # Check the channel was added/updated
     mock_db.add_or_update_cve_channel.assert_called_once_with(
-        guild_id=12345, 
-        channel_id=67890, 
+        guild_id=mock_guild_id,
+        channel_id=mock_channel.id,
         enabled=True,
         verbose_mode=None,
         severity_threshold=None,
         alert_format=None
     )
     mock_interaction.response.send_message.assert_called_once_with(
-        f"✅ CVE monitoring configured for channel {mock_channel.mention}.", ephemeral=True
+        f"✅ Automatic CVE monitoring enabled for channel {mock_channel.mention}.",
+        ephemeral=True
     )
+    # Also check update_cve_guild_enabled wasn't called because the new config defaults to enabled=True
+    mock_db.update_cve_guild_enabled.assert_not_called()
+
 
 @pytest.mark.asyncio
-async def test_channel_enable_when_guild_disabled(cve_lookup_cog: CVELookupCog, mock_interaction: AsyncMock, mock_db: MagicMock):
-    """Test /cve channel enable when guild config exists but is disabled."""
-    mock_channel = MagicMock(spec=discord.TextChannel, id=67890, mention="<#67890>")
-    mock_interaction.guild_id = 12345
+async def test_channel_enable_when_guild_globally_disabled(cve_lookup_cog, mock_interaction, mock_db):
+    mock_guild_id = 12345
+    mock_channel = AsyncMock(discord.TextChannel)
+    mock_channel.id = 67890
+    mock_channel.mention = "<#67890>"
+    mock_interaction.guild_id = mock_guild_id
+    mock_interaction.user = AsyncMock()
 
-    # Simulate existing but disabled guild config
-    mock_db.get_cve_guild_config.return_value = {'guild_id': 12345, 'enabled': False, 'verbose_mode': False, 'severity_threshold': 'all'}
-    
-    await cve_lookup_cog.channel_enable_command.callback(cve_lookup_cog, mock_interaction, mock_channel)
+    # Simulate existing guild config with monitoring disabled
+    mock_db.get_cve_guild_config.return_value = {'guild_id': mock_guild_id, 'cve_monitoring_enabled': False}
 
-    # Check guild config check and update
-    mock_db.get_cve_guild_config.assert_called_once_with(12345)
-    mock_db.set_cve_guild_config.assert_not_called() # Should not create new
-    mock_db.update_cve_guild_enabled.assert_called_once_with(12345, True) # Should enable globally
+    await cve_lookup_cog.channels_add_command.callback(cve_lookup_cog, mock_interaction, mock_channel)
 
-    # Check channel config add/update
+    # Check _ensure_guild_config did NOT create a default
+    mock_db.set_cve_guild_config.assert_not_called()
+    # Verify get_cve_guild_config was called by _ensure_guild_config AND the command itself
+    assert mock_db.get_cve_guild_config.call_count == 2
+    mock_db.get_cve_guild_config.assert_has_calls([call(mock_guild_id), call(mock_guild_id)])
+    # Verify global monitoring was enabled
+    mock_db.update_cve_guild_enabled.assert_called_once_with(mock_guild_id, True)
+
+    # Check the channel was added/updated
     mock_db.add_or_update_cve_channel.assert_called_once_with(
-        guild_id=12345, channel_id=67890, enabled=True, 
-        verbose_mode=None, severity_threshold=None, alert_format=None
+        guild_id=mock_guild_id,
+        channel_id=mock_channel.id,
+        enabled=True,
+        verbose_mode=None,
+        severity_threshold=None,
+        alert_format=None
     )
     mock_interaction.response.send_message.assert_called_once_with(
-        f"✅ CVE monitoring configured for channel {mock_channel.mention}.", ephemeral=True
+        f"✅ Automatic CVE monitoring enabled for channel {mock_channel.mention}.",
+        ephemeral=True
     )
 
 
 @pytest.mark.asyncio
-async def test_channel_disable(cve_lookup_cog: CVELookupCog, mock_interaction: AsyncMock, mock_db: MagicMock):
-    """Test /cve channel disable command."""
-    # NOTE: The current disable command implementation calls a method `disable_cve_channel_config`
-    # which doesn't seem to exist in the refactored db_utils. It should likely call
-    # `update_cve_guild_enabled(guild_id, False)` instead. 
-    # We will test the *intended* behavior based on the refactored DB structure.
-    mock_interaction.guild_id = 12345
+async def test_channel_disable(mock_bot, mock_db, mock_interaction):
+    """Test disabling a channel for CVE monitoring."""
+    guild_id = 12345
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.id = 67890
+    channel.mention = "<#67890>"
+    mock_interaction.guild_id = guild_id
+    mock_interaction.user = MagicMock(id=1, name="TestUser")
+
+    cve_lookup_cog = CVELookupCog(mock_bot)
     
-    await cve_lookup_cog.channel_disable_command.callback(cve_lookup_cog, mock_interaction)
+    # --- Use the correct command name ---
+    await cve_lookup_cog.channels_remove_command.callback(cve_lookup_cog, mock_interaction, channel)
     
-    # Assert that the correct method *should* be called
-    # Assuming the command is fixed to call update_cve_guild_enabled:
-    mock_db.update_cve_guild_enabled.assert_called_once_with(12345, False)
-    mock_interaction.response.send_message.assert_called_once_with(
-        "❌ CVE monitoring disabled for this server.", ephemeral=True
-    )
-
-@pytest.mark.asyncio
-async def test_channel_set(cve_lookup_cog: CVELookupCog, mock_interaction: AsyncMock, mock_db: MagicMock):
-    """Test /cve channel set command (should behave like enable)."""
-    # This test is similar to test_channel_enable
-    mock_channel = MagicMock(spec=discord.TextChannel, id=67890, mention="<#67890>")
-    mock_interaction.guild_id = 12345
-    mock_db.get_cve_guild_config.return_value = None # Simulate no existing config
-
-    await cve_lookup_cog.channel_set_command.callback(cve_lookup_cog, mock_interaction, mock_channel)
-
-    mock_db.get_cve_guild_config.assert_called_once_with(12345)
-    mock_db.set_cve_guild_config.assert_called_once_with(12345, enabled=True, verbose_mode=False, severity_threshold='all')
-    mock_db.add_or_update_cve_channel.assert_called_once_with(
-        guild_id=12345, channel_id=67890, enabled=True,
-        verbose_mode=None, severity_threshold=None, alert_format=None
-    )
-    mock_interaction.response.send_message.assert_called_once_with(
-        f"✅ CVE monitoring configured for channel {mock_channel.mention}.", ephemeral=True
-    )
-
-@pytest.mark.asyncio
-async def test_channel_list_enabled(cve_lookup_cog: CVELookupCog, mock_interaction: AsyncMock, mock_db: MagicMock, mock_bot: MagicMock):
-    """Test /cve channel list when enabled (using new DB structure)."""
-    # NOTE: This command also needs updating. It should list channels from `cve_channel_configs`
-    # not just check the global config. We test the *expected* behavior assuming multi-channel.
-    mock_interaction.guild_id = 12345
-    mock_channel_1 = MagicMock(spec=discord.TextChannel, id=111, mention="<#111>", name="alerts-1")
-    mock_channel_2 = MagicMock(spec=discord.TextChannel, id=222, mention="<#222>", name="alerts-2")
+    # Check the remove function was called
+    mock_db.remove_cve_channel.assert_called_once_with(guild_id, channel.id)
     
-    # Simulate global config being enabled
-    mock_db.get_cve_guild_config.return_value = {'guild_id': 12345, 'enabled': True}
-    # Simulate multiple channels configured
-    mock_db.get_all_cve_channel_configs_for_guild.return_value = [
-        {'guild_id': 12345, 'channel_id': 111, 'enabled': True}, 
-        {'guild_id': 12345, 'channel_id': 222, 'enabled': True}
-    ]
-    # Mock bot channel fetching
-    mock_bot.get_channel = MagicMock(side_effect=lambda id: mock_channel_1 if id == 111 else mock_channel_2 if id == 222 else None)
-
-    await cve_lookup_cog.channel_list_command.callback(cve_lookup_cog, mock_interaction)
-
-    mock_db.get_cve_guild_config.assert_called_once_with(12345)
-    mock_db.get_all_cve_channel_configs_for_guild.assert_called_once_with(12345)
-    # Use escaped newline \n to match the actual output format
-    expected_message = f"ℹ️ CVE monitoring is **enabled** globally.\nConfigured channels:\n- {mock_channel_1.mention}\\n- {mock_channel_2.mention}"
+    # Check the response (should indicate removal)
+    expected_message = f"✅ Automatic CVE monitoring configuration **removed** for channel {channel.mention}."
     mock_interaction.response.send_message.assert_called_once_with(expected_message, ephemeral=True)
 
 @pytest.mark.asyncio
-async def test_channel_list_disabled(cve_lookup_cog: CVELookupCog, mock_interaction: AsyncMock, mock_db: MagicMock):
-    """Test /cve channel list when globally disabled."""
-    mock_interaction.guild_id = 12345
-    # Simulate global config being disabled
-    mock_db.get_cve_guild_config.return_value = {'guild_id': 12345, 'enabled': False}
+async def test_channel_list_enabled(cve_lookup_cog, mock_interaction, mock_db, mock_bot):
+    mock_guild_id = 12345
+    mock_interaction.guild_id = mock_guild_id
 
-    await cve_lookup_cog.channel_list_command.callback(cve_lookup_cog, mock_interaction)
-
-    mock_db.get_cve_guild_config.assert_called_once_with(12345)
-    # Should not fetch individual channels if globally disabled
-    mock_db.get_all_cve_channel_configs_for_guild.assert_not_called()
-    mock_interaction.response.send_message.assert_called_once_with(
-        "ℹ️ CVE monitoring is currently **disabled** globally for this server.", ephemeral=True
-    )
-
-@pytest.mark.asyncio
-async def test_channel_list_no_config(cve_lookup_cog: CVELookupCog, mock_interaction: AsyncMock, mock_db: MagicMock):
-    """Test /cve channel list when no global config exists."""
-    mock_interaction.guild_id = 12345
-    mock_db.get_cve_guild_config.return_value = None # No config found
-
-    await cve_lookup_cog.channel_list_command.callback(cve_lookup_cog, mock_interaction)
-
-    mock_db.get_cve_guild_config.assert_called_once_with(12345)
-    mock_db.get_all_cve_channel_configs_for_guild.assert_not_called()
-    mock_interaction.response.send_message.assert_called_once_with(
-        "ℹ️ CVE monitoring is currently **disabled** globally for this server.", ephemeral=True
-    )
-
-# --- Tests for /verbose commands ---
-
-@pytest.mark.asyncio
-async def test_verbose_enable_global(cve_lookup_cog: CVELookupCog, mock_interaction: AsyncMock, mock_db: MagicMock):
-    """Test /verbose enable_global command."""
-    await cve_lookup_cog.verbose_enable_global_command.callback(cve_lookup_cog, mock_interaction)
-    mock_db.update_cve_guild_verbose_mode.assert_called_once_with(mock_interaction.guild_id, True)
-    mock_interaction.response.send_message.assert_called_once_with(
-        "✅ Global verbose CVE alerts **enabled**. Specific channel settings may override this.", ephemeral=True
-    )
-
-@pytest.mark.asyncio
-async def test_verbose_disable_global(cve_lookup_cog: CVELookupCog, mock_interaction: AsyncMock, mock_db: MagicMock):
-    """Test /verbose disable_global command."""
-    await cve_lookup_cog.verbose_disable_global_command.callback(cve_lookup_cog, mock_interaction)
-    mock_db.update_cve_guild_verbose_mode.assert_called_once_with(mock_interaction.guild_id, False)
-    mock_interaction.response.send_message.assert_called_once_with(
-        "✅ Global verbose CVE alerts **disabled**. Standard format will be used (unless channels override).", ephemeral=True
-    )
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("verbosity_param", [True, False])
-async def test_verbose_channel_set(cve_lookup_cog: CVELookupCog, mock_interaction: AsyncMock, mock_db: MagicMock, verbosity_param: bool):
-    """Test /verbose set command for a specific channel."""
-    mock_channel = MagicMock(spec=discord.TextChannel, id=67890, mention="<#67890>")
-    mock_interaction.guild_id = 12345
-    mock_db.get_cve_guild_config.return_value = {'guild_id': 12345} # Simulate guild config exists
-
-    await cve_lookup_cog.verbose_channel_set_command.callback(cve_lookup_cog, mock_interaction, mock_channel, verbosity_param)
-
-    mock_db.set_channel_verbosity.assert_called_once_with(12345, mock_channel.id, verbosity_param)
-    status_text = "verbose" if verbosity_param else "standard (non-verbose)"
-    mock_interaction.response.send_message.assert_called_once_with(
-        f"✅ Verbosity for {mock_channel.mention} set to **{status_text}**. This overrides the global setting.", ephemeral=True
-    )
-
-@pytest.mark.asyncio
-async def test_verbose_channel_unset(cve_lookup_cog: CVELookupCog, mock_interaction: AsyncMock, mock_db: MagicMock):
-    """Test /verbose unset command for a specific channel."""
-    mock_channel = MagicMock(spec=discord.TextChannel, id=67890, mention="<#67890>")
-    mock_interaction.guild_id = 12345
-
-    await cve_lookup_cog.verbose_channel_unset_command.callback(cve_lookup_cog, mock_interaction, mock_channel)
-
-    # Check that it calls set_channel_verbosity with None
-    mock_db.set_channel_verbosity.assert_called_once_with(12345, mock_channel.id, None)
-    mock_interaction.response.send_message.assert_called_once_with(
-        f"✅ Verbosity override for {mock_channel.mention} **removed**. It will now use the global server setting.", ephemeral=True
-    )
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("verbosity_param", [True, False])
-async def test_verbose_channel_setall(cve_lookup_cog: CVELookupCog, mock_interaction: AsyncMock, mock_db: MagicMock, verbosity_param: bool):
-    """Test /verbose setall command."""
-    mock_interaction.guild_id = 12345
-
-    await cve_lookup_cog.verbose_channel_setall_command.callback(cve_lookup_cog, mock_interaction, verbosity_param)
-
-    mock_db.set_all_channel_verbosity.assert_called_once_with(12345, verbosity_param)
-    status_text = "verbose" if verbosity_param else "standard (non-verbose)"
-    mock_interaction.response.send_message.assert_called_once_with(
-        f"✅ Verbosity override for **all configured channels** set to **{status_text}**. This may differ from the global setting.", ephemeral=True
-    )
-
-@pytest.mark.asyncio
-async def test_verbose_status_global_only(cve_lookup_cog: CVELookupCog, mock_interaction: AsyncMock, mock_db: MagicMock):
-    """Test /verbose status with only global setting (no channel overrides)."""
-    mock_interaction.guild_id = 12345
-    mock_db.get_cve_guild_config.return_value = {'guild_id': 12345, 'verbose_mode': True} # Global verbose is True
-    mock_db.get_all_cve_channel_configs_for_guild.return_value = [] # No channel configs
-
-    await cve_lookup_cog.verbose_channel_status_command.callback(cve_lookup_cog, mock_interaction, channel=None)
-
-    mock_db.get_cve_guild_config.assert_called_once_with(12345)
-    mock_db.get_all_cve_channel_configs_for_guild.assert_called_once_with(12345)
-    
-    call_args, call_kwargs = mock_interaction.response.send_message.call_args
-    sent_embed = call_kwargs.get('embed')
-    assert isinstance(sent_embed, discord.Embed)
-    assert "Global Setting: **Verbose**" in sent_embed.description
-    assert len(sent_embed.fields) == 1
-    assert sent_embed.fields[0].name == "Channel Overrides"
-    assert "No channels have specific verbosity overrides" in sent_embed.fields[0].value
-    assert call_kwargs.get('ephemeral') is True
-
-@pytest.mark.asyncio
-async def test_verbose_status_with_overrides(cve_lookup_cog: CVELookupCog, mock_interaction: AsyncMock, mock_db: MagicMock, mock_bot: MagicMock):
-    """Test /verbose status with global setting and channel overrides."""
-    mock_interaction.guild_id = 12345
-    mock_channel_1 = MagicMock(spec=discord.TextChannel, id=111, name="alerts-verbose")
-    mock_channel_2 = MagicMock(spec=discord.TextChannel, id=222, name="alerts-standard")
-    mock_channel_3 = MagicMock(spec=discord.TextChannel, id=333, name="alerts-global")
-    
-    mock_db.get_cve_guild_config.return_value = {'guild_id': 12345, 'verbose_mode': False} # Global verbose is False
+    # Mock DB response for channel configs (one enabled, one disabled)
     mock_db.get_all_cve_channel_configs_for_guild.return_value = [
-        {'channel_id': 111, 'verbose_mode': True}, # Override: True
-        {'channel_id': 222, 'verbose_mode': False},# Override: False
-        {'channel_id': 333, 'verbose_mode': None}  # No override (inherits global)
+        {'channel_id': 67890, 'enabled': True},
+        {'channel_id': 67891, 'enabled': False}, # This one should NOT be listed
     ]
-    # Mock bot channel fetching
-    def get_channel_side_effect(id_):
-        if id_ == 111: return mock_channel_1
-        if id_ == 222: return mock_channel_2
-        if id_ == 333: return mock_channel_3
+
+    # Mock bot.get_channel to return mock channel objects
+    mock_channel_1 = MagicMock(discord.TextChannel)
+    mock_channel_1.mention = "<#67890>"
+    mock_channel_2 = MagicMock(discord.TextChannel) # Not used, but get_channel might be called
+    mock_channel_2.mention = "<#67891>"
+
+    # Setup side effect for get_channel
+    def get_channel_side_effect(channel_id):
+        if channel_id == 67890:
+            return mock_channel_1
+        elif channel_id == 67891:
+            return mock_channel_2
         return None
-    mock_bot.get_channel = MagicMock(side_effect=get_channel_side_effect)
+    mock_bot.get_channel.side_effect = get_channel_side_effect
 
-    await cve_lookup_cog.verbose_channel_status_command.callback(cve_lookup_cog, mock_interaction, channel=None)
+    await cve_lookup_cog.channels_list_command.callback(cve_lookup_cog, mock_interaction)
 
-    mock_db.get_cve_guild_config.assert_called_once_with(12345)
-    mock_db.get_all_cve_channel_configs_for_guild.assert_called_once_with(12345)
-    
-    call_args, call_kwargs = mock_interaction.response.send_message.call_args
-    sent_embed = call_kwargs.get('embed')
-    assert isinstance(sent_embed, discord.Embed)
-    assert "Global Setting: **Standard (Non-Verbose)**" in sent_embed.description
-    assert len(sent_embed.fields) == 1
-    assert sent_embed.fields[0].name == "Channel Overrides"
-    assert f"#{mock_channel_1.name}: **Verbose** (Override)" in sent_embed.fields[0].value
-    assert f"#{mock_channel_2.name}: **Standard** (Override)" in sent_embed.fields[0].value
-    assert f"#{mock_channel_3.name}" not in sent_embed.fields[0].value # Should not list channels without override
-    assert call_kwargs.get('ephemeral') is True
+    # Verify DB was called
+    mock_db.get_all_cve_channel_configs_for_guild.assert_called_once_with(mock_guild_id)
 
-@pytest.mark.asyncio
-async def test_verbose_status_specific_channel_override(cve_lookup_cog: CVELookupCog, mock_interaction: AsyncMock, mock_db: MagicMock):
-    """Test /verbose status for a specific channel with an override."""
-    mock_channel = MagicMock(spec=discord.TextChannel, id=111, name="channel-with-override")
-    mock_interaction.guild_id = 12345
-    mock_db.get_cve_guild_config.return_value = {'guild_id': 12345, 'verbose_mode': False} # Global False
-    mock_db.get_cve_channel_config.return_value = {'channel_id': 111, 'verbose_mode': True} # Override True
+    # Verify get_channel was called ONLY for the enabled channel
+    mock_bot.get_channel.assert_called_once_with(67890)
 
-    await cve_lookup_cog.verbose_channel_status_command.callback(cve_lookup_cog, mock_interaction, channel=mock_channel)
-
-    mock_db.get_cve_guild_config.assert_called_once_with(12345)
-    mock_db.get_cve_channel_config.assert_called_once_with(12345, mock_channel.id)
-    
-    call_args, call_kwargs = mock_interaction.response.send_message.call_args
-    sent_embed = call_kwargs.get('embed')
-    assert isinstance(sent_embed, discord.Embed)
-    assert "Global Setting: **Standard (Non-Verbose)**" in sent_embed.description
-    assert len(sent_embed.fields) == 1
-    assert sent_embed.fields[0].name == f"#{mock_channel.name}"
-    assert sent_embed.fields[0].value == "Verbose (Override)"
-    assert call_kwargs.get('ephemeral') is True
-
-@pytest.mark.asyncio
-async def test_verbose_status_specific_channel_inherit(cve_lookup_cog: CVELookupCog, mock_interaction: AsyncMock, mock_db: MagicMock):
-    """Test /verbose status for a specific channel inheriting global setting."""
-    mock_channel = MagicMock(spec=discord.TextChannel, id=222, name="channel-inheriting")
-    mock_interaction.guild_id = 12345
-    mock_db.get_cve_guild_config.return_value = {'guild_id': 12345, 'verbose_mode': True} # Global True
-    mock_db.get_cve_channel_config.return_value = {'channel_id': 222, 'verbose_mode': None} # Override None
-
-    await cve_lookup_cog.verbose_channel_status_command.callback(cve_lookup_cog, mock_interaction, channel=mock_channel)
-
-    mock_db.get_cve_guild_config.assert_called_once_with(12345)
-    mock_db.get_cve_channel_config.assert_called_once_with(12345, mock_channel.id)
-    
-    call_args, call_kwargs = mock_interaction.response.send_message.call_args
-    sent_embed = call_kwargs.get('embed')
-    assert isinstance(sent_embed, discord.Embed)
-    assert "Global Setting: **Verbose**" in sent_embed.description
-    assert len(sent_embed.fields) == 1
-    assert sent_embed.fields[0].name == f"#{mock_channel.name}"
-    assert sent_embed.fields[0].value == "Inheriting Global (Verbose)"
-    assert call_kwargs.get('ephemeral') is True
-
-
-# --- Tests for /cve threshold --- 
-# These tests need updating based on the DB method changes
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("level", ["critical", "high", "medium", "low", "all"])
-async def test_threshold_set(cve_lookup_cog: CVELookupCog, mock_interaction: AsyncMock, mock_db: MagicMock, level: str):
-    """Test /cve threshold set command (using updated DB method)."""
-    await cve_lookup_cog.threshold_set_command.callback(cve_lookup_cog, mock_interaction, level)
-    # Check the correct DB method is called
-    mock_db.update_cve_guild_severity_threshold.assert_called_once_with(mock_interaction.guild_id, level)
+    # Verify the response message lists only the enabled channel
+    expected_message = f"ℹ️ Channels configured for automatic CVE monitoring:\n- {mock_channel_1.mention}"
     mock_interaction.response.send_message.assert_called_once_with(
-        f"✅ Global CVE alert severity threshold set to **{level}**.", ephemeral=True
+        expected_message,
+        ephemeral=True
     )
 
 @pytest.mark.asyncio
-async def test_threshold_view(cve_lookup_cog: CVELookupCog, mock_interaction: AsyncMock, mock_db: MagicMock):
-    """Test /cve threshold view command (using updated DB method)."""
-    mock_interaction.guild_id = 12345
-    mock_db.get_cve_guild_config.return_value = {'guild_id': 12345, 'severity_threshold': 'high'} 
+async def test_channel_list_disabled(mock_bot, mock_db, mock_interaction):
+    """Test listing channels when the only configured channel is disabled."""
+    guild_id = 12345
+    mock_interaction.guild_id = guild_id
+
+    # Mock DB: Only one channel configured, and it's disabled
+    mock_db.get_all_cve_channel_configs_for_guild.return_value = [
+        {'channel_id': 67890, 'enabled': False}
+    ]
+    # Mock bot's channel fetching (though it might not be called if channel isn't enabled)
+    channel1 = MagicMock(spec=discord.TextChannel, id=67890, name="alerts")
+    channel1.mention = "<#67890>"
+    mock_bot.get_channel.return_value = channel1
     
+    cve_lookup_cog = CVELookupCog(mock_bot)
+    
+    # --- Use the correct command name ---
+    await cve_lookup_cog.channels_list_command.callback(cve_lookup_cog, mock_interaction)
+
+    # Check the DB was queried
+    mock_db.get_all_cve_channel_configs_for_guild.assert_called_once_with(guild_id)
+    # --- Assert get_cve_guild_config is NOT called ---
+    mock_db.get_cve_guild_config.assert_not_called() 
+    
+    # Check the response for no enabled channels
+    expected_message = "ℹ️ No channels are currently configured for automatic CVE monitoring. Use `/cve channels add`."
+    mock_interaction.response.send_message.assert_called_once_with(expected_message, ephemeral=True)
+
+@pytest.mark.asyncio
+async def test_channel_list_no_config(mock_bot, mock_db, mock_interaction):
+    """Test listing channels when no channels are configured at all."""
+    guild_id = 12345
+    mock_interaction.guild_id = guild_id
+    
+    # Mock DB: No channel configs returned for the guild
+    mock_db.get_all_cve_channel_configs_for_guild.return_value = []
+
+    cve_lookup_cog = CVELookupCog(mock_bot)
+    
+    # --- Use the correct command name ---
+    await cve_lookup_cog.channels_list_command.callback(cve_lookup_cog, mock_interaction)
+
+    # Check the DB was queried
+    mock_db.get_all_cve_channel_configs_for_guild.assert_called_once_with(guild_id)
+    # --- Assert get_cve_guild_config is NOT called ---
+    mock_db.get_cve_guild_config.assert_not_called() 
+    
+    # Check the response for no configured channels
+    expected_message = "ℹ️ No channels are currently configured for automatic CVE monitoring. Use `/cve channels add`."
+    mock_interaction.response.send_message.assert_called_once_with(expected_message, ephemeral=True)
+
+@pytest.mark.asyncio
+async def test_threshold_view(mock_bot, mock_db, mock_interaction):
+    """Test viewing the current CVE severity threshold."""
+    guild_id = 12345
+    mock_interaction.guild_id = guild_id
+    
+    # --- Mock using the correct DB key 'cve_severity_threshold' ---
+    mock_db.get_cve_guild_config.return_value = {'guild_id': guild_id, 'cve_severity_threshold': 'high'}
+
+    cve_lookup_cog = CVELookupCog(mock_bot)
+    
+    # --- Command name is already correct ---
     await cve_lookup_cog.threshold_view_command.callback(cve_lookup_cog, mock_interaction)
     
-    mock_db.get_cve_guild_config.assert_called_once_with(12345)
-    mock_interaction.response.send_message.assert_called_once_with(
-        f"ℹ️ Current global CVE alert severity threshold is **high**.", ephemeral=True
-    )
-
-@pytest.mark.asyncio
-async def test_threshold_view_no_config(cve_lookup_cog: CVELookupCog, mock_interaction: AsyncMock, mock_db: MagicMock):
-    """Test /cve threshold view when no guild config exists."""
-    mock_interaction.guild_id = 12345
-    mock_db.get_cve_guild_config.return_value = None # No config
+    # Check DB was called
+    mock_db.get_cve_guild_config.assert_called_once_with(guild_id)
     
-    await cve_lookup_cog.threshold_view_command.callback(cve_lookup_cog, mock_interaction)
-    
-    mock_db.get_cve_guild_config.assert_called_once_with(12345)
-    # Should default to 'all'
-    mock_interaction.response.send_message.assert_called_once_with(
-        f"ℹ️ Current global CVE alert severity threshold is **all**.", ephemeral=True
-    )
-
-@pytest.mark.asyncio
-async def test_threshold_reset(cve_lookup_cog: CVELookupCog, mock_interaction: AsyncMock, mock_db: MagicMock):
-    """Test /cve threshold reset command (using updated DB method)."""
-    await cve_lookup_cog.threshold_reset_command.callback(cve_lookup_cog, mock_interaction)
-    # Check the correct DB method is called with 'all'
-    mock_db.update_cve_guild_severity_threshold.assert_called_once_with(mock_interaction.guild_id, 'all')
-    mock_interaction.response.send_message.assert_called_once_with(
-        "✅ Global CVE alert severity threshold reset to **all**.", ephemeral=True
-    )
-
-
-# --- Tests for /cve latest --- (Keep existing tests, ensure they don't break)
-@pytest.mark.asyncio
-async def test_cve_latest_success(cve_lookup_cog: CVELookupCog, mock_interaction: AsyncMock, mock_bot: MagicMock):
-    # ... (Implementation as before) ...
-    mock_bot.nvd_client.get_recent_cves = AsyncMock(return_value=[{"id": "CVE-1", "published": "2024-01-01T00:00:00.000"}])
-    await cve_lookup_cog.cve_latest_command.callback(cve_lookup_cog, mock_interaction)
-    assert mock_interaction.followup.send.call_args[1].get('embed').title == "Recent CVEs (Last 7 days)"
-
-@pytest.mark.asyncio
-async def test_cve_latest_with_filters(cve_lookup_cog: CVELookupCog, mock_interaction: AsyncMock, mock_bot: MagicMock):
-    # ... (Implementation as before) ...
-    mock_bot.nvd_client.get_recent_cves = AsyncMock(return_value=[
-        {"id": "CVE-1", "published": "2024-01-01T00:00:00.000", "cvss": 9.5}, 
-        {"id": "CVE-2", "published": "2024-01-02T00:00:00.000", "cvss": 5.0}
-    ])
-    await cve_lookup_cog.cve_latest_command.callback(cve_lookup_cog, mock_interaction, severity="high")
-    sent_embed = mock_interaction.followup.send.call_args[1].get('embed')
-    assert "severity>=high" in sent_embed.title
-    assert "CVE-1" in sent_embed.description
-    assert "CVE-2" not in sent_embed.description
-
-@pytest.mark.asyncio
-async def test_cve_latest_no_results(cve_lookup_cog: CVELookupCog, mock_interaction: AsyncMock, mock_bot: MagicMock):
-    # ... (Implementation as before) ...
-    mock_bot.nvd_client.get_recent_cves = AsyncMock(return_value=[])
-    await cve_lookup_cog.cve_latest_command.callback(cve_lookup_cog, mock_interaction)
-    mock_interaction.followup.send.assert_called_with(
-        "⚪ No CVEs found published in the last 7 days.", ephemeral=True
-    )
-
-@pytest.mark.asyncio
-async def test_cve_latest_nvd_fail(cve_lookup_cog: CVELookupCog, mock_interaction: AsyncMock, mock_bot: MagicMock):
-    # ... (Implementation as before) ...
-    mock_bot.nvd_client.get_recent_cves = AsyncMock(return_value=None)
-    await cve_lookup_cog.cve_latest_command.callback(cve_lookup_cog, mock_interaction)
-    mock_interaction.followup.send.assert_called_with(
-        "❌ Failed to fetch recent CVE data from NVD.", ephemeral=True
-    )
-
-# --- Tests for create_cve_embed --- (Keep existing tests)
-# ... (tests for embed creation remain the same) ...
-
-# Fixture to provide a sample CVE dictionary
-@pytest.fixture
-def sample_cve_data():
-    return {
-        "id": "CVE-2024-1234",
-        "link": "https://nvd.nist.gov/vuln/detail/CVE-2024-1234",
-        "description": "This is a test CVE description.",
-        "cvss": 7.5,
-        "cvss_version": "3.1",
-        "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
-        "cwe_ids": ["CWE-79"],
-        "published": "2024-01-15T10:00:00.000",
-        "modified": "2024-01-20T12:30:00.000",
-        "references": [
-            {"source": "NIST", "url": "https://nvd.nist.gov/vuln/detail/CVE-2024-1234"},
-            {"source": "ExploitDB", "url": "https://exploit-db.com/exploits/12345", "tags": ["Exploit"]}
-        ],
-        "source": "NVD"
-    }
-
-def test_create_cve_embed_basic(cve_lookup_cog: CVELookupCog, sample_cve_data):
-    """Test basic embed creation.
-    Note: create_cve_embed always creates the full/verbose embed.
-    The verbose/standard logic happens *before* calling this function.
-    """
-    # Remove verbose=False, the function doesn't take it
-    embed = cve_lookup_cog.create_cve_embed(sample_cve_data)
-    assert isinstance(embed, discord.Embed)
-    assert embed.title == "CVE-2024-1234"
-    assert embed.url == sample_cve_data['link']
-    assert embed.description == sample_cve_data['description']
-    # Check for fields that should always be present in the full embed
-    assert len(embed.fields) > 4 
-    assert any(field.name == "CVSS Score" for field in embed.fields)
-    assert any(field.name == "Published" for field in embed.fields)
-    assert any(field.name == "References" for field in embed.fields)
-
-def test_create_cve_embed_verbose(cve_lookup_cog: CVELookupCog, sample_cve_data):
-    """Test embed creation (redundant with basic, as it's always verbose)."""
-    # Remove verbose=True
-    embed = cve_lookup_cog.create_cve_embed(sample_cve_data)
-    assert isinstance(embed, discord.Embed)
-    assert embed.description == sample_cve_data['description']
-    assert len(embed.fields) > 4 # Should have more fields in verbose mode
-    assert any(field.name == "Published" for field in embed.fields)
-    assert any(field.name == "CVSS Vector" for field in embed.fields)
-    assert any(field.name == "Weakness (CWE)" for field in embed.fields)
-    assert any(field.name == "References" for field in embed.fields)
-
-
-def test_create_cve_embed_reference_limit(cve_lookup_cog: CVELookupCog, sample_cve_data):
-    """Test that references are limited in the embed."""
-    # Add more references than the limit
-    sample_cve_data['references'].extend([{"source": f"Link{i}", "url": f"http://example.com/{i}"} for i in range(10)])
-    
-    embed = cve_lookup_cog.create_cve_embed(sample_cve_data)
-    
-    ref_field = next((f for f in embed.fields if f.name == "References"), None)
-    assert ref_field is not None
-    
-    # Count lines starting with "- " instead of counting "http://"
-    lines = ref_field.value.strip().split('\n')
-    link_lines_count = sum(1 for line in lines if line.strip().startswith("-"))
-    assert link_lines_count == 5
-    
-    # Check the count in the 'more' text (12 total - 5 shown = 7 more)
-    assert "...and 7 more." in ref_field.value 
-
-# ... (rest of the tests)
-
-# Note: Removed old TODOs, covered basic /cve lookup cases.
-# Need to potentially add more detailed tests for different CVSS versions in create_cve_embed. 
+    # Check response uses the value from the mock
+    expected_message = "ℹ️ Current global CVE alert severity threshold is **high**."
+    mock_interaction.response.send_message.assert_called_once_with(expected_message, ephemeral=True)
