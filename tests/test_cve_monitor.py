@@ -98,87 +98,72 @@ async def test_create_cve_embed_non_verbose(monitor: CVEMonitor, mock_kev_client
     """Test the non-verbose embed format."""
     mock_kev_client.get_kev_entry.return_value = None # Assume not in KEV for simplicity
     
-    embeds = await monitor.create_cve_embed(SAMPLE_CVE_DATA, verbose=False)
-    
-    assert len(embeds) == 1
-    embed = embeds[0]
+    embed = monitor.create_cve_embed(SAMPLE_CVE_DATA, verbose=False)
     
     # Check essential fields are present
-    assert embed.title == SAMPLE_CVE_DATA['title']
+    assert embed.title == SAMPLE_CVE_DATA['id']
     assert embed.url == SAMPLE_CVE_DATA['link']
     assert embed.color.value == 0xFF8C00 # Compare .value
-    assert len(embed.fields) == 2 # Only CVE ID and CVSS Score
+    assert len(embed.fields) == 3 # Expect ID, Score, Source
     assert embed.fields[0].name == "CVE ID" and embed.fields[0].value == SAMPLE_CVE_DATA['id']
     assert embed.fields[1].name == "CVSS Score" and embed.fields[1].value == f"{SAMPLE_CVE_DATA['cvss']} (v{SAMPLE_CVE_DATA['cvss_version']})"
-    assert embed.description == f"[View on NVD]({SAMPLE_CVE_DATA['link']})"
-    assert embed.footer.text == f"Data via {SAMPLE_CVE_DATA['source']}"
+    assert embed.fields[2].name == "Source" and embed.fields[2].value == SAMPLE_CVE_DATA['source']
+    assert embed.description == SAMPLE_CVE_DATA['description'] # Non-verbose includes description now
+    # assert embed.footer.text == f"Data via {SAMPLE_CVE_DATA['source']}" # Footer not set here anymore
 
 @pytest.mark.asyncio
 async def test_create_cve_embed_verbose(monitor: CVEMonitor, mock_kev_client):
     """Test the verbose embed format."""
     mock_kev_client.get_kev_entry.return_value = None
     
-    embeds = await monitor.create_cve_embed(SAMPLE_CVE_DATA, verbose=True)
-    
-    assert len(embeds) == 1
-    embed = embeds[0]
+    embed = monitor.create_cve_embed(SAMPLE_CVE_DATA, verbose=True)
     
     # Check essential fields
-    assert embed.title == SAMPLE_CVE_DATA['title']
+    assert embed.title == SAMPLE_CVE_DATA['id']
     assert embed.url == SAMPLE_CVE_DATA['link']
     assert embed.description == SAMPLE_CVE_DATA['description']
     assert embed.color.value == 0xFF8C00 # Compare .value
     
     # Check all expected verbose fields are present
-    assert len(embed.fields) >= 6 # ID, Score, Published, Modified, Vector, CWE, References (if present)
+    assert len(embed.fields) >= 7 # ID, Score, Source, Published, Modified, Vector, CWE, References (if present)
     field_names = [f.name for f in embed.fields]
     assert "CVE ID" in field_names
     assert "CVSS Score" in field_names
+    assert "Source" in field_names # Added Source field check
     assert "Published" in field_names
     assert "Last Modified" in field_names
     assert "CVSS Vector" in field_names
     assert "Weaknesses (CWE)" in field_names
     assert "References" in field_names
-    assert embed.footer.text == f"Data via {SAMPLE_CVE_DATA['source']}"
+    # assert embed.footer.text == f"Data via {SAMPLE_CVE_DATA['source']}" # Footer not set here anymore
 
 @pytest.mark.asyncio
 async def test_create_cve_embed_with_kev_non_verbose(monitor: CVEMonitor, mock_kev_client):
     """Test non-verbose embed when KEV entry exists."""
     mock_kev_client.get_kev_entry.return_value = SAMPLE_KEV_DATA
     
-    embeds = await monitor.create_cve_embed(SAMPLE_CVE_DATA, verbose=False)
-    
-    assert len(embeds) == 2
+    embed = monitor.create_cve_embed(SAMPLE_CVE_DATA, verbose=False)
     
     # Check CVE embed (should be non-verbose)
-    cve_embed = embeds[0]
-    assert len(cve_embed.fields) == 2
-    assert cve_embed.description == f"[View on NVD]({SAMPLE_CVE_DATA['link']})"
-
-    # Check KEV embed (should be terse)
-    kev_embed = embeds[1]
-    assert kev_embed.title == f"🚨 CISA KEV Alert: {SAMPLE_KEV_DATA['cveID']}"
-    assert kev_embed.description == f"This vulnerability is listed in the CISA KEV catalog.\n[View on NVD](https://nvd.nist.gov/vuln/detail/{SAMPLE_KEV_DATA['cveID']})"
-    assert len(kev_embed.fields) == 0 # Terse KEV has no fields
-    assert kev_embed.footer.text == "Source: CISA KEV Catalog"
+    assert len(embed.fields) == 3 # Expect ID, Score, Source
+    assert embed.description == SAMPLE_CVE_DATA['description']
+    # assert embed.footer.text == f"Data via {SAMPLE_CVE_DATA['source']}" # Footer not set here anymore
 
 @pytest.mark.asyncio
 async def test_create_cve_embed_with_kev_verbose(monitor: CVEMonitor, mock_kev_client):
     """Test verbose embed when KEV entry exists."""
     mock_kev_client.get_kev_entry.return_value = SAMPLE_KEV_DATA
     
-    embeds = await monitor.create_cve_embed(SAMPLE_CVE_DATA, verbose=True)
-    
-    assert len(embeds) == 2
+    embed = monitor.create_cve_embed(SAMPLE_CVE_DATA, verbose=True)
     
     # Check CVE embed (should be verbose)
-    cve_embed = embeds[0]
-    assert len(cve_embed.fields) >= 6
-    assert cve_embed.description == SAMPLE_CVE_DATA['description']
+    assert len(embed.fields) >= 6
+    assert embed.description == SAMPLE_CVE_DATA['description']
 
-    # Check KEV embed (should be detailed)
-    kev_embed = embeds[1]
-    assert kev_embed.title == f"🚨 CISA KEV Alert: {SAMPLE_KEV_DATA['cveID']}"
-    assert kev_embed.description == SAMPLE_KEV_DATA['shortDescription']
-    assert len(kev_embed.fields) >= 6 # Detailed KEV has multiple fields
-    assert kev_embed.footer.text == "Source: CISA KEV Catalog" 
+    # KEV check/embed creation is now separate, remove checks for KEV embed here
+    # # Check KEV embed (should be detailed)
+    # kev_embed = embeds[1]
+    # assert kev_embed.title == f"🚨 CISA KEV Alert: {SAMPLE_KEV_DATA['cveID']}"
+    # assert kev_embed.description == SAMPLE_KEV_DATA['shortDescription']
+    # assert len(kev_embed.fields) >= 6 # Detailed KEV has multiple fields
+    # assert kev_embed.footer.text == "Source: CISA KEV Catalog" 

@@ -22,9 +22,9 @@ class CVEMonitor:
         self.kev_client = kev_client
         # self.cve_pattern = re.compile(r'CVE-\d{4}-\d{4,7}', re.IGNORECASE) # Use Class attribute
 
-    # Removed find_cves as it's simpler to use re.findall(CVEMonitor.CVE_REGEX, ...) directly
-    # def find_cves(self, content: str) -> list:
-    #     return self.cve_pattern.findall(content)
+    def find_cves(self, content: str) -> list:
+        """Finds all occurrences of CVE patterns in a string."""
+        return self.CVE_REGEX.findall(content)
 
     async def get_cve_data(self, cve_id: str) -> Optional[Dict[str, Any]]:
         """Fetches CVE data primarily from NVD."""
@@ -92,6 +92,9 @@ class CVEMonitor:
             url=link,
             color=self._get_severity_color(cvss_score)
         )
+
+        # Add CVE ID field first
+        embed.add_field(name="CVE ID", value=cve_id, inline=True)
 
         cvss_score_display = str(cvss_score or "N/A")
         if cvss_version:
