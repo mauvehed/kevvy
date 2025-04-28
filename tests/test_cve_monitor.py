@@ -108,7 +108,7 @@ async def test_create_cve_embed_non_verbose(monitor: CVEMonitor, mock_kev_client
     assert embed.fields[0].name == "CVE ID" and embed.fields[0].value == SAMPLE_CVE_DATA['id']
     assert embed.fields[1].name == "CVSS Score" and embed.fields[1].value == f"{SAMPLE_CVE_DATA['cvss']} (v{SAMPLE_CVE_DATA['cvss_version']})"
     assert embed.fields[2].name == "Source" and embed.fields[2].value == SAMPLE_CVE_DATA['source']
-    assert embed.description == SAMPLE_CVE_DATA['description'] # Non-verbose includes description now
+    assert embed.description is None # Non-verbose should have no description set
     # assert embed.footer.text == f"Data via {SAMPLE_CVE_DATA['source']}" # Footer not set here anymore
 
 @pytest.mark.asyncio
@@ -146,7 +146,7 @@ async def test_create_cve_embed_with_kev_non_verbose(monitor: CVEMonitor, mock_k
     
     # Check CVE embed (should be non-verbose)
     assert len(embed.fields) == 3 # Expect ID, Score, Source
-    assert embed.description == SAMPLE_CVE_DATA['description']
+    assert embed.description is None # Non-verbose should have no description set
     # assert embed.footer.text == f"Data via {SAMPLE_CVE_DATA['source']}" # Footer not set here anymore
 
 @pytest.mark.asyncio
