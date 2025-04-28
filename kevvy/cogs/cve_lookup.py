@@ -711,7 +711,7 @@ class CVELookupCog(commands.Cog):
                     kev_entry_data = None
                     if self.bot.cisa_kev_client:
                         try:
-                            kev_entry_data = await self.bot.cisa_kev_client.get_kev_entry_by_cve_id(cve_id)
+                            kev_entry_data = await self.bot.cisa_kev_client.get_kev_entry(cve_id)
                             if kev_entry_data:
                                 is_kev = True
                                 logger.info(f"CVE {cve_id} found in KEV catalog during automatic scan.")
