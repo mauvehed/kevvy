@@ -98,10 +98,11 @@ Key features:
     *   `/kev feed status`: Checks the status of KEV monitoring.
     *   `/kev latest [count] [days] ...`: Shows the latest KEV entries with optional filters.
 5.  **CVE Monitoring Channel Configuration (Optional Setup):**
-    *   `/cve channel enable channel:<#your-primary-cve-channel>`: Enables CVE monitoring (currently only affects `/cve latest` results, automatic detection is global). *Note: Future versions may use this for targeted alerts.* 
-    *   `/cve channel disable`: Disables the specific channel setting.
-    *   `/cve channel set channel:<#your-primary-cve-channel>`: Sets the primary channel (same as enable).
-    *   `/cve channel all`: Lists configured channels (currently max 1).
+    *   `/cve channel enable channel:<#your-primary-cve-channel>`: Enables CVE monitoring and configures alerts for this specific channel. Ensures global monitoring is also enabled.
+    *   `/cve channel disable`: Disables CVE monitoring globally for the server.
+    *   `/cve channel set channel:<#your-primary-cve-channel>`: Sets/updates the specific channel for CVE alerts (same as enable).
+    *   `/cve channel list`: Lists any channels specifically configured for CVE alerts.
+    *   `/cve channel all`: Enables CVE monitoring globally for the server and clears any specific channel configurations, making the bot listen in all channels.
 6.  **Alert Verbosity Configuration:**
     *   `/verbose enable_global`: Sets the default alert style to **verbose** for the whole server.
     *   `/verbose disable_global`: Sets the default alert style to **standard** (non-verbose) for the whole server.

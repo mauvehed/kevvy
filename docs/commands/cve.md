@@ -52,7 +52,7 @@ Disables global CVE monitoring features for the server (affects `/cve latest` co
 
 ### `/cve channel set <channel>`
 
-Sets or updates the primary channel for CVE features (currently equivalent to `/cve channel enable`).
+Sets or updates the specific channel for CVE features (effectively the same as `/cve channel enable`). Ensures global monitoring is enabled.
 
 -   **`<channel>`:** (Required) The text channel to set.
 
@@ -61,19 +61,28 @@ Sets or updates the primary channel for CVE features (currently equivalent to `/
 /cve channel set channel:#security-feed
 ```
 
-### `/cve channel all`
+### `/cve channel list`
 
-Lists all channels currently configured for CVE monitoring features.
+Lists all channels specifically configured for CVE alerts.
 
 **Example:**
 ```
-/cve channel all
+/cve channel list
 ```
 **Example Response:**
 ```
 ℹ️ CVE monitoring is **enabled** globally.
 Configured channels:
 - #security-feed
+```
+
+### `/cve channel all`
+
+Enables global CVE monitoring and clears any specific channel configurations, making the bot listen for CVEs in all channels.
+
+**Example:**
+```
+/cve channel all
 ```
 
 ---
