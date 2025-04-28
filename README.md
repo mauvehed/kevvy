@@ -21,8 +21,7 @@
 
 <br />
 
-[![Build](https://github.com/mauvehed/kevvy/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/mauvehed/kevvy/actions/workflows/docker-publish.yml)
-[![Test](https://github.com/mauvehed/kevvy/actions/workflows/python-tests.yml/badge.svg)](https://github.com/mauvehed/kevvy/actions/workflows/python-tests.yml)
+[![Kevvy CI/CD](https://github.com/mauvehed/kevvy/actions/workflows/ci.yml/badge.svg)](https://github.com/mauvehed/kevvy/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/mauvehed/kevvy/actions/workflows/codeql-analysis.yml/badge.svg?branch=main)](https://github.com/mauvehed/kevvy/actions/workflows/codeql-analysis.yml)
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/4ec1fc69d8a14048a80124167f6f7664)](https://www.codacy.com/gh/mauvehed/kevvy/dashboard)
 </div>
