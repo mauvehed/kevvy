@@ -81,12 +81,15 @@ class KEVCog(commands.Cog):
     @app_commands.checks.has_permissions(manage_guild=True)
     async def kev_feed_status_command(self, interaction: discord.Interaction): # type: ignore
         """Check the CISA KEV monitoring status for this server."""
+        # Defer the response immediately to prevent timeouts
+        await interaction.response.defer(ephemeral=True)
+        
         if not self.db:
-            await interaction.response.send_message("Database is not available. Cannot check KEV status.", ephemeral=True)
+            await interaction.followup.send("Database is not available. Cannot check KEV status.", ephemeral=True)
             return
 
         if interaction.guild_id is None:
-             await interaction.response.send_message("Could not determine server ID.", ephemeral=True)
+             await interaction.followup.send("Could not determine server ID.", ephemeral=True)
              return
 
         config = self.db.get_kev_config(interaction.guild_id)
@@ -105,9 +108,11 @@ class KEVCog(commands.Cog):
                 f"Last successful check: {discord.utils.format_dt(last_check_ts, 'R') if last_check_ts else 'Never'}\n"
                 f"Last alert sent: {discord.utils.format_dt(last_alert_ts, 'R') if last_alert_ts else 'Never'}"
             )
-            await interaction.response.send_message(message, ephemeral=True)
+            # Use followup.send after deferring
+            await interaction.followup.send(message, ephemeral=True)
         else:
-            await interaction.response.send_message("⚪ KEV feed monitoring is **disabled**.", ephemeral=True)
+            # Use followup.send after deferring
+            await interaction.followup.send("⚪ KEV feed monitoring is **disabled**.", ephemeral=True)
 
     # --- /kev latest command --- 
     @kev_group.command(name="latest", description="Display the most recent KEV entries.")
@@ -234,15 +239,17 @@ class KEVCog(commands.Cog):
     # --- Error Handler --- 
     async def cog_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
         if isinstance(error, app_commands.MissingPermissions):
-            await interaction.response.send_message("You need the 'Manage Server' permission to use this command.", ephemeral=True)
-        # Handle Range errors for count/days
-        elif isinstance(error, discord.app_commands.errors.RangeError): 
-             param_name = error.argument.name
-             await interaction.response.send_message(f"Parameter `{param_name}` must be between {error.minimum} and {error.maximum}.", ephemeral=True)
+            # Use followup if deferred, otherwise response
+            send_method = interaction.followup.send if interaction.response.is_done() else interaction.response.send_message
+            await send_method("You need the 'Manage Server' permission to use this command.", ephemeral=True)
         else:
             logger.error(f"Unhandled error in KEVCog command: {error}", exc_info=True)
-            if not interaction.response.is_done():
-                 await interaction.response.send_message("An unexpected error occurred.", ephemeral=True)
+            # Try to send a generic message
+            try:
+                send_method = interaction.followup.send if interaction.response.is_done() else interaction.response.send_message
+                await send_method("An unexpected error occurred.", ephemeral=True)
+            except Exception as e_send:
+                logger.error(f"Failed to send error message to user: {e_send}")
 
 async def setup(bot: 'SecurityBot'):
     await bot.add_cog(KEVCog(bot))
