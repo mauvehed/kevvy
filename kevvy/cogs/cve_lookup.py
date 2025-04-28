@@ -39,68 +39,95 @@ class CVELookupCog(commands.Cog):
     verbose_group = app_commands.Group(name="verbose", description="Configure global and per-channel verbosity of CVE alerts.", guild_only=True)
     # Note: Removed parent=cve_group to make it top-level
 
-    def create_cve_embed(self, cve_data: dict) -> discord.Embed:
-        """Creates a Discord embed from fetched CVE data."""
+    def create_cve_embed(self, cve_data: dict, verbose: bool = True) -> discord.Embed:
+        """Creates a Discord embed from fetched CVE data, adjusting detail based on verbosity."""
         embed = discord.Embed(
             title=f"{cve_data.get('id', 'Unknown CVE')}",
             url=cve_data.get('link'),
-            description=cve_data.get('description', 'No description provided.'),
             color=discord.Color.purple() # Or choose another color
         )
-
+        
+        # Always show score if available
         if cve_data.get('cvss'):
             cvss_info = f"**Score:** {cve_data['cvss']}"
-            if cve_data.get('cvss_version'):
+            if verbose and cve_data.get('cvss_version'): # Only show version in verbose
                 cvss_info += f" ({cve_data['cvss_version']})"
+            embed.add_field(name="CVSS Score", value=cvss_info, inline=not verbose) # Inline score in standard mode
+
+        if verbose:
+             # Fields only for verbose mode
+            if cve_data.get('description'):
+                 embed.description = cve_data.get('description')
+            else:
+                 embed.description = 'No description provided.'
+                 
             if cve_data.get('cvss_vector'):
                  embed.add_field(name="CVSS Vector", value=f"`{cve_data['cvss_vector']}`", inline=False)
-            embed.add_field(name="CVSS Score", value=cvss_info, inline=True)
 
-        if cve_data.get('cwe_ids'):
-            cwe_text = ", ".join(cve_data['cwe_ids'])
-            embed.add_field(name="Weakness (CWE)", value=cwe_text, inline=True)
+            if cve_data.get('cwe_ids'):
+                cwe_text = ", ".join(cve_data['cwe_ids'])
+                embed.add_field(name="Weakness (CWE)", value=cwe_text, inline=True)
 
-        if cve_data.get('published'):
-            embed.add_field(name="Published", value=cve_data['published'], inline=True)
-        if cve_data.get('modified'):
-             embed.add_field(name="Last Modified", value=cve_data['modified'], inline=True)
+            if cve_data.get('published'):
+                embed.add_field(name="Published", value=cve_data['published'], inline=True)
+            if cve_data.get('modified'):
+                 embed.add_field(name="Last Modified", value=cve_data['modified'], inline=True)
 
-        if references := cve_data.get('references', []):
-            ref_limit = 5
-            ref_text = ""
-            for i, ref in enumerate(references[:ref_limit]):
-                ref_text += f"- [{ref.get('source', 'Link')}]({ref.get('url')})"
-                if ref.get('tags'):
-                    ref_text += f" ({', '.join(ref['tags'])})"
-                ref_text += "\n"
-            if len(references) > ref_limit:
-                ref_text += f"*...and {len(references) - ref_limit} more.*"
-            embed.add_field(name="References", value=ref_text.strip(), inline=False)
-
-
-        embed.set_footer(text=f"Source: {cve_data.get('source', 'N/A')}")
-        embed.timestamp = discord.utils.utcnow()
+            if references := cve_data.get('references', []):
+                ref_limit = 5
+                ref_text = ""
+                for i, ref in enumerate(references[:ref_limit]):
+                    ref_text += f"- [{ref.get('source', 'Link')}]({ref.get('url')})"
+                    if ref.get('tags'):
+                        ref_text += f" ({', '.join(ref['tags'])})"
+                    ref_text += "\n"
+                if len(references) > ref_limit:
+                    ref_text += f"*...and {len(references) - ref_limit} more.*"
+                embed.add_field(name="References", value=ref_text.strip(), inline=False)
+                
+            embed.set_footer(text=f"Source: {cve_data.get('source', 'N/A')}")
+            embed.timestamp = discord.utils.utcnow()
+        else:
+            # Standard mode: Keep it concise
+            # Maybe add a very short description snippet if needed?
+            desc_snippet = cve_data.get('description', 'No description provided.')[:100] # Limit standard description
+            if len(cve_data.get('description', '')) > 100:
+                 desc_snippet += "..."
+            embed.description = desc_snippet 
+            embed.set_footer(text=f"Source: {cve_data.get('source', 'N/A')} | Use /verbose enable_global for more details.")
+            # No timestamp in standard mode to save space
 
         return embed
 
     # Placeholder for KEV embed creation
-    def create_kev_embed(self, cve_id: str, kev_entry: Dict[str, Any]) -> discord.Embed:
-        """Creates a Discord embed for a KEV entry notification."""
-        # TODO: Implement actual KEV embed formatting
+    def create_kev_embed(self, cve_id: str, kev_entry: Dict[str, Any], verbose: bool = True) -> discord.Embed:
+        """Creates a Discord embed for a KEV entry notification, adjusting detail based on verbosity."""
+        
         embed = discord.Embed(
-            title=f"🚨 KEV Alert: {cve_id} Added!",
-            description=f"**Vulnerability Name:** {kev_entry.get('vulnerabilityName', 'N/A')}\n" 
-                        f"**Action Required:** {kev_entry.get('shortDescription', 'See CISA advisory.')}\n" 
-                        f"**Due Date:** {kev_entry.get('dueDate', 'N/A')}",
+            title=f"🚨 KEV Alert: {cve_id} is Known Exploited!", # Slightly different title
             color=discord.Color.red()
         )
-        embed.add_field(name="Vendor", value=kev_entry.get('vendorProject', 'N/A'), inline=True)
-        embed.add_field(name="Product", value=kev_entry.get('product', 'N/A'), inline=True)
-        embed.add_field(name="Known Ransomware Use", value=kev_entry.get('knownRansomwareCampaignUse', 'N/A'), inline=True)
         nvd_link = f"https://nvd.nist.gov/vuln/detail/{cve_id}"
-        embed.add_field(name="Links", value=f"[NVD]({nvd_link}) | [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog)", inline=False)
-        embed.set_footer(text="Source: CISA KEV Catalog")
-        embed.timestamp = discord.utils.utcnow()
+
+        if verbose:
+            # Verbose KEV Embed
+            embed.description=(f"**Vulnerability Name:** {kev_entry.get('vulnerabilityName', 'N/A')}\n" 
+                            f"**Action Required:** {kev_entry.get('shortDescription', 'See CISA advisory.')}\n" 
+                            f"**Due Date:** {kev_entry.get('dueDate', 'N/A')}")
+            embed.add_field(name="Vendor", value=kev_entry.get('vendorProject', 'N/A'), inline=True)
+            embed.add_field(name="Product", value=kev_entry.get('product', 'N/A'), inline=True)
+            embed.add_field(name="Known Ransomware Use", value=kev_entry.get('knownRansomwareCampaignUse', 'N/A'), inline=True)
+            embed.add_field(name="Links", value=f"[NVD]({nvd_link}) | [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog)", inline=False)
+            embed.set_footer(text="Source: CISA KEV Catalog")
+            embed.timestamp = discord.utils.utcnow()
+        else:
+            # Standard KEV Embed (Concise)
+            embed.description=(f"{kev_entry.get('vulnerabilityName', 'N/A')} - Added to KEV Catalog.")
+            embed.add_field(name="Action Due", value=kev_entry.get('dueDate', 'N/A'), inline=True)
+            embed.add_field(name="Links", value=f"[NVD]({nvd_link}) | [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog)", inline=True)
+            embed.set_footer(text="Source: CISA KEV | Use /verbose enable_global for more details.")
+            # No timestamp for standard
+
         return embed
 
     @cve_group.command(name="lookup", description="Look up details for a specific CVE ID from NVD.")
@@ -719,16 +746,19 @@ class CVELookupCog(commands.Cog):
                             logger.error(f"Error checking KEV status for {cve_id}: {kev_err}", exc_info=True)
                     # --- End KEV Check ---
                     
-                    # TODO: Implement standard/verbose embed difference based on get_effective_verbosity
-                    # verbose = self.db.get_effective_verbosity(guild_id, message.channel.id)
+                    # Get effective verbosity for this channel
+                    verbose = self.db.get_effective_verbosity(guild_id, message.channel.id)
 
                     # Always send the standard CVE details embed first if details were found
-                    embed = self.create_cve_embed(cve_details)
+                    # Pass the verbosity setting to the embed creation function
+                    embed = self.create_cve_embed(cve_details, verbose=verbose)
                     await message.channel.send(embed=embed)
 
                     # If it's also in KEV, send the KEV alert embed additionally
+                    # KEV embed does not need verbosity flag for now
                     if is_kev and kev_entry_data: 
-                        kev_embed = self.create_kev_embed(cve_id, kev_entry_data)
+                        # Pass verbosity setting to KEV embed creation
+                        kev_embed = self.create_kev_embed(cve_id, kev_entry_data, verbose=verbose)
                         await message.channel.send(embed=kev_embed)
                         
                     processed_count += 1
