@@ -93,7 +93,7 @@ class CVEMonitor:
             color=self._get_severity_color(cvss_score)
         )
 
-        # Add CVE ID field first
+        # --- Fields added regardless of verbosity ---
         embed.add_field(name="CVE ID", value=cve_id, inline=True)
 
         cvss_score_display = str(cvss_score or "N/A")
@@ -101,17 +101,21 @@ class CVEMonitor:
             cvss_score_display += f" (v{cvss_version})"
         embed.add_field(name="CVSS Score", value=cvss_score_display, inline=True)
 
-        # Add source directly opposite score
         embed.add_field(name="Source", value=cve_data.get('source', 'N/A'), inline=True)
-
-        description = cve_data.get('description', "No description available.")
-        if len(description) > MAX_DESCRIPTION_LENGTH:
-            description = f"{description[:MAX_DESCRIPTION_LENGTH - 3]}..."
-        embed.description = description
+        # --- End always-added fields ---
 
         if verbose:
+            # Set description only in verbose mode
+            description = cve_data.get('description', "No description available.")
+            if len(description) > MAX_DESCRIPTION_LENGTH:
+                description = f"{description[:MAX_DESCRIPTION_LENGTH - 3]}..."
+            embed.description = description
+            
             embed.add_field(name="Published", value=self._format_date(cve_data.get('published')), inline=True)
             embed.add_field(name="Last Modified", value=self._format_date(cve_data.get('modified')), inline=True)
+
+            # Add placeholder field to keep layout consistent if Published/Modified are short
+            embed.add_field(name="\u200b", value="\u200b", inline=True) # Invisible field
 
             if cvss_vector := cve_data.get('cvss_vector'):
                 if len(cvss_vector) > MAX_FIELD_LENGTH:
@@ -156,23 +160,44 @@ class CVEMonitor:
                     if len(ref_display) > MAX_FIELD_LENGTH:
                         ref_display = f"{ref_display[:MAX_FIELD_LENGTH - 3]}..."
                     embed.add_field(name="References", value=ref_display, inline=False)
-        
-        # Removed KEV logic from here
-        # Removed footer setting from here, will be done in bot.py or cog
+        else:
+            # Non-verbose mode: No description needed, title/URL is primary info.
+            pass # Explicitly do nothing for description
 
         return embed
 
-    def create_kev_status_embed(self, cve_id: str, kev_entry: Dict[str, Any]) -> discord.Embed:
-        """Creates a standardized embed for a KEV entry notification."""
-        embed = discord.Embed(
-            title=f"🚨 CISA KEV Alert: {cve_id}",
-            description=f"This vulnerability is listed in the CISA KEV catalog.\n{kev_entry.get('shortDescription', '')}",
-            url=f"https://nvd.nist.gov/vuln/detail/{cve_id}",
-            color=discord.Color.dark_red()
-        )
-        embed.add_field(name="Date Added to KEV", value=self._format_date(kev_entry.get('dateAdded')), inline=True)
-        embed.add_field(name="Due Date", value=self._format_date(kev_entry.get('dueDate')), inline=True)
-        embed.add_field(name="Known Ransomware Use", value=kev_entry.get('knownRansomwareCampaignUse', 'N/A'), inline=True)
+    def create_kev_status_embed(self, cve_id: str, kev_entry: Dict[str, Any], verbose: bool = False) -> discord.Embed:
+        """Creates a standardized embed for a KEV entry notification, adjusting for verbosity."""
+        nvd_link = f"https://nvd.nist.gov/vuln/detail/{cve_id}"
+        
+        if verbose:
+            # Detailed KEV Embed
+            embed = discord.Embed(
+                title=f"🚨 CISA KEV Alert: {cve_id}",
+                description=kev_entry.get('shortDescription', 'No description available.'),
+                url=nvd_link,
+                color=discord.Color.dark_red()
+            )
+            embed.add_field(name="Vulnerability Name", value=kev_entry.get('vulnerabilityName', 'N/A'), inline=False)
+            embed.add_field(name="Vendor/Project", value=kev_entry.get('vendorProject', 'N/A'), inline=True)
+            embed.add_field(name="Product", value=kev_entry.get('product', 'N/A'), inline=True)
+            embed.add_field(name="Date Added to KEV", value=self._format_date(kev_entry.get('dateAdded')), inline=True)
+            embed.add_field(name="Required Action", value=kev_entry.get('requiredAction', 'N/A'), inline=False)
+            embed.add_field(name="Due Date", value=self._format_date(kev_entry.get('dueDate')), inline=True)
+            embed.add_field(name="Known Ransomware Use", value=kev_entry.get('knownRansomwareCampaignUse', 'N/A'), inline=True)
+            if notes := kev_entry.get('notes', ''):
+                notes_display = f'{notes[:1020]}...' if len(notes) > 1024 else notes
+                embed.add_field(name="Notes", value=notes_display, inline=False)
+        else:
+            # Terse KEV Embed
+            embed = discord.Embed(
+                title=f"🚨 KEV Alert: {cve_id}",
+                description=f"Known Exploited Vulnerability ([View on NVD]({nvd_link}))",
+                url=nvd_link, # Keep link clickable via title
+                color=discord.Color.dark_red()
+            )
+            # No fields in terse mode
+            
         embed.set_footer(text="Source: CISA KEV Catalog")
         embed.timestamp = discord.utils.utcnow() # Use discord utils for timestamp
         return embed

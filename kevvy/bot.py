@@ -482,9 +482,9 @@ class SecurityBot(commands.Bot):
                 # Check KEV status
                 kev_status = await self.cve_monitor.check_kev(cve_id)
                 if kev_status:
-                    kev_embed = self.cve_monitor.create_kev_status_embed(cve_id, kev_status)
+                    kev_embed = self.cve_monitor.create_kev_status_embed(cve_id, kev_status, verbose=is_verbose)
                     await message.channel.send(embed=kev_embed)
-                    logger.info(f"Sent KEV status for {cve_id} from message {message.id}.")
+                    logger.info(f"Sent KEV status for {cve_id} (Verbose: {is_verbose}) from message {message.id}.")
 
                 await asyncio.sleep(0.5) # Short delay between embeds for rate limits
 
