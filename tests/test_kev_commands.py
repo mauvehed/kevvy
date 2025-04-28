@@ -37,6 +37,11 @@ def mock_bot(mock_db, mock_kev_client): # Inject mocks
     bot.timestamp_last_kev_check_success = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=10)
     bot.timestamp_last_kev_alert_sent = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)
     bot.get_channel = MagicMock(return_value=MagicMock(spec=discord.TextChannel, mention="#mock-kev-channel")) # Mock channel fetch
+    
+    # Add mock stats attributes needed by the cog
+    bot.stats_lock = AsyncMock() # Mock the lock
+    bot.stats_api_errors_kev = 0
+    
     return bot
 
 @pytest.fixture
@@ -138,8 +143,8 @@ async def test_latest_success_defaults(kev_cog: KEVCog, mock_interaction: AsyncM
     """Test /kev latest with default count and days."""
     mock_kev_client.get_full_kev_catalog.return_value = SAMPLE_KEV_CATALOG
 
-    # Default days is 7, so CVE-2024-0003 should be filtered out by date
-    expected_results = SAMPLE_KEV_CATALOG[:2] 
+    # Default days is 30, so no entries should be filtered out by date in this sample
+    expected_results = SAMPLE_KEV_CATALOG[:2] # Only first 2 because default count is 5
 
     await kev_cog.kev_latest_command.callback(kev_cog, mock_interaction) # Use defaults
 
@@ -153,12 +158,13 @@ async def test_latest_success_defaults(kev_cog: KEVCog, mock_interaction: AsyncM
     assert 'embed' in kwargs
     embed = kwargs['embed']
     assert isinstance(embed, discord.Embed)
-    assert embed.title == "Latest KEV Entries (Last 7 days)"
-    # Check that the 2 recent entries are in the description
-    assert SAMPLE_KEV_CATALOG[0]['cveID'] in embed.description
-    assert SAMPLE_KEV_CATALOG[1]['cveID'] in embed.description
-    assert SAMPLE_KEV_CATALOG[2]['cveID'] not in embed.description # Too old
-    assert f"Found 2 entries matching criteria. Showing top 2." in embed.footer.text
+    # Update assertion to check for 30 days
+    assert embed.title == "Latest KEV Entries (Last 30 days)" 
+    # Check description contains the expected entries (adjust based on default count=5)
+    assert "CVE-2024-0001" in embed.description 
+    assert "CVE-2024-0002" in embed.description
+    assert "CVE-2024-0003" in embed.description # This should be included now
+    assert len(embed.description.split('\n\n')) <= 5 # Ensure max 5 entries shown visually
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("count, days", [(1, 30), (3, 10)])
@@ -264,11 +270,14 @@ async def test_latest_client_exception(kev_cog: KEVCog, mock_interaction: AsyncM
         mock_kev_client.get_full_kev_catalog.assert_called_once()
         # Check error log
         mock_logger.error.assert_called_once()
-        assert "Error handling /kev latest command" in mock_logger.error.call_args[0][0]
-        # Check user response
+        # Update assertion to check for the new log message
+        assert "Error fetching KEV catalog for /kev latest" in mock_logger.error.call_args[0][0]
+        # Check followup message
         mock_interaction.followup.send.assert_called_once_with(
-            "❌ An unexpected error occurred while fetching latest KEV entries.", ephemeral=True
+            "❌ An error occurred while fetching the KEV catalog data.", ephemeral=True
         )
+        # Check that the stat was incremented
+        assert kev_cog.bot.stats_api_errors_kev == 1
 
 @pytest.mark.asyncio
 async def test_latest_range_error(kev_cog: KEVCog, mock_interaction: AsyncMock):

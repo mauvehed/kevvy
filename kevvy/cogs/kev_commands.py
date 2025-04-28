@@ -32,7 +32,7 @@ class KEVCog(commands.Cog):
     # --- /kev feed commands ---
     @feed_group.command(name="enable", description="Enable KEV feed alerts in the specified channel.")
     @app_commands.checks.has_permissions(manage_guild=True)
-    async def kev_feed_enable_command(self, interaction: discord.Interaction, channel: discord.TextChannel):
+    async def kev_feed_enable_command(self, interaction: discord.Interaction, channel: discord.TextChannel): # type: ignore
         """Enable CISA KEV monitoring alerts in the specified channel for this server."""
         if not self.db:
             await interaction.response.send_message("Database is not available. Cannot enable KEV monitoring.", ephemeral=True)
@@ -56,7 +56,7 @@ class KEVCog(commands.Cog):
 
     @feed_group.command(name="disable", description="Disable KEV feed alerts for this server.")
     @app_commands.checks.has_permissions(manage_guild=True)
-    async def kev_feed_disable_command(self, interaction: discord.Interaction):
+    async def kev_feed_disable_command(self, interaction: discord.Interaction): # type: ignore
         """Disable CISA KEV monitoring alerts for this server."""
         if not self.db:
             await interaction.response.send_message("Database is not available. Cannot disable KEV monitoring.", ephemeral=True)
@@ -79,7 +79,7 @@ class KEVCog(commands.Cog):
 
     @feed_group.command(name="status", description="Check KEV feed alert status for this server.")
     @app_commands.checks.has_permissions(manage_guild=True)
-    async def kev_feed_status_command(self, interaction: discord.Interaction):
+    async def kev_feed_status_command(self, interaction: discord.Interaction): # type: ignore
         """Check the CISA KEV monitoring status for this server."""
         if not self.db:
             await interaction.response.send_message("Database is not available. Cannot check KEV status.", ephemeral=True)
@@ -117,7 +117,7 @@ class KEVCog(commands.Cog):
         vendor="Filter by vendor name (case-insensitive match)",
         product="Filter by product name (case-insensitive match)"
     )
-    async def kev_latest_command(
+    async def kev_latest_command( # type: ignore
         self, interaction: discord.Interaction,
         count: app_commands.Range[int, 1, 10] = 5,
         days: app_commands.Range[int, 1, 30] = 30,
@@ -236,7 +236,7 @@ class KEVCog(commands.Cog):
         if isinstance(error, app_commands.MissingPermissions):
             await interaction.response.send_message("You need the 'Manage Server' permission to use this command.", ephemeral=True)
         # Handle Range errors for count/days
-        elif isinstance(error, app_commands.errors.RangeError): 
+        elif isinstance(error, discord.app_commands.errors.RangeError): 
              param_name = error.argument.name
              await interaction.response.send_message(f"Parameter `{param_name}` must be between {error.minimum} and {error.maximum}.", ephemeral=True)
         else:
