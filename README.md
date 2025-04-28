@@ -120,6 +120,10 @@ Here's the bot in action:
 
 ![KEV Alert Notification](docs/images/KEV%20Alert.png)
 
+**Web Dashboard Status:**
+
+![Kevvy Dashboard](docs/images/kevvy_dashboard.png)
+
 ## Getting Started
 
 ### Prerequisites

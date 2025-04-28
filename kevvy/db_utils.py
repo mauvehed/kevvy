@@ -320,33 +320,40 @@ class KEVConfigDB:
     # --- NEW Counting Methods for Diagnostics --- 
 
     def count_globally_enabled_cve_guilds(self) -> int:
-        """Counts guilds where CVE monitoring is globally enabled."""
+        """Counts the number of distinct guilds with global CVE monitoring enabled."""
         if not self._conn:
-            logger.error("No DB connection to count CVE guilds.")
+            logger.error("Cannot count enabled CVE guilds: Database connection is not available.")
             return 0
         try:
             cursor = self._conn.cursor()
-            # Count rows in cve_guild_config where enabled is true
-            cursor.execute("SELECT COUNT(*) FROM cve_guild_config WHERE enabled = 1")
-            count = cursor.fetchone()[0]
-            return count if count is not None else 0
+            cursor.execute('''
+                SELECT COUNT(DISTINCT guild_id) FROM cve_guild_config WHERE enabled = 1
+            ''')
+            result = cursor.fetchone()
+            return result[0] if result else 0
         except sqlite3.Error as e:
-            logger.error(f"Error counting globally enabled CVE guilds: {e}", exc_info=True)
+            logger.error(f"Database error counting globally enabled CVE guilds: {e}", exc_info=True)
             return 0
 
     def count_active_cve_channels(self) -> int:
-        """Counts individual channel configs marked as enabled."""
+        """Counts the number of distinct channels with specific CVE monitoring enabled."""
+        # This counts rows in cve_channel_configs where enabled is explicitly true.
+        # It doesn't consider the global guild setting.
         if not self._conn:
-            logger.error("No DB connection to count active CVE channels.")
+            logger.error("Cannot count active CVE channels: Database connection is not available.")
             return 0
         try:
             cursor = self._conn.cursor()
-            # Count rows in cve_channel_configs where enabled is true
-            cursor.execute("SELECT COUNT(*) FROM cve_channel_configs WHERE enabled = 1")
-            count = cursor.fetchone()[0]
-            return count if count is not None else 0
+            # We count distinct guild_id, channel_id pairs where enabled is true in the channel config table
+            # Note: The 'enabled' column in cve_channel_configs might not be strictly necessary 
+            # if the presence of a row implies configuration, but we'll use it for now.
+            cursor.execute('''
+                SELECT COUNT(DISTINCT channel_id) FROM cve_channel_configs WHERE enabled = 1
+            ''')
+            result = cursor.fetchone()
+            return result[0] if result else 0
         except sqlite3.Error as e:
-            logger.error(f"Error counting active CVE channels: {e}", exc_info=True)
+            logger.error(f"Database error counting active CVE channels: {e}", exc_info=True)
             return 0
 
     # --- End NEW Counting Methods ---

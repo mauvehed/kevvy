@@ -222,11 +222,14 @@ class KEVCog(commands.Cog):
 
             await interaction.followup.send(embed=embed, ephemeral=True)
 
-        except Exception as e:
-            logger.error(f"Error handling /kev latest command: {e}", exc_info=True)
-            if interaction.response.is_done():
-                await interaction.followup.send("❌ An unexpected error occurred while fetching latest KEV entries.", ephemeral=True)
-            # else: interaction should have been deferred
+        except Exception as fetch_err:
+            logger.error(f"Error fetching KEV catalog for /kev latest: {fetch_err}", exc_info=True)
+            # --- Increment KEV API Error Stat ---
+            async with self.bot.stats_lock:
+                self.bot.stats_api_errors_kev += 1
+            # ------------------------------------
+            await interaction.followup.send("❌ An error occurred while fetching the KEV catalog data.", ephemeral=True)
+            return
 
     # --- Error Handler --- 
     async def cog_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):

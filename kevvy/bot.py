@@ -51,7 +51,9 @@ class SecurityBot(commands.Bot):
         self.stats_api_errors_vulncheck = 0
         self.stats_api_errors_nvd = 0
         self.stats_api_errors_cisa = 0
+        self.stats_api_errors_kev = 0
         self.stats_rate_limits_nvd = 0
+        self.stats_rate_limits_hit_nvd = 0
         self.stats_app_command_errors: Dict[str, int] = defaultdict(int)
         # --- End Statistics Counters ---
 

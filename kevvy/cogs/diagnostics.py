@@ -25,7 +25,8 @@ class DiagnosticsCog(commands.Cog):
 
     def __init__(self, bot: 'SecurityBot'):
         self.bot = bot
-        self.session: aiohttp.ClientSession = bot.http_session # Use bot's session
+        # Adjust type hint to Optional, although setup ensures it exists
+        self.session: Optional[aiohttp.ClientSession] = bot.http_session 
         # Use correct env var names
         self.api_endpoint = os.getenv('KEVVY_WEB_URL') 
         self.api_secret = os.getenv('KEVVY_WEB_API_KEY') # Use KEVVY_WEB_API_KEY
@@ -35,6 +36,8 @@ class DiagnosticsCog(commands.Cog):
             # Use correct env var names in warning
             logger.warning("KEVVY_WEB_URL or KEVVY_WEB_API_KEY not set. Web status updates disabled.")
         else:
+            # Add an assertion here to satisfy type checker, since setup ensures session exists if we reach here
+            assert self.session is not None, "HTTP session must be initialized if API endpoint/secret are set"
             self.update_web_status.start()
 
     def cog_unload(self):
@@ -42,10 +45,15 @@ class DiagnosticsCog(commands.Cog):
 
     @tasks.loop(minutes=1.0) # Send status every minute
     async def update_web_status(self):
-        if not self.api_endpoint or not self.api_secret:
-            return # Silently return if config is missing
+        # Add check for self.session just in case, though it should always be available if task runs
+        if not self.api_endpoint or not self.api_secret or not self.session:
+            logger.warning("Diagnostics task running without endpoint, secret, or session. Skipping update.")
+            return # Silently return if config or session is missing
 
-        logger.debug("Preparing to send bot status to web API.")
+        # Construct the full URL by appending the specific path
+        full_api_url = f"{self.api_endpoint.rstrip('/')}/api/bot-status"
+
+        logger.debug(f"Preparing to send bot status to web API at {full_api_url}.")
 
         # --- Gather Stats --- 
         stats_data: Dict[str, Any] = {}
@@ -91,9 +99,10 @@ class DiagnosticsCog(commands.Cog):
             # Use a shorter timeout for status updates
             request_timeout = aiohttp.ClientTimeout(total=10)
             
-            async with self.session.post(self.api_endpoint, json=stats_data, headers=headers, timeout=request_timeout) as response:
+            # Use the full URL constructed above
+            async with self.session.post(full_api_url, json=stats_data, headers=headers, timeout=request_timeout) as response:
                 if response.status == 200:
-                    logger.info(f"Successfully sent bot status to web API ({self.api_endpoint}).")
+                    logger.info(f"Successfully sent bot status to web API ({full_api_url}).")
                 else:
                     logger.warning(f"Failed to send bot status to web API. Status: {response.status}, Reason: {response.reason}")
                     # Optionally log response body on error for debugging
@@ -101,9 +110,9 @@ class DiagnosticsCog(commands.Cog):
                     # logger.warning(f"Web API Response Body: {error_text[:500]}") # Limit length
         
         except aiohttp.ClientError as e:
-            logger.error(f"HTTP Error sending status to web API: {e}")
+            logger.error(f"HTTP Error sending status to web API ({full_api_url}): {e}")
         except asyncio.TimeoutError:
-            logger.error(f"Timeout sending status to web API ({self.api_endpoint}).")
+            logger.error(f"Timeout sending status to web API ({full_api_url}).")
         except Exception as e:
             logger.error(f"Unexpected error in update_web_status task: {e}", exc_info=True)
 
