@@ -14,8 +14,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Basic regex for CVE ID format
-CVE_REGEX = re.compile(r'^CVE-\d{4}-\d{4,}$', re.IGNORECASE)
+# Regex for validating CVE ID format in commands
+CVE_VALIDATE_REGEX = re.compile(r'^CVE-\d{4}-\d{4,}$', re.IGNORECASE)
+# Regex for finding potential CVE IDs anywhere in message text
+CVE_SCAN_REGEX = re.compile(r'CVE-\d{4}-\d{4,}', re.IGNORECASE) 
+MAX_CVES_PER_MESSAGE = 5 # Limit embeds per message
 
 # Define SeverityLevel choices for commands
 SeverityLevelChoices = Literal["critical", "high", "medium", "low", "all"]
@@ -86,7 +89,7 @@ class CVELookupCog(commands.Cog):
         """Handles the /cve lookup subcommand."""
         await interaction.response.defer()
 
-        if not CVE_REGEX.match(cve_id):
+        if not CVE_VALIDATE_REGEX.match(cve_id):
             await interaction.followup.send(
                 "❌ Invalid CVE ID format. Please use `CVE-YYYY-NNNNN...` (e.g., CVE-2023-12345).",
                 ephemeral=True,
@@ -614,6 +617,100 @@ class CVELookupCog(commands.Cog):
         except Exception as e:
             logger.error(f"Error resetting CVE threshold for guild {interaction.guild_id}: {e}", exc_info=True)
             await interaction.response.send_message("❌ An error occurred while resetting the severity threshold.", ephemeral=True)
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        """Processes messages to automatically detect and look up CVE IDs."""
+        # 1. Initial Checks
+        if message.author.bot:  # Ignore bots
+            return
+        if not message.guild:  # Ignore DMs
+            return
+        if not self.db or not self.nvd_client: # Ensure DB and NVD client are available
+            # Log this scenario, as it indicates a setup issue
+            if not hasattr(self, '_logged_missing_dependency_warn'):
+                logger.warning("CVE automatic detection skipped: DB or NVDClient not available in CVELookupCog.")
+                self._logged_missing_dependency_warn = True # Avoid log spam
+            return
+        if not message.content: # Ignore messages without text content
+            return
+            
+        # 2. Check Guild Enablement
+        guild_id = message.guild.id
+        guild_config = self.db.get_cve_guild_config(guild_id)
+        if not guild_config or not guild_config.get('enabled', False):
+            #logger.debug(f"CVE auto-detection skipped in guild {guild_id}: Globally disabled.")
+            return # Global setting is disabled
+
+        # 3. Check Channel Configuration / Filtering
+        channel_configs = self.db.get_all_cve_channel_configs_for_guild(guild_id)
+        if channel_configs: # If specific channels ARE configured...
+            is_channel_configured = False
+            for conf in channel_configs:
+                if conf.get('channel_id') == message.channel.id and conf.get('enabled', True):
+                    is_channel_configured = True
+                    break
+            if not is_channel_configured:
+                #logger.debug(f"CVE auto-detection skipped in channel {message.channel.id}: Not in configured list for guild {guild_id}.")
+                return # This channel is not in the allowed list
+
+        # 4. Find CVEs in Message
+        # Find all potential CVEs, convert to uppercase, make unique, and limit
+        found_cves_set = {match.upper() for match in CVE_SCAN_REGEX.findall(message.content)}
+        cves_to_process = list(found_cves_set)[:MAX_CVES_PER_MESSAGE]
+
+        if not cves_to_process:
+            return # No valid CVEs found
+
+        logger.info(f"Detected CVEs {cves_to_process} in message {message.id} (channel {message.channel.id}, guild {guild_id}).")
+
+        # 5. Process Found CVEs
+        processed_count = 0
+        for cve_id in cves_to_process:
+            # Basic validation just in case regex picked up something weird (though unlikely with this regex)
+            if not CVE_VALIDATE_REGEX.match(cve_id): 
+                logger.warning(f"Skipping invalid CVE format found by SCAN_REGEX: {cve_id}")
+                continue
+
+            try:
+                # --- Add Stat Increment for Attempt ---
+                async with self.bot.stats_lock:
+                    self.bot.stats_cve_lookups += 1
+                # --- End Stat Increment ---
+
+                cve_details = await self.nvd_client.get_cve_details(cve_id)
+
+                if cve_details:
+                    # --- Add Stat Increment for Success ---
+                    async with self.bot.stats_lock:
+                        self.bot.stats_nvd_fallback_success += 1
+                    # --- End Stat Increment ---
+                    
+                    # TODO: Implement standard/verbose embed difference based on get_effective_verbosity
+                    # For now, always send the full embed created by the existing function
+                    # verbose = self.db.get_effective_verbosity(guild_id, message.channel.id)
+                    embed = self.create_cve_embed(cve_details)
+                    await message.channel.send(embed=embed)
+                    processed_count += 1
+                else:
+                    logger.debug(f"No details found for CVE {cve_id} during automatic scan.")
+                    # Optionally send a "not found" message, but can be spammy. Logged instead.
+            
+            except Exception as e:
+                logger.error(f"Error processing CVE {cve_id} from message {message.id}: {e}", exc_info=True)
+                # --- Add Stat Increment for Error ---
+                async with self.bot.stats_lock:
+                    self.bot.stats_api_errors_nvd += 1
+                # --- End Stat Increment ---
+                # Optionally notify channel about the error, but could be spammy.
+
+        if len(found_cves_set) > MAX_CVES_PER_MESSAGE:
+             try:
+                  await message.channel.send(f"ℹ️ Found {len(found_cves_set)} unique CVEs, showing details for the first {MAX_CVES_PER_MESSAGE}.", delete_after=30)
+             except discord.HTTPException:
+                  pass # Ignore if we can't send the notice
+        elif processed_count > 0:
+             logger.info(f"Successfully processed {processed_count} CVE(s) automatically from message {message.id}.")
 
     # --- Error Handler for Cog ---
     async def cog_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
