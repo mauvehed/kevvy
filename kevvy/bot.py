@@ -43,35 +43,19 @@ class SecurityBot(commands.Bot):
 
         # --- Statistics Counters ---
         self.stats_lock = asyncio.Lock()
-        # Basic counters (already existed)
         self.stats_cve_lookups = 0
         self.stats_kev_alerts_sent = 0
         self.stats_messages_processed = 0
-        # New counters
         self.stats_vulncheck_success = 0
         self.stats_nvd_fallback_success = 0
         self.stats_api_errors_vulncheck = 0
         self.stats_api_errors_nvd = 0
         self.stats_api_errors_cisa = 0
-        self.stats_rate_limits_nvd = 0 # Specific counter for NVD rate limits
-        # App command errors: defaultdict(int) to count errors by type name
+        self.stats_rate_limits_nvd = 0
         self.stats_app_command_errors: Dict[str, int] = defaultdict(int)
         # --- End Statistics Counters ---
 
-        # VulnCheck doesn't need session, can init here
         self.vulncheck_client = VulnCheckClient(api_key=vulncheck_api_token)
-
-        # --- Kevvy Web Reporting Config ---
-        self.kevvy_web_url = os.getenv('KEVVY_WEB_URL')
-        self.kevvy_web_api_key = os.getenv('KEVVY_WEB_API_KEY')
-        if self.kevvy_web_url and not self.kevvy_web_api_key:
-             logger.warning("KEVVY_WEB_URL is set, but KEVVY_WEB_API_KEY is missing. Web reporting disabled.")
-             self.kevvy_web_url = None # Disable if key is missing
-        elif self.kevvy_web_url:
-             logger.info(f"Kevvy Web reporting enabled for URL: {self.kevvy_web_url}")
-        else:
-             logger.info("Kevvy Web reporting is disabled (KEVVY_WEB_URL not set).")
-        # --- End Kevvy Web Reporting Config ---
 
     async def _handle_signal(self, sig: signal.Signals):
         """Handles received OS signals for graceful shutdown."""
@@ -127,8 +111,8 @@ class SecurityBot(commands.Bot):
         # Load Cogs
         initial_extensions = [
             'kevvy.cogs.kev_commands',
-            'kevvy.cogs.cve_lookup'
-            # Add other cogs here if needed
+            'kevvy.cogs.cve_lookup',
+            'kevvy.cogs.diagnostics'
         ]
         self.loaded_cogs = [] # Reset on setup
         self.failed_cogs = [] # Reset on setup
@@ -157,8 +141,6 @@ class SecurityBot(commands.Bot):
 
         # Start background tasks
         self.check_cisa_kev_feed.start()
-        if self.kevvy_web_url:
-             self.report_status_task.start()
 
     async def close(self):
         logger.warning("Bot shutdown initiated...")
@@ -170,10 +152,6 @@ class SecurityBot(commands.Bot):
         if self.check_cisa_kev_feed.is_running():
             self.check_cisa_kev_feed.cancel()
             logging.info("Cancelled CISA KEV monitoring task.")
-
-        if self.report_status_task.is_running():
-            self.report_status_task.cancel()
-            logging.info("Cancelled Kevvy Web reporting task.")
 
         if self.http_session:
             await self.http_session.close()
@@ -269,127 +247,6 @@ class SecurityBot(commands.Bot):
         """Ensures the bot is ready before the loop starts."""
         await self.wait_until_ready()
         logger.info("Bot is ready, starting CISA KEV monitoring loop.")
-
-    @tasks.loop(minutes=5)
-    async def report_status_task(self):
-        """Periodically sends status and detailed diagnostics to the kevvy-web server."""
-        if not self.kevvy_web_url or not self.kevvy_web_api_key or not self.http_session:
-            logger.debug("Web reporting skipped: URL, API key, or HTTP session not available.")
-            return
-
-        logger.debug("Preparing status & diagnostics report for kevvy-web...")
-        now = datetime.datetime.now(datetime.timezone.utc)
-
-        # --- Gather Basic Status (already existed) ---
-        uptime_delta = now - self.start_time
-        status_payload = {
-            "timestamp": now.isoformat(),
-            "bot_id": self.user.id if self.user else None,
-            "bot_name": self.user.name if self.user else "Unknown",
-            "guild_count": len(self.guilds),
-            "latency_ms": round(self.latency * 1000, 2) if self.latency else None,
-            "uptime_seconds": int(uptime_delta.total_seconds()),
-            "shard_id": self.shard_id if self.shard_id is not None else 0,
-            "shard_count": self.shard_count if self.shard_count is not None else 1,
-            "is_ready": self.is_ready(),
-            "is_closed": self.is_closed(),
-        }
-
-        # --- Gather Detailed Stats & Diagnostics ---
-        # Make copies under lock to avoid holding lock during DB query/sending
-        async with self.stats_lock:
-            stats_payload = {
-                "timestamp": now.isoformat(),
-                "cve_lookups_since_last": self.stats_cve_lookups,
-                "kev_alerts_sent_since_last": self.stats_kev_alerts_sent,
-                "messages_processed_since_last": self.stats_messages_processed,
-                "vulncheck_success_since_last": self.stats_vulncheck_success,
-                "nvd_fallback_success_since_last": self.stats_nvd_fallback_success,
-                "api_errors_vulncheck_since_last": self.stats_api_errors_vulncheck,
-                "api_errors_nvd_since_last": self.stats_api_errors_nvd,
-                "api_errors_cisa_since_last": self.stats_api_errors_cisa,
-                "rate_limits_nvd_since_last": self.stats_rate_limits_nvd,
-                "app_command_errors_since_last": dict(self.stats_app_command_errors) # Convert defaultdict
-            }
-            # Reset counters after reading
-            self.stats_cve_lookups = 0
-            self.stats_kev_alerts_sent = 0
-            self.stats_messages_processed = 0
-            self.stats_vulncheck_success = 0
-            self.stats_nvd_fallback_success = 0
-            self.stats_api_errors_vulncheck = 0
-            self.stats_api_errors_nvd = 0
-            self.stats_api_errors_cisa = 0
-            self.stats_rate_limits_nvd = 0
-            self.stats_app_command_errors.clear()
-
-        # Gather non-counter diagnostics
-        enabled_kev_guilds = self.db.count_enabled_guilds() if self.db else 0
-
-        diagnostics_payload = {
-            "timestamp": now.isoformat(),
-            "loaded_cogs": self.loaded_cogs,
-            "failed_cogs": self.failed_cogs,
-            "kev_enabled_guilds": enabled_kev_guilds,
-            "last_kev_check_success_ts": self.timestamp_last_kev_check_success.isoformat() if self.timestamp_last_kev_check_success else None,
-            "last_kev_alert_sent_ts": self.timestamp_last_kev_alert_sent.isoformat() if self.timestamp_last_kev_alert_sent else None,
-        }
-
-        # --- Send Data --- 
-        # Send basic status
-        await self._send_to_web_portal("/api/v1/status", status_payload)
-
-        # Gather and Send Stats Payload
-        stats_payload = await self._get_current_stats()
-        await self._send_to_web_portal("/api/v1/stats", stats_payload)
-
-        # Gather and Send Diagnostics Payload
-        diagnostics_payload = await self._get_current_diagnostics()
-        await self._send_to_web_portal("/api/v1/diagnostics", diagnostics_payload)
-
-        # Reset counters after attempting to send all payloads
-        async with self.stats_lock:
-            logger.debug("Resetting periodic statistics counters.")
-
-    @report_status_task.before_loop
-    async def before_report_status(self):
-        """Ensures the bot is ready before the reporting loop starts."""
-        await self.wait_until_ready()
-        logger.info("Bot is ready, starting Kevvy Web reporting loop.")
-
-    @report_status_task.after_loop
-    async def after_report_status(self):
-        if self.report_status_task.is_being_cancelled():
-            logger.info("Kevvy Web reporting loop cancelled.")
-        else:
-            logger.error("Kevvy Web reporting loop stopped unexpectedly.")
-
-    async def _send_to_web_portal(self, endpoint: str, data: Dict[str, Any]):
-        """Sends data to a specified endpoint on the kevvy-web server."""
-        if not self.kevvy_web_url or not self.kevvy_web_api_key or not self.http_session:
-            logger.error("Cannot send to web portal: Configuration or session missing.")
-            return
-
-        target_url = self.kevvy_web_url.rstrip('/') + endpoint
-        headers = {
-            'Content-Type': 'application/json',
-            'X-API-Key': self.kevvy_web_api_key
-        }
-        request_timeout = ClientTimeout(total=10)
-
-        try:
-            async with self.http_session.post(target_url, json=data, headers=headers, timeout=request_timeout) as response:
-                if 200 <= response.status < 300:
-                    logger.debug(f"Successfully sent data to kevvy-web endpoint {endpoint}. Status: {response.status}")
-                else:
-                    response_text = await response.text()
-                    logger.error(f"Error sending data to kevvy-web endpoint {endpoint}. Status: {response.status}, Response: {response_text[:200]}") # Log first 200 chars
-        except aiohttp.ClientConnectorError as e:
-             logger.error(f"Connection error sending data to kevvy-web ({target_url}): {e}")
-        except asyncio.TimeoutError:
-            logger.error(f"Timeout error sending data to kevvy-web ({target_url})")
-        except Exception as e:
-            logger.error(f"Unexpected error sending data to kevvy-web endpoint {endpoint}: {e}", exc_info=True)
 
     def _create_kev_embed(self, kev_data: Dict[str, Any]) -> discord.Embed:
         """Creates a Discord embed for a CISA KEV entry."""
@@ -571,188 +428,3 @@ class SecurityBot(commands.Bot):
                 logging.error(f"Failed to set up Discord logging handler: {e}", exc_info=True)
         else:
             logging.info("LOGGING_CHANNEL_ID not set, skipping Discord log handler setup.")
-
-    async def on_message(self, message: discord.Message):
-        if message.author == self.user:
-            return
-
-        # Increment message counter
-        async with self.stats_lock:
-            self.stats_messages_processed += 1
-
-        if not self.cve_monitor:
-             logger.debug("CVEMonitor not initialized, skipping CVE scan.")
-             await self.process_commands(message)
-             return
-
-        cves_found = self.cve_monitor.find_cves(message.content)
-
-        if not cves_found:
-            await self.process_commands(message)
-            return
-
-        unique_cves = sorted(list(set(cves_found)), key=lambda x: cves_found.index(x))
-
-        # --- Get Effective Verbose Setting for the Channel --- 
-        effective_verbose_setting = False # Default to non-verbose
-        if message.guild and self.db:
-            guild_id = message.guild.id
-            channel_id = message.channel.id
-            try:
-                # Use the new method to get channel-specific or global setting
-                effective_verbose_setting = self.db.get_effective_verbosity(guild_id, channel_id)
-                # We also need to check if CVE monitoring is globally enabled for the guild
-                guild_config = self.db.get_cve_guild_config(guild_id)
-                is_guild_enabled = guild_config.get('enabled', False) if guild_config else False
-                if not is_guild_enabled:
-                     effective_verbose_setting = False # Force non-verbose if guild disabled CVE monitoring
-                     logger.debug(f"CVE monitoring disabled for guild {guild_id}, forcing non-verbose for message in channel {channel_id}.")
-
-            except Exception as db_err:
-                 logger.error(f"Error getting effective verbosity/config for guild {guild_id}, channel {channel_id}: {db_err}", exc_info=True)
-                 effective_verbose_setting = False # Default to non-verbose on error
-        else:
-             # Handle DMs or cases where DB isn't available - default to non-verbose
-             effective_verbose_setting = False
-        # --- End Get Effective Verbose Setting ---
-
-        embeds_to_send = []
-        processed_count = 0
-        for cve_original_case in unique_cves:
-            # Normalize to uppercase for API lookups
-            cve = cve_original_case.upper() # Added conversion
-
-            if processed_count >= MAX_EMBEDS_PER_MESSAGE:
-                logging.warning(f"Max embeds reached for message {message.id}. Found {len(unique_cves)} unique CVEs, processing first {MAX_EMBEDS_PER_MESSAGE}.")
-                break
-
-            cve_data = None
-            source_used = None # Track which source succeeded
-            try:
-                # Increment lookup counter for each unique CVE attempted
-                async with self.stats_lock:
-                    self.stats_cve_lookups += 1
-
-                if self.vulncheck_client.api_client:
-                    logging.debug(f"Attempting VulnCheck fetch for {cve}") # Uses normalized cve
-                    try:
-                        cve_data = await self.vulncheck_client.get_cve_details(cve) # Pass normalized cve
-                        if cve_data:
-                            source_used = "VulnCheck"
-                            async with self.stats_lock:
-                                self.stats_vulncheck_success += 1 # Increment VulnCheck success
-                    except Exception as e_vc:
-                        logger.error(f"Error during VulnCheck API call for {cve}: {e_vc}", exc_info=True)
-                        async with self.stats_lock:
-                            self.stats_api_errors_vulncheck += 1
-                        cve_data = None # Ensure cve_data is None if exception occurred
-                else:
-                    logging.debug("VulnCheck client not available (no API key?), skipping.")
-
-                if not cve_data:
-                    log_msg_prefix = f"VulnCheck failed for {cve}," if self.vulncheck_client.api_client else ""
-                    logging.debug(f"{log_msg_prefix} Attempting NVD fetch for {cve} (VulnCheck unavailable or failed).") # Uses normalized cve
-
-                    if self.nvd_client:
-                        try:
-                            cve_data = await self.nvd_client.get_cve_details(cve) # Pass normalized cve
-                            if cve_data:
-                                source_used = "NVD"
-                                async with self.stats_lock:
-                                    self.stats_nvd_fallback_success += 1 # Increment NVD fallback success
-                        # Catch Rate Limit specifically
-                        except NVDRateLimitError as e_rate_limit:
-                            logger.warning(f"NVD rate limit encountered for {cve}: {e_rate_limit}")
-                            async with self.stats_lock:
-                                self.stats_rate_limits_nvd += 1
-                            cve_data = None
-                        # Catch other NVD client errors
-                        except Exception as e_nvd:
-                            logger.error(f"Error during NVD API call for {cve}: {e_nvd}", exc_info=True)
-                            async with self.stats_lock:
-                                self.stats_api_errors_nvd += 1
-                            cve_data = None # Ensure cve_data is None if exception occurred
-                    else:
-                         logger.warning("NVD Client not available, skipping NVD lookup.")
-
-                if cve_data:
-                    # Add source info if not already present from client
-                    if 'source' not in cve_data and source_used:
-                         cve_data['source'] = source_used
-                    
-                    # --- Pass EFFECTIVE verbose setting to embed creation --- 
-                    embeds = await self.cve_monitor.create_cve_embed(cve_data, verbose=effective_verbose_setting)
-                    # --- End Pass verbose setting ---
-
-                    embeds_to_send.extend(embeds)
-                    processed_count += 1 # Increment based on primary CVE embed, not KEV
-                else:
-                    logging.warning(f"Could not retrieve details for {cve} from any source.") # Uses normalized cve
-
-            except Exception as e:
-                logging.error(f"Failed to process CVE {cve} after checking sources: {e}", exc_info=True) # Uses normalized cve
-
-            await asyncio.sleep(0.2)
-
-        if embeds_to_send:
-            logging.info(f"Sending {len(embeds_to_send)} embeds for message {message.id}")
-            # Ensure we don't exceed Discord embed limits per message batch (usually 10)
-            # This logic sends one embed per message, which is safer but slower.
-            # Consider batching embeds up to 10 per message if needed.
-            for i, embed in enumerate(embeds_to_send):
-                if i >= MAX_EMBEDS_PER_MESSAGE:
-                    logging.warning(f"Stopping embed sending at {i} due to MAX_EMBEDS_PER_MESSAGE limit.")
-                    break 
-                try:
-                     await message.channel.send(embed=embed)
-                     if i < len(embeds_to_send) - 1:
-                          await asyncio.sleep(0.5)
-                except discord.Forbidden:
-                     guild_id_str = message.guild.id if message.guild else 'DM'
-                     logger.error(f"Missing permissions to send embed in channel {message.channel.id} (Guild: {guild_id_str})")
-                     break 
-                except discord.HTTPException as http_err:
-                     logger.error(f"HTTP Error sending embed {i+1}/{len(embeds_to_send)} for message {message.id}: {http_err}")
-                     await asyncio.sleep(1)
-                except Exception as send_err:
-                     logger.error(f"Unexpected error sending embed {i+1}/{len(embeds_to_send)}: {send_err}", exc_info=True)
-                     await asyncio.sleep(1)
-
-            if len(unique_cves) > MAX_EMBEDS_PER_MESSAGE:
-                await message.channel.send(f"*Found {len(unique_cves)} unique CVEs, showing details for the first {MAX_EMBEDS_PER_MESSAGE}.*", allowed_mentions=discord.AllowedMentions.none())
-
-        await self.process_commands(message)
-
-    async def _get_current_stats(self) -> Dict[str, Any]:
-        """Gathers current statistics counters under lock."""
-        async with self.stats_lock:
-            # Return a copy of the current stats
-            return {
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                "bot_id": self.user.id if self.user else None,
-                "cve_lookups_since_last": self.stats_cve_lookups,
-                "kev_alerts_sent_since_last": self.stats_kev_alerts_sent,
-                "messages_processed_since_last": self.stats_messages_processed,
-                "vulncheck_success_since_last": self.stats_vulncheck_success,
-                "nvd_fallback_success_since_last": self.stats_nvd_fallback_success,
-                "api_errors_vulncheck_since_last": self.stats_api_errors_vulncheck,
-                "api_errors_nvd_since_last": self.stats_api_errors_nvd,
-                "api_errors_cisa_since_last": self.stats_api_errors_cisa,
-                "rate_limits_nvd_since_last": self.stats_rate_limits_nvd,
-                "app_command_errors_since_last": dict(self.stats_app_command_errors)
-            }
-
-    async def _get_current_diagnostics(self) -> Dict[str, Any]:
-        """Gathers current diagnostic information."""
-        enabled_kev_guilds = self.db.count_enabled_guilds() if self.db else 0
-
-        return {
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            "bot_id": self.user.id if self.user else None,
-            "loaded_cogs": self.loaded_cogs,
-            "failed_cogs": self.failed_cogs,
-            "kev_enabled_guilds": enabled_kev_guilds,
-            "last_kev_check_success_ts": self.timestamp_last_kev_check_success.isoformat() if self.timestamp_last_kev_check_success else None,
-            "last_kev_alert_sent_ts": self.timestamp_last_kev_alert_sent.isoformat() if self.timestamp_last_kev_alert_sent else None,
-            # Add other relevant non-counter diagnostics here if needed
-        }
