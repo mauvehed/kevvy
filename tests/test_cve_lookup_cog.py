@@ -365,8 +365,8 @@ async def test_channel_set(cve_lookup_cog: CVELookupCog, mock_interaction: Async
     )
 
 @pytest.mark.asyncio
-async def test_channel_all_enabled(cve_lookup_cog: CVELookupCog, mock_interaction: AsyncMock, mock_db: MagicMock, mock_bot: MagicMock):
-    """Test /cve channel all when enabled (using new DB structure)."""
+async def test_channel_list_enabled(cve_lookup_cog: CVELookupCog, mock_interaction: AsyncMock, mock_db: MagicMock, mock_bot: MagicMock):
+    """Test /cve channel list when enabled (using new DB structure)."""
     # NOTE: This command also needs updating. It should list channels from `cve_channel_configs`
     # not just check the global config. We test the *expected* behavior assuming multi-channel.
     mock_interaction.guild_id = 12345
@@ -383,7 +383,7 @@ async def test_channel_all_enabled(cve_lookup_cog: CVELookupCog, mock_interactio
     # Mock bot channel fetching
     mock_bot.get_channel = MagicMock(side_effect=lambda id: mock_channel_1 if id == 111 else mock_channel_2 if id == 222 else None)
 
-    await cve_lookup_cog.channel_all_command.callback(cve_lookup_cog, mock_interaction)
+    await cve_lookup_cog.channel_list_command.callback(cve_lookup_cog, mock_interaction)
 
     mock_db.get_cve_guild_config.assert_called_once_with(12345)
     mock_db.get_all_cve_channel_configs_for_guild.assert_called_once_with(12345)
@@ -392,13 +392,13 @@ async def test_channel_all_enabled(cve_lookup_cog: CVELookupCog, mock_interactio
     mock_interaction.response.send_message.assert_called_once_with(expected_message, ephemeral=True)
 
 @pytest.mark.asyncio
-async def test_channel_all_disabled(cve_lookup_cog: CVELookupCog, mock_interaction: AsyncMock, mock_db: MagicMock):
-    """Test /cve channel all when globally disabled."""
+async def test_channel_list_disabled(cve_lookup_cog: CVELookupCog, mock_interaction: AsyncMock, mock_db: MagicMock):
+    """Test /cve channel list when globally disabled."""
     mock_interaction.guild_id = 12345
     # Simulate global config being disabled
     mock_db.get_cve_guild_config.return_value = {'guild_id': 12345, 'enabled': False}
 
-    await cve_lookup_cog.channel_all_command.callback(cve_lookup_cog, mock_interaction)
+    await cve_lookup_cog.channel_list_command.callback(cve_lookup_cog, mock_interaction)
 
     mock_db.get_cve_guild_config.assert_called_once_with(12345)
     # Should not fetch individual channels if globally disabled
@@ -408,12 +408,12 @@ async def test_channel_all_disabled(cve_lookup_cog: CVELookupCog, mock_interacti
     )
 
 @pytest.mark.asyncio
-async def test_channel_all_no_config(cve_lookup_cog: CVELookupCog, mock_interaction: AsyncMock, mock_db: MagicMock):
-    """Test /cve channel all when no global config exists."""
+async def test_channel_list_no_config(cve_lookup_cog: CVELookupCog, mock_interaction: AsyncMock, mock_db: MagicMock):
+    """Test /cve channel list when no global config exists."""
     mock_interaction.guild_id = 12345
     mock_db.get_cve_guild_config.return_value = None # No config found
 
-    await cve_lookup_cog.channel_all_command.callback(cve_lookup_cog, mock_interaction)
+    await cve_lookup_cog.channel_list_command.callback(cve_lookup_cog, mock_interaction)
 
     mock_db.get_cve_guild_config.assert_called_once_with(12345)
     mock_db.get_all_cve_channel_configs_for_guild.assert_not_called()
