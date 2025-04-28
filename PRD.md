@@ -31,7 +31,7 @@ Last Alert: [Timestamp]
 **Purpose:** Display the most recent KEV entries
 **Parameters:**
 - `count`: (Optional) Number of entries to display (default: 5, max: 10)
-- `days`: (Optional) Look back period in days (default: 7, max: 30)
+- `days`: (Optional) Look back period in days (default: 30, max: 30)
 - `vendor`: (Optional) Filter by vendor
 - `product`: (Optional) Filter by product
 - `severity`: (Optional) Filter by severity level
@@ -44,7 +44,7 @@ Last Alert: [Timestamp]
 
 **Response Format:**
 ```
-Latest KEV Entries (Last 7 days):
+Latest KEV Entries (Last 30 days):
 1. CVE-2024-XXXX
    Title: [Vulnerability Title]
    Vendor: [Vendor Name]
