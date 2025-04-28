@@ -51,7 +51,8 @@ jobs:
   build-and-publish-docker:
     name: Build and Publish Docker Image
     needs: test # Only run if tests pass
-    if: startsWith(github.ref, 'refs/tags/v') # Only run on version tags
+    # Run on version tags OR pushes to main
+    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' 
     runs-on: ubuntu-latest
     permissions:
       packages: write # Needed to push to GHCR
@@ -79,11 +80,11 @@ jobs:
           # Extract version tag from Git ref (e.g., v1.2.3 -> 1.2.3)
           # Also add 'latest' tag if pushing from main branch (optional)
           tags: |
+            # Version tags (e.g., v1.2.3 -> 1.2.3, 1.2, latest)
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            # Add latest tag for version pushes as well (optional, common practice)
-            type=raw,value=latest
-            # type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
+            # Dev tag for pushes to main
+            type=raw,value=dev,enable=${{ github.ref == 'refs/heads/main' }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
