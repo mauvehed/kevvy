@@ -97,12 +97,11 @@ Key features:
     *   `/kev feed disable`: Disables KEV alerts for the server.
     *   `/kev feed status`: Checks the status of KEV monitoring.
     *   `/kev latest [count] [days] ...`: Shows the latest KEV entries with optional filters.
-5.  **CVE Monitoring Channel Configuration (Optional Setup):**
-    *   `/cve channel enable channel:<#your-primary-cve-channel>`: Enables CVE monitoring and configures alerts for this specific channel. Ensures global monitoring is also enabled.
-    *   `/cve channel disable`: Disables CVE monitoring globally for the server.
-    *   `/cve channel set channel:<#your-primary-cve-channel>`: Sets/updates the specific channel for CVE alerts (same as enable).
-    *   `/cve channel list`: Lists any channels specifically configured for CVE alerts.
-    *   `/cve channel all`: Enables CVE monitoring globally for the server and clears any specific channel configurations, making the bot listen in all channels.
+5.  **CVE Monitoring Channel Configuration:**
+    *   `/cve channel enable channel:<#channel>`: Enables CVE monitoring for a *specific channel* and ensures global monitoring is enabled for the server. Messages with CVEs in this channel will trigger alerts.
+    *   `/cve channel disable`: Disables CVE monitoring *globally* for the server. No automatic CVE detection will occur in any channel.
+    *   `/cve channel set channel:<#channel>`: Sets/updates the specific channel for CVE alerts (effectively the same as `/cve channel enable`).
+    *   `/cve channel all`: Lists channels specifically configured for CVE alerts using `/cve channel enable` or `/cve channel set`.
 6.  **Alert Verbosity Configuration:**
     *   `/verbose enable_global`: Sets the default alert style to **verbose** for the whole server.
     *   `/verbose disable_global`: Sets the default alert style to **standard** (non-verbose) for the whole server.
@@ -110,8 +109,10 @@ Key features:
     *   `/verbose unset channel:<#channel>`: Removes the override for a specific channel (it uses the global setting).
     *   `/verbose setall verbosity:<True|False>`: Sets an override for **all** channels.
     *   `/verbose status [channel]`: Shows the current global and channel-specific verbosity settings.
-7.  **CVE Threshold Configuration (Future):**
-    *   Commands like `/cve threshold set <level>` may be added to filter alerts by severity.
+7.  **CVE Threshold Configuration:**
+    *   `/cve threshold set <level>`: Sets the minimum CVSS severity (`critical`, `high`, `medium`, `low`, `all`) required for a CVE mentioned in a message to trigger an automatic alert (global server setting).
+    *   `/cve threshold view`: Shows the current global severity threshold.
+    *   `/cve threshold reset`: Resets the global severity threshold to `all`.
 
 ## Screenshots
 
