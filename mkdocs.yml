@@ -1,0 +1,11 @@
+# mkdocs.yml
+site_name: Kevvy Bot Documentation
+theme: readthedocs # Or any other theme you prefer
+
+nav:
+  - Home: index.md # Assumes you have a docs/index.md
+  - Commands:
+    - Overview: commands/index.md # Assumes you have a docs/commands/index.md
+    - KEV Commands: commands/kev.md
+    - CVE Commands: commands/cve.md
+    - Verbosity Commands: commands/verbose.md
