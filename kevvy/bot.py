@@ -18,6 +18,7 @@ import datetime
 import signal
 import platform
 import json
+import re # Needed for regex
 MAX_EMBEDS_PER_MESSAGE = 5
 WEBAPP_ENDPOINT_URL = os.getenv("KEVVY_WEB_URL", "YOUR_WEBAPP_ENDPOINT_URL_HERE") 
 WEBAPP_API_KEY = os.getenv("KEVVY_WEB_API_KEY", None) 
@@ -399,6 +400,107 @@ class SecurityBot(commands.Bot):
         """Called when the bot is removed from a guild."""
         logger.info(f"Removed from guild: {guild.name} ({guild.id}).")
         # Optional: Clean up any guild-specific configurations from the database
+
+    async def on_message(self, message: discord.Message):
+        """Process messages to detect and report CVEs based on configuration."""
+        if message.author.bot:
+            return # Ignore bots
+
+        if not message.guild:
+            return # Ignore DMs
+
+        if not self.cve_monitor or not self.db:
+            logger.debug("CVE Monitor or DB not initialized, skipping on_message processing.")
+            return # Bot components not ready
+
+        # Increment message processing stat
+        async with self.stats_lock:
+            self.stats_messages_processed += 1
+
+        # Find potential CVEs
+        potential_cves = re.findall(CVEMonitor.CVE_REGEX, message.content)
+        if not potential_cves:
+            return # No CVEs found
+        
+        guild_id = message.guild.id
+        channel_id = message.channel.id
+
+        # --- Check Configuration --- 
+        guild_config = self.db.get_cve_guild_config(guild_id)
+        if not guild_config or not guild_config.get('enabled'):
+            logger.debug(f"Global CVE monitoring disabled for guild {guild_id}. Skipping message {message.id}.")
+            return # Global monitoring disabled for this guild
+
+        channel_config = self.db.get_cve_channel_config(guild_id, channel_id)
+        if not channel_config or not channel_config.get('enabled'):
+            logger.debug(f"CVE monitoring disabled for channel {channel_id} in guild {guild_id}. Skipping message {message.id}.")
+            return # Channel-specific monitoring disabled
+        # --- End Configuration Check ---
+
+        logger.info(f"Detected {len(potential_cves)} potential CVE(s) in message {message.id} in G:{guild_id}/C:{channel_id}")
+        
+        # Process unique CVEs found
+        unique_cves = sorted(list(set(potential_cves)), key=lambda x: potential_cves.index(x))
+        processed_count = 0
+
+        for cve_id in unique_cves:
+            if processed_count >= MAX_EMBEDS_PER_MESSAGE:
+                logger.warning(f"Reached max embed limit ({MAX_EMBEDS_PER_MESSAGE}) for message {message.id}. Remaining CVEs: {unique_cves[processed_count:]}")
+                try:
+                    await message.channel.send(f"ℹ️ Found {len(unique_cves) - processed_count} more CVEs, but only showing the first {MAX_EMBEDS_PER_MESSAGE}. Use `/cve lookup` for details.", delete_after=30)
+                except (discord.Forbidden, discord.HTTPException) as e:
+                    logger.error(f"Failed to send max embed notice for message {message.id}: {e}")
+                break # Stop processing this message
+
+            try:
+                # Fetch CVE data (this handles VulnCheck/NVD)
+                cve_data = await self.cve_monitor.get_cve_data(cve_id)
+                if not cve_data:
+                     logger.warning(f"No data found for {cve_id} mentioned in message {message.id}.")
+                     continue # Skip this CVE
+
+                # --- Check Severity Threshold --- 
+                min_severity_str = guild_config.get('severity_threshold', 'all')
+                passes_threshold, cve_severity_str = self.cve_monitor.check_severity_threshold(
+                    cve_data, min_severity_str
+                )
+                if not passes_threshold:
+                     logger.info(f"CVE {cve_id} (Severity: {cve_severity_str}) does not meet threshold '{min_severity_str}' for guild {guild_id}. Skipping alert.")
+                     continue
+                # --- End Severity Check --- 
+
+                # Determine verbosity
+                is_verbose = self.db.get_effective_verbosity(guild_id, channel_id)
+                logger.debug(f"Effective verbosity for G:{guild_id}/C:{channel_id} = {is_verbose}")
+
+                # Create and send CVE embed
+                cve_embed = self.cve_monitor.create_cve_embed(cve_data, verbose=is_verbose)
+                await message.channel.send(embed=cve_embed)
+                processed_count += 1
+                logger.info(f"Sent alert for {cve_id} (Severity: {cve_severity_str}, Verbose: {is_verbose}) from message {message.id}.")
+
+                # Check KEV status
+                kev_status = await self.cve_monitor.check_kev(cve_id)
+                if kev_status:
+                    kev_embed = self.cve_monitor.create_kev_status_embed(cve_id, kev_status)
+                    await message.channel.send(embed=kev_embed)
+                    logger.info(f"Sent KEV status for {cve_id} from message {message.id}.")
+
+                await asyncio.sleep(0.5) # Short delay between embeds for rate limits
+
+            except discord.Forbidden:
+                 logger.error(f"Missing permissions to send message/embed in channel {channel_id} (Guild: {guild_id}) for CVE {cve_id}.")
+                 break # Stop processing this message if permissions fail
+            except discord.HTTPException as e:
+                 logger.error(f"HTTP error sending embed for {cve_id} in channel {channel_id} (Guild: {guild_id}): {e}")
+                 # Continue to next CVE potentially
+            except NVDRateLimitError as e:
+                 logger.error(f"NVD rate limit hit processing {cve_id}: {e}")
+                 # Potentially add a break or longer sleep here if desired
+                 continue # Allow processing of other CVEs if possible
+            except Exception as e:
+                 logger.error(f"Unexpected error processing CVE {cve_id} from message {message.id}: {e}", exc_info=True)
+                 # Continue to next CVE potentially
 
     async def on_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
         """Global error handler for application (slash) commands."""

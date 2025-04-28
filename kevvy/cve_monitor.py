@@ -3,9 +3,9 @@ import discord
 import logging
 from datetime import datetime
 # from .vulners_client import VulnersClient # Removed VulnersClient
-from .nvd_client import NVDClient # Added NVDClient
+from .nvd_client import NVDClient, NVDRateLimitError # Remove NVDAPIError import
 from .cisa_kev_client import CisaKevClient
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 
 # Max length for embed fields
 MAX_FIELD_LENGTH = 1024
@@ -15,54 +15,105 @@ MAX_DESCRIPTION_LENGTH = 2048
 logger = logging.getLogger(__name__)
 
 class CVEMonitor:
-    # def __init__(self, vulners_client: VulnersClient):
+    CVE_REGEX = re.compile(r'CVE-\d{4}-\d{4,7}', re.IGNORECASE)
+
     def __init__(self, nvd_client: NVDClient, kev_client: Optional[CisaKevClient] = None):
-        # self.vulners_client = vulners_client
-        self.nvd_client = nvd_client # Store NVD client
+        self.nvd_client = nvd_client
         self.kev_client = kev_client
-        self.cve_pattern = re.compile(r'CVE-\d{4}-\d{4,7}', re.IGNORECASE)
+        # self.cve_pattern = re.compile(r'CVE-\d{4}-\d{4,7}', re.IGNORECASE) # Use Class attribute
 
-    def find_cves(self, content: str) -> list:
-        return self.cve_pattern.findall(content)
+    # Removed find_cves as it's simpler to use re.findall(CVEMonitor.CVE_REGEX, ...) directly
+    # def find_cves(self, content: str) -> list:
+    #     return self.cve_pattern.findall(content)
 
-    async def create_cve_embed(self, cve_data: dict, verbose: bool = False) -> List[discord.Embed]:
-        """Creates Discord embeds for a CVE, including KEV information if available."""
-        
+    async def get_cve_data(self, cve_id: str) -> Optional[Dict[str, Any]]:
+        """Fetches CVE data primarily from NVD."""
+        try:
+            # Add logic here if you want VulnCheck primary lookup later
+            cve_data = await self.nvd_client.get_cve_details(cve_id)
+            if cve_data:
+                # Optionally enrich or standardize data here if needed
+                return cve_data
+            else:
+                logger.warning(f"No data returned from NVD for {cve_id}")
+                return None
+        except NVDRateLimitError as e:
+             logger.error(f"NVD rate limit hit fetching {cve_id}: {e}")
+             raise # Re-raise so the caller (on_message) can handle it
+        except Exception as e:
+            logger.error(f"Unexpected error fetching NVD data for {cve_id}: {e}", exc_info=True)
+            return None
+
+    def check_severity_threshold(self, cve_data: Dict[str, Any], min_threshold_str: str) -> Tuple[bool, Optional[str]]:
+        """Checks if the CVE severity meets the minimum threshold.
+        Returns a tuple: (passes_threshold: bool, cve_severity_str: Optional[str])
+        """
+        severity_map = {'low': 0.1, 'medium': 4.0, 'high': 7.0, 'critical': 9.0, 'all': 0.0}
+        min_score = severity_map.get(min_threshold_str.lower(), 0.0)
+
+        cvss_score = cve_data.get('cvss')
+        cve_severity_str = self.get_severity_string(cvss_score)
+
+        if cvss_score is None:
+            # Decide how to handle CVEs without a score. Assume pass for now?
+            # Or maybe only pass if threshold is 'all'?
+            # Current: Pass if threshold is 'all', otherwise fail.
+            return min_score == 0.0, cve_severity_str
+
+        return cvss_score >= min_score, cve_severity_str
+
+    def get_severity_string(self, cvss: float | None) -> str:
+         if cvss is None: return "Unknown"
+         if cvss >= 9.0: return "Critical"
+         if cvss >= 7.0: return "High"
+         if cvss >= 4.0: return "Medium"
+         return "Low"
+
+    async def check_kev(self, cve_id: str) -> Optional[Dict[str, Any]]:
+        """Checks if a CVE exists in the KEV catalog."""
+        if not self.kev_client:
+            return None
+        try:
+            return await self.kev_client.get_kev_entry(cve_id)
+        except Exception as e:
+            logger.error(f"Error checking KEV status for {cve_id}: {e}", exc_info=True)
+            return None
+
+    def create_cve_embed(self, cve_data: dict, verbose: bool = False) -> discord.Embed:
+        """Creates a Discord embed ONLY for CVE data."""
         cve_id = cve_data.get('id', 'Unknown CVE')
-        title = cve_data.get('title', cve_id) # Fallback title to CVE ID
+        title = cve_id # Keep title simple for CVE embed
         link = cve_data.get('link')
         cvss_score = cve_data.get('cvss')
         cvss_version = cve_data.get('cvss_version')
 
-        # Default non-verbose embed
         embed = discord.Embed(
-            title=f"{title}",
+            title=title,
             url=link,
             color=self._get_severity_color(cvss_score)
         )
 
-        # Always include ID and Score
-        embed.add_field(name="CVE ID", value=cve_id, inline=True)
         cvss_score_display = str(cvss_score or "N/A")
         if cvss_version:
             cvss_score_display += f" (v{cvss_version})"
         embed.add_field(name="CVSS Score", value=cvss_score_display, inline=True)
 
-        # Fields only added in verbose mode
-        if verbose:
-            description = cve_data.get('description', "No description available.")
-            if len(description) > MAX_DESCRIPTION_LENGTH:
-                description = f"{description[:MAX_DESCRIPTION_LENGTH - 3]}..."
-            embed.description = description # Set description only in verbose
+        # Add source directly opposite score
+        embed.add_field(name="Source", value=cve_data.get('source', 'N/A'), inline=True)
 
+        description = cve_data.get('description', "No description available.")
+        if len(description) > MAX_DESCRIPTION_LENGTH:
+            description = f"{description[:MAX_DESCRIPTION_LENGTH - 3]}..."
+        embed.description = description
+
+        if verbose:
             embed.add_field(name="Published", value=self._format_date(cve_data.get('published')), inline=True)
-            # Add another inline field to balance
             embed.add_field(name="Last Modified", value=self._format_date(cve_data.get('modified')), inline=True)
 
             if cvss_vector := cve_data.get('cvss_vector'):
                 if len(cvss_vector) > MAX_FIELD_LENGTH:
                     cvss_vector = f"{cvss_vector[:MAX_FIELD_LENGTH - 3]}..."
-                embed.add_field(name="CVSS Vector", value=f"`{cvss_vector}`", inline=False) 
+                embed.add_field(name="CVSS Vector", value=f"`{cvss_vector}`", inline=False)
 
             if cwe_ids := cve_data.get('cwe_ids'):
                 cwe_display = ", ".join(cwe_ids)
@@ -75,7 +126,22 @@ class CVEMonitor:
                 count = 0
                 for ref in references:
                     if ref.get('url') and count < MAX_REFERENCE_LINKS:
-                        link_text = f"- [{ref.get('source', 'Link')}]({ref['url']})"
+                        # Try to get a meaningful source name
+                        source_name = ref.get('tags', [])
+                        if source_name:
+                            source_name = source_name[0] # Take the first tag
+                        else:
+                            # Simple domain extraction as fallback source name
+                            try:
+                                domain_match = re.match(r'https?://(?:www\.)?([^/]+)', ref['url'])
+                                if domain_match: # Check if match is not None
+                                     source_name = domain_match.group(1)
+                                else:
+                                     source_name = 'Link' # Fallback if regex doesn't match
+                            except Exception:
+                                source_name = 'Link' # Ultimate fallback
+                        
+                        link_text = f"- [{source_name}]({ref['url']})"
                         ref_links.append(link_text)
                         count += 1
 
@@ -87,55 +153,26 @@ class CVEMonitor:
                     if len(ref_display) > MAX_FIELD_LENGTH:
                         ref_display = f"{ref_display[:MAX_FIELD_LENGTH - 3]}..."
                     embed.add_field(name="References", value=ref_display, inline=False)
-        else: # Non-verbose: Add a simple link to NVD if available
-            if link:
-                embed.description = f"[View on NVD]({link})" # Add link to description if not verbose
+        
+        # Removed KEV logic from here
+        # Removed footer setting from here, will be done in bot.py or cog
 
-        source = cve_data.get('source', 'N/A')
-        embed.set_footer(text=f"Data via {source}") # Slightly rephrased footer
+        return embed
 
-        embeds = [embed]
-
-        # Check for KEV entry
-        if self.kev_client:
-            try:
-                kev_entry = await self.kev_client.get_kev_entry(cve_id)
-                if kev_entry:
-                    # Create different KEV embeds based on verbosity
-                    if verbose:
-                        # --- Detailed KEV Embed (Existing Logic) ---
-                        kev_embed = discord.Embed(
-                            title=f"🚨 CISA KEV Alert: {cve_id}",
-                            description=kev_entry.get('shortDescription', 'No description available.'),
-                            url=f"https://nvd.nist.gov/vuln/detail/{cve_id}",
-                            color=discord.Color.dark_red()
-                        )
-                        kev_embed.add_field(name="Vulnerability Name", value=kev_entry.get('vulnerabilityName', 'N/A'), inline=False)
-                        kev_embed.add_field(name="Vendor/Project", value=kev_entry.get('vendorProject', 'N/A'), inline=True)
-                        kev_embed.add_field(name="Product", value=kev_entry.get('product', 'N/A'), inline=True)
-                        kev_embed.add_field(name="Date Added", value=kev_entry.get('dateAdded', 'N/A'), inline=True)
-                        kev_embed.add_field(name="Required Action", value=kev_entry.get('requiredAction', 'N/A'), inline=False)
-                        kev_embed.add_field(name="Due Date", value=kev_entry.get('dueDate', 'N/A'), inline=True)
-                        kev_embed.add_field(name="Known Ransomware Use", value=kev_entry.get('knownRansomwareCampaignUse', 'N/A'), inline=True)
-                        if notes := kev_entry.get('notes', ''):
-                            notes_display = f'{notes[:1020]}...' if len(notes) > 1024 else notes
-                            kev_embed.add_field(name="Notes", value=notes_display, inline=False)
-                    else:
-                        # --- Terse KEV Embed (New Logic) ---
-                        kev_embed = discord.Embed(
-                            title=f"🚨 CISA KEV Alert: {cve_id}",
-                            description=f"This vulnerability is listed in the CISA KEV catalog.\n[View on NVD](https://nvd.nist.gov/vuln/detail/{cve_id})",
-                            url=f"https://nvd.nist.gov/vuln/detail/{cve_id}", # Redundant but good practice
-                            color=discord.Color.dark_red()
-                        )
-                    kev_embed.set_footer(text="Source: CISA KEV Catalog")
-                    # Append the created KEV embed
-                    embeds.append(kev_embed)
-
-            except Exception as e:
-                logger.error(f"Error checking KEV status for {cve_id}: {e}", exc_info=True)
-
-        return embeds
+    def create_kev_status_embed(self, cve_id: str, kev_entry: Dict[str, Any]) -> discord.Embed:
+        """Creates a standardized embed for a KEV entry notification."""
+        embed = discord.Embed(
+            title=f"🚨 CISA KEV Alert: {cve_id}",
+            description=f"This vulnerability is listed in the CISA KEV catalog.\n{kev_entry.get('shortDescription', '')}",
+            url=f"https://nvd.nist.gov/vuln/detail/{cve_id}",
+            color=discord.Color.dark_red()
+        )
+        embed.add_field(name="Date Added to KEV", value=self._format_date(kev_entry.get('dateAdded')), inline=True)
+        embed.add_field(name="Due Date", value=self._format_date(kev_entry.get('dueDate')), inline=True)
+        embed.add_field(name="Known Ransomware Use", value=kev_entry.get('knownRansomwareCampaignUse', 'N/A'), inline=True)
+        embed.set_footer(text="Source: CISA KEV Catalog")
+        embed.timestamp = discord.utils.utcnow() # Use discord utils for timestamp
+        return embed
 
     def _get_severity_color(self, cvss: float | None) -> int:
         if cvss is None:
