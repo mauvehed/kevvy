@@ -40,8 +40,10 @@ def main():
         bot.run(token)
     except discord.LoginFailure:
         logger.critical("Failed to log in. Check the DISCORD_TOKEN.")
+    except discord.HTTPException as http_err:
+        logger.critical(f"HTTP Exception occurred during bot execution: {http_err.status} - {http_err.text}", exc_info=True)
     except Exception as e:
-        logger.critical(f"An error occurred running the bot: {e}", exc_info=True)
+        logger.critical(f"An unexpected error occurred running the bot: {e}", exc_info=True)
     finally:
         logger.info("Bot process exiting.")
 
