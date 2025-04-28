@@ -3,7 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 import re
 import logging
-from typing import Optional, TYPE_CHECKING, Literal
+from typing import Optional, TYPE_CHECKING, Literal, Dict, Any
 import datetime
 
 # Use absolute imports for type checking
@@ -81,6 +81,26 @@ class CVELookupCog(commands.Cog):
         embed.set_footer(text=f"Source: {cve_data.get('source', 'N/A')}")
         embed.timestamp = discord.utils.utcnow()
 
+        return embed
+
+    # Placeholder for KEV embed creation
+    def create_kev_embed(self, cve_id: str, kev_entry: Dict[str, Any]) -> discord.Embed:
+        """Creates a Discord embed for a KEV entry notification."""
+        # TODO: Implement actual KEV embed formatting
+        embed = discord.Embed(
+            title=f"🚨 KEV Alert: {cve_id} Added!",
+            description=f"**Vulnerability Name:** {kev_entry.get('vulnerabilityName', 'N/A')}\n" 
+                        f"**Action Required:** {kev_entry.get('shortDescription', 'See CISA advisory.')}\n" 
+                        f"**Due Date:** {kev_entry.get('dueDate', 'N/A')}",
+            color=discord.Color.red()
+        )
+        embed.add_field(name="Vendor", value=kev_entry.get('vendorProject', 'N/A'), inline=True)
+        embed.add_field(name="Product", value=kev_entry.get('product', 'N/A'), inline=True)
+        embed.add_field(name="Known Ransomware Use", value=kev_entry.get('knownRansomwareCampaignUse', 'N/A'), inline=True)
+        nvd_link = f"https://nvd.nist.gov/vuln/detail/{cve_id}"
+        embed.add_field(name="Links", value=f"[NVD]({nvd_link}) | [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog)", inline=False)
+        embed.set_footer(text="Source: CISA KEV Catalog")
+        embed.timestamp = discord.utils.utcnow()
         return embed
 
     @cve_group.command(name="lookup", description="Look up details for a specific CVE ID from NVD.")
@@ -685,12 +705,32 @@ class CVELookupCog(commands.Cog):
                     async with self.bot.stats_lock:
                         self.bot.stats_nvd_fallback_success += 1
                     # --- End Stat Increment ---
+
+                    # --- KEV Check --- 
+                    is_kev = False
+                    kev_entry_data = None
+                    if self.bot.cisa_kev_client:
+                        try:
+                            kev_entry_data = await self.bot.cisa_kev_client.get_kev_entry_by_cve_id(cve_id)
+                            if kev_entry_data:
+                                is_kev = True
+                                logger.info(f"CVE {cve_id} found in KEV catalog during automatic scan.")
+                        except Exception as kev_err:
+                            logger.error(f"Error checking KEV status for {cve_id}: {kev_err}", exc_info=True)
+                    # --- End KEV Check ---
                     
                     # TODO: Implement standard/verbose embed difference based on get_effective_verbosity
-                    # For now, always send the full embed created by the existing function
                     # verbose = self.db.get_effective_verbosity(guild_id, message.channel.id)
-                    embed = self.create_cve_embed(cve_details)
-                    await message.channel.send(embed=embed)
+
+                    if is_kev and kev_entry_data: 
+                        # Send KEV alert embed instead of standard CVE embed
+                        kev_embed = self.create_kev_embed(cve_id, kev_entry_data)
+                        await message.channel.send(embed=kev_embed)
+                    else:
+                        # Send standard CVE embed
+                        embed = self.create_cve_embed(cve_details)
+                        await message.channel.send(embed=embed)
+                        
                     processed_count += 1
                 else:
                     logger.debug(f"No details found for CVE {cve_id} during automatic scan.")
