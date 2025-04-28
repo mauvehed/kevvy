@@ -113,7 +113,8 @@ Last Modified: [Date]
 - `/cve channel enable <channel>`: Enable CVE monitoring in specified channel
 - `/cve channel disable`: Disable CVE monitoring for the server
 - `/cve channel set <channel>`: Set the default channel for CVE alerts
-- `/cve channel all`: List all channels with CVE monitoring enabled
+- `/cve channel all`: Enable CVE monitoring for all channels it is present in
+- `/cve channel list`: List all channels with CVE monitoring enabled
 
 **Response Format for `/cve channel all`:**
 ```
