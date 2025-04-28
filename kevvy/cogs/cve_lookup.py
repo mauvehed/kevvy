@@ -722,14 +722,14 @@ class CVELookupCog(commands.Cog):
                     # TODO: Implement standard/verbose embed difference based on get_effective_verbosity
                     # verbose = self.db.get_effective_verbosity(guild_id, message.channel.id)
 
+                    # Always send the standard CVE details embed first if details were found
+                    embed = self.create_cve_embed(cve_details)
+                    await message.channel.send(embed=embed)
+
+                    # If it's also in KEV, send the KEV alert embed additionally
                     if is_kev and kev_entry_data: 
-                        # Send KEV alert embed instead of standard CVE embed
                         kev_embed = self.create_kev_embed(cve_id, kev_entry_data)
                         await message.channel.send(embed=kev_embed)
-                    else:
-                        # Send standard CVE embed
-                        embed = self.create_cve_embed(cve_details)
-                        await message.channel.send(embed=embed)
                         
                     processed_count += 1
                 else:
