@@ -17,8 +17,10 @@ from .discord_log_handler import DiscordLogHandler
 import datetime
 import signal
 import platform
-
+import json
 MAX_EMBEDS_PER_MESSAGE = 5
+WEBAPP_ENDPOINT_URL = os.getenv("KEVVY_WEB_URL", "YOUR_WEBAPP_ENDPOINT_URL_HERE") 
+WEBAPP_API_KEY = os.getenv("KEVVY_WEB_API_KEY", None) 
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +60,7 @@ class SecurityBot(commands.Bot):
         # --- End Statistics Counters ---
 
         self.vulncheck_client = VulnCheckClient(api_key=vulncheck_api_token)
+        self.last_stats_sent_time: Optional[datetime.datetime] = None
 
     async def _handle_signal(self, sig: signal.Signals):
         """Handles received OS signals for graceful shutdown."""
@@ -143,6 +146,7 @@ class SecurityBot(commands.Bot):
 
         # Start background tasks
         self.check_cisa_kev_feed.start()
+        self.send_stats_to_webapp.start()
 
     async def close(self):
         logger.warning("Bot shutdown initiated...")
@@ -154,6 +158,10 @@ class SecurityBot(commands.Bot):
         if self.check_cisa_kev_feed.is_running():
             self.check_cisa_kev_feed.cancel()
             logging.info("Cancelled CISA KEV monitoring task.")
+        
+        if self.send_stats_to_webapp.is_running():
+            self.send_stats_to_webapp.cancel()
+            logging.info("Cancelled Web App Stats sending task.")
 
         if self.http_session:
             await self.http_session.close()
@@ -250,8 +258,88 @@ class SecurityBot(commands.Bot):
         await self.wait_until_ready()
         logger.info("Bot is ready, starting CISA KEV monitoring loop.")
 
+    # --- Background Task: Send Stats to Web App ---
+    @tasks.loop(minutes=5)
+    async def send_stats_to_webapp(self):
+        """Periodically sends bot statistics to the web application dashboard."""
+        if not self.http_session:
+            logger.debug("HTTP session not available, skipping web app stats send.")
+            return
+        
+        base_url = WEBAPP_ENDPOINT_URL # Keep the base URL from env var
+        if base_url == "YOUR_WEBAPP_ENDPOINT_URL_HERE":
+             logger.debug("Web app endpoint base URL not configured (KEVVY_WEB_URL), skipping stats send.")
+             return
+
+        # Construct the full URL by appending the specific path
+        # Use rstrip to handle potential trailing slash in env var
+        full_url = f"{base_url.rstrip('/')}/api/bot-status"
+
+        current_time = datetime.datetime.now(datetime.timezone.utc)
+        stats_payload = {}
+        
+        # Safely gather stats under lock
+        async with self.stats_lock:
+            stats_payload = {
+                "bot_id": self.user.id if self.user else None,
+                "bot_name": str(self.user) if self.user else "Unknown",
+                "guild_count": len(self.guilds),
+                "latency_ms": round(self.latency * 1000, 2),
+                "start_time": self.start_time.isoformat(),
+                "timestamp": current_time.isoformat(),
+                "last_stats_sent_time": self.last_stats_sent_time.isoformat() if self.last_stats_sent_time else None,
+                "stats": {
+                    "cve_lookups": self.stats_cve_lookups,
+                    "kev_alerts_sent": self.stats_kev_alerts_sent,
+                    "messages_processed": self.stats_messages_processed,
+                    "vulncheck_success": self.stats_vulncheck_success,
+                    "nvd_fallback_success": self.stats_nvd_fallback_success,
+                    "api_errors_vulncheck": self.stats_api_errors_vulncheck,
+                    "api_errors_nvd": self.stats_api_errors_nvd,
+                    "api_errors_cisa": self.stats_api_errors_cisa,
+                    "api_errors_kev": self.stats_api_errors_kev,
+                    "rate_limits_nvd": self.stats_rate_limits_nvd,
+                    "rate_limits_hit_nvd": self.stats_rate_limits_hit_nvd,
+                    "app_command_errors": dict(self.stats_app_command_errors), # Convert defaultdict
+                    "loaded_cogs": self.loaded_cogs,
+                    "failed_cogs": self.failed_cogs,
+                    "last_kev_check_success": self.timestamp_last_kev_check_success.isoformat() if self.timestamp_last_kev_check_success else None,
+                    "last_kev_alert_sent": self.timestamp_last_kev_alert_sent.isoformat() if self.timestamp_last_kev_alert_sent else None,
+                    # Add other relevant stats like uptime if needed
+                }
+            }
+        
+        headers = {'Content-Type': 'application/json'}
+        if WEBAPP_API_KEY:
+            headers['Authorization'] = f'Bearer {WEBAPP_API_KEY}' # Or adjust scheme if needed
+        
+        try:
+            logger.info(f"Sending stats payload to {full_url}") # Log the full URL
+            timeout = ClientTimeout(total=15) # 15 second timeout for the request
+            async with self.http_session.post(full_url, json=stats_payload, headers=headers, timeout=timeout) as response: # Use full_url
+                response_text = await response.text() # Read response body for logging
+                if response.status == 200 or response.status == 204:
+                    logger.info(f"Successfully sent stats to web app (Status: {response.status}).")
+                    self.last_stats_sent_time = current_time # Update last successful send time
+                else:
+                    logger.error(f"Failed to send stats to web app. Status: {response.status}, Response: {response_text[:500]}") # Log first 500 chars
+        except aiohttp.ClientConnectorError as e:
+             logger.error(f"Connection error sending stats to web app {full_url}: {e}") # Log the full URL
+        except asyncio.TimeoutError:
+             logger.error(f"Timeout sending stats to web app {full_url}.") # Log the full URL
+        except Exception as e:
+            logger.error(f"An unexpected error occurred sending stats to web app: {e}", exc_info=True)
+
+    @send_stats_to_webapp.before_loop
+    async def before_send_stats(self):
+        """Ensures the bot is ready before the stats loop starts."""
+        await self.wait_until_ready()
+        logger.info("Starting Web App Stats sending loop...")
+
+    # --- End Background Task: Send Stats to Web App ---
+
     def _create_kev_embed(self, kev_data: Dict[str, Any]) -> discord.Embed:
-        """Creates a Discord embed for a CISA KEV entry."""
+        """Creates a standardized embed for a KEV entry."""
         cve_id = kev_data.get('cveID', 'N/A')
         nvd_link = f"https://nvd.nist.gov/vuln/detail/{cve_id}" if cve_id != 'N/A' else "Link unavailable"
 
