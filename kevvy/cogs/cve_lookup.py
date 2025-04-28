@@ -6,6 +6,7 @@ import logging
 from typing import Optional, TYPE_CHECKING, Literal, Dict, Any
 import datetime
 import sqlite3
+import asyncio
 
 # Use absolute imports for type checking
 if TYPE_CHECKING:
@@ -831,10 +832,12 @@ class CVELookupCog(commands.Cog):
                     verbose = self.db.get_effective_verbosity(guild_id, message.channel.id)
                     embed = self.create_cve_embed(cve_details, verbose=verbose)
                     await message.channel.send(embed=embed)
+                    await asyncio.sleep(1.5)  # Add delay after sending CVE embed
 
                     if is_kev and kev_entry_data:
                         kev_embed = self.create_kev_embed(cve_id, kev_entry_data, verbose=verbose)
                         await message.channel.send(embed=kev_embed)
+                        await asyncio.sleep(1.5)  # Add delay after sending KEV embed
                         
                     processed_count += 1
                 else:
