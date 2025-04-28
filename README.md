@@ -24,6 +24,11 @@
 [![Kevvy CI/CD](https://github.com/mauvehed/kevvy/actions/workflows/ci.yml/badge.svg)](https://github.com/mauvehed/kevvy/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/mauvehed/kevvy/actions/workflows/codeql-analysis.yml/badge.svg?branch=main)](https://github.com/mauvehed/kevvy/actions/workflows/codeql-analysis.yml)
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/4ec1fc69d8a14048a80124167f6f7664)](https://www.codacy.com/gh/mauvehed/kevvy/dashboard)
+
+<a href="https://kevvy.readthedocs.io/en/latest/">
+  <img src="https://img.shields.io/badge/Documentation-blue?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Documentation Status"/>
+</a>
+
 </div>
 
 <hr />
