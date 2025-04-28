@@ -113,14 +113,14 @@ class KEVCog(commands.Cog):
     @kev_group.command(name="latest", description="Display the most recent KEV entries.")
     @app_commands.describe(
         count="Number of entries to show (default 5, max 10)",
-        days="Look back N days (default 7, max 30)",
+        days="Look back N days (default 30, max 30)",
         vendor="Filter by vendor name (case-insensitive match)",
         product="Filter by product name (case-insensitive match)"
     )
     async def kev_latest_command(
         self, interaction: discord.Interaction,
         count: app_commands.Range[int, 1, 10] = 5,
-        days: app_commands.Range[int, 1, 30] = 7,
+        days: app_commands.Range[int, 1, 30] = 30,
         vendor: Optional[str] = None,
         product: Optional[str] = None
     ):
