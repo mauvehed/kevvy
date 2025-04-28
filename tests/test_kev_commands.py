@@ -108,6 +108,8 @@ async def test_feed_status_enabled(kev_cog: KEVCog, mock_interaction: AsyncMock,
 
     await kev_cog.kev_feed_status_command.callback(kev_cog, mock_interaction)
 
+    # Check for defer first
+    mock_interaction.response.defer.assert_called_once_with(ephemeral=True)
     mock_db.get_kev_config.assert_called_once_with(mock_interaction.guild_id)
     mock_bot.get_channel.assert_called_once_with(9001)
     expected_message = (
@@ -116,25 +118,37 @@ async def test_feed_status_enabled(kev_cog: KEVCog, mock_interaction: AsyncMock,
         f"Last successful check: {last_check_str}\n"
         f"Last alert sent: {last_alert_str}"
     )
-    mock_interaction.response.send_message.assert_called_once_with(expected_message, ephemeral=True)
+    # Check followup.send instead of response.send_message
+    mock_interaction.followup.send.assert_called_once_with(expected_message, ephemeral=True)
+    mock_interaction.response.send_message.assert_not_called() # Ensure original method wasn't called
 
 @pytest.mark.asyncio
 async def test_feed_status_disabled(kev_cog: KEVCog, mock_interaction: AsyncMock, mock_db: MagicMock):
     mock_db.get_kev_config.return_value = {'enabled': 0}
     await kev_cog.kev_feed_status_command.callback(kev_cog, mock_interaction)
+    
+    # Check for defer first
+    mock_interaction.response.defer.assert_called_once_with(ephemeral=True)
     mock_db.get_kev_config.assert_called_once_with(mock_interaction.guild_id)
-    mock_interaction.response.send_message.assert_called_once_with(
+    # Check followup.send instead of response.send_message
+    mock_interaction.followup.send.assert_called_once_with(
         "⚪ KEV feed monitoring is **disabled**.", ephemeral=True
     )
+    mock_interaction.response.send_message.assert_not_called()
 
 @pytest.mark.asyncio
 async def test_feed_status_no_config(kev_cog: KEVCog, mock_interaction: AsyncMock, mock_db: MagicMock):
     mock_db.get_kev_config.return_value = None # Simulate no row in DB
     await kev_cog.kev_feed_status_command.callback(kev_cog, mock_interaction)
+
+    # Check for defer first
+    mock_interaction.response.defer.assert_called_once_with(ephemeral=True)
     mock_db.get_kev_config.assert_called_once_with(mock_interaction.guild_id)
-    mock_interaction.response.send_message.assert_called_once_with(
+    # Check followup.send instead of response.send_message
+    mock_interaction.followup.send.assert_called_once_with(
         "⚪ KEV feed monitoring is **disabled**.", ephemeral=True
     )
+    mock_interaction.response.send_message.assert_not_called()
 
 # --- Tests for /kev latest ---
 
