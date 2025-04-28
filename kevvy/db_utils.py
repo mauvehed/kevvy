@@ -533,7 +533,31 @@ class KEVConfigDB:
             """, (verbose_mode, guild_id))
             logger.info(f"Set verbosity for ALL channels in guild {guild_id} to {verbose_mode}.")
         except sqlite3.Error as e:
-            logger.error(f"Error setting verbosity for all channels in {guild_id}: {e}", exc_info=True)
+            logger.error(f"Error setting verbosity for all channels in guild {guild_id}: {e}", exc_info=True)
+            raise
+
+    def delete_all_cve_channel_configs(self, guild_id: int) -> int:
+        """Deletes all specific CVE channel configurations for a given guild.
+
+        Args:
+            guild_id: The ID of the guild.
+
+        Returns:
+            The number of rows deleted.
+        """
+        if not self._conn:
+            logger.error("No DB connection to delete CVE channel configs.")
+            return 0
+        try:
+            cursor = self._conn.cursor()
+            cursor.execute("DELETE FROM cve_channel_configs WHERE guild_id = ?", (guild_id,))
+            deleted_count = cursor.rowcount
+            logger.info(f"Deleted {deleted_count} CVE channel configs for guild {guild_id}.")
+            return deleted_count
+        except sqlite3.Error as e:
+            logger.error(f"Error deleting CVE channel configs for guild {guild_id}: {e}", exc_info=True)
+            # Optionally re-raise or return 0/None depending on desired error handling
+            return 0
 
     def get_effective_verbosity(self, guild_id: int, channel_id: int) -> bool:
         """Gets the effective verbosity for a channel, checking channel override then global default."""

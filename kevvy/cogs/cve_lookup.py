@@ -360,9 +360,9 @@ class CVELookupCog(commands.Cog):
         # Reuse the helper logic
         await self._update_cve_channel(interaction, channel)
 
-    @channel_group.command(name="all", description="List channels configured for CVE alerts.")
+    @channel_group.command(name="list", description="List channels configured for CVE alerts.")
     @app_commands.checks.has_permissions(manage_guild=True)
-    async def channel_all_command(self, interaction: discord.Interaction):
+    async def channel_list_command(self, interaction: discord.Interaction):
         if not self.db or not interaction.guild_id:
             await interaction.response.send_message("❌ Bot error: Cannot access database or Guild ID.", ephemeral=True)
             return
@@ -404,6 +404,35 @@ class CVELookupCog(commands.Cog):
         except Exception as e:
             logger.error(f"Error fetching CVE channel list for guild {guild_id}: {e}", exc_info=True)
             await interaction.response.send_message("❌ An error occurred while fetching the channel list.", ephemeral=True)
+
+    @channel_group.command(name="all", description="Enable CVE monitoring for all channels in this server (clears specific channel settings).")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def channel_all_command(self, interaction: discord.Interaction):
+        """Enables global CVE monitoring and clears specific channel configs to listen everywhere."""
+        if not self.db or not interaction.guild_id:
+            await interaction.response.send_message("❌ Bot error: Cannot access database or Guild ID.", ephemeral=True)
+            return
+
+        guild_id = interaction.guild_id
+        try:
+            # 1. Ensure global monitoring is enabled
+            self.db.update_cve_guild_enabled(guild_id, True)
+            logger.info(f"User {interaction.user} enabled global CVE monitoring for guild {guild_id} via /cve channel all.")
+
+            # 2. Delete all specific channel configurations for this guild
+            # Assuming a method exists in db_utils for this.
+            # If not, we'll need to add it.
+            deleted_count = self.db.delete_all_cve_channel_configs(guild_id)
+            logger.info(f"Deleted {deleted_count} specific CVE channel configs for guild {guild_id} via /cve channel all.")
+
+            await interaction.response.send_message(
+                "✅ CVE monitoring is now **enabled globally** for all channels. Any previous channel-specific settings have been cleared.", 
+                ephemeral=True
+            )
+
+        except Exception as e:
+            logger.error(f"Error executing /cve channel all for guild {guild_id}: {e}", exc_info=True)
+            await interaction.response.send_message("❌ An error occurred while enabling global CVE monitoring.", ephemeral=True)
 
     # --- Commands under the top-level /verbose Group --- 
     
