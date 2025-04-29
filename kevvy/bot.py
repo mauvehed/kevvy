@@ -60,11 +60,31 @@ class SecurityBot(commands.Bot):
         self.stats_app_command_errors: Dict[str, int] = defaultdict(int)
         # --- End Statistics Counters ---
 
+        self.version = "0.1.0-test" # Add a version attribute
+
         self.vulncheck_client = VulnCheckClient(api_key=vulncheck_api_token)
         self.last_stats_sent_time: Optional[datetime.datetime] = None
         # Add cache for recently processed CVEs in channels
         self.recently_processed_cves: Dict[Tuple[int, str], datetime.datetime] = {}
         self.RECENT_CVE_CACHE_SECONDS = 20 # Cache duration in seconds
+
+    def get_uptime(self) -> str:
+        """Calculates the bot's uptime."""
+        now = datetime.datetime.now(datetime.timezone.utc)
+        delta = now - self.start_time
+        
+        hours, remainder = divmod(int(delta.total_seconds()), 3600)
+        minutes, seconds = divmod(remainder, 60)
+        days, hours = divmod(hours, 24)
+        
+        if days > 0:
+            return f"{days}d {hours}h {minutes}m {seconds}s"
+        elif hours > 0:
+            return f"{hours}h {minutes}m {seconds}s"
+        elif minutes > 0:
+            return f"{minutes}m {seconds}s"
+        else:
+            return f"{seconds}s"
 
     async def _handle_signal(self, sig: signal.Signals):
         """Handles received OS signals for graceful shutdown."""
@@ -151,6 +171,37 @@ class SecurityBot(commands.Bot):
         # Start background tasks
         self.check_cisa_kev_feed.start()
         self.send_stats_to_webapp.start()
+
+    async def _post_stats(self, url: str, payload: dict, headers: dict) -> Tuple[int, str]:
+        """Helper method to perform the actual POST request for stats.
+
+        Returns:
+            Tuple[int, str]: Status code and response text.
+        Raises:
+            aiohttp.ClientConnectorError: If a connection error occurs.
+            asyncio.TimeoutError: If the request times out.
+            Exception: For other unexpected errors during the request.
+        """
+        timeout = ClientTimeout(total=10) # 10-second timeout
+        if not self.http_session:
+             logger.error("HTTP session is not initialized, cannot send stats.")
+             raise RuntimeError("HTTP Session not available") # Or handle appropriately
+
+        logger.debug(f"Executing POST to {url}")
+        try:
+            async with self.http_session.post(url, json=payload, headers=headers, timeout=timeout) as response:
+                response_text = await response.text()
+                logger.debug(f"Received response from {url}: Status {response.status}, Body: {response_text[:100]}") # Log truncated response
+                return response.status, response_text
+        except aiohttp.ClientConnectorError as e:
+            logger.error(f"Connection error during stats POST to {url}: {e}")
+            raise # Re-raise for the caller to handle
+        except asyncio.TimeoutError:
+             logger.error(f"Timeout during stats POST to {url}")
+             raise # Re-raise for the caller to handle
+        except Exception as e:
+            logger.error(f"Unexpected error during stats POST to {url}: {e}", exc_info=True)
+            raise # Re-raise unexpected errors
 
     async def close(self):
         logger.warning("Bot shutdown initiated...")
@@ -317,21 +368,34 @@ class SecurityBot(commands.Bot):
         if WEBAPP_API_KEY:
             headers['Authorization'] = f'Bearer {WEBAPP_API_KEY}' # Or adjust scheme if needed
         
+        timeout = ClientTimeout(total=10)
+
         try:
-            logger.info(f"Sending stats payload to {full_url}") # Log the full URL
-            timeout = ClientTimeout(total=15) # 15 second timeout for the request
-            async with self.http_session.post(full_url, json=stats_payload, headers=headers, timeout=timeout) as response: # Use full_url
-                response_text = await response.text() # Read response body for logging
-                if response.status == 200 or response.status == 204:
-                    logger.info(f"Successfully sent stats to web app (Status: {response.status}).")
-                    self.last_stats_sent_time = current_time # Update last successful send time
-                else:
-                    logger.error(f"Failed to send stats to web app. Status: {response.status}, Response: {response_text[:500]}") # Log first 500 chars
+            # Add the missing log statement back
+            logger.info(f"Sending stats payload to {full_url}")
+            # Call the new helper method
+            status_code, response_text = await self._post_stats(full_url, stats_payload, headers)
+
+            # Process response based on status code
+            if 200 <= status_code < 300:
+                logger.info(f"Successfully sent stats to web app (Status: {status_code})")
+                self.last_stats_sent_time = datetime.datetime.now(datetime.timezone.utc)
+            else:
+                # Log HTTP errors from the web app
+                logger.error(
+                    f"Failed to send stats to web app. Status: {status_code}. "
+                    f"Response: {response_text[:200]}" # Log truncated response
+                )
+
         except aiohttp.ClientConnectorError as e:
-             logger.error(f"Connection error sending stats to web app {full_url}: {e}") # Log the full URL
+            # Log connection errors specifically
+            logger.error(f"Connection error sending stats to web app {full_url}: {type(e).__name__} - {e}")
         except asyncio.TimeoutError:
-             logger.error(f"Timeout sending stats to web app {full_url}.") # Log the full URL
+             logger.error(f"Timeout sending stats to web app {full_url}")
+        except RuntimeError as e: # Catch session not ready error from helper
+             logger.error(f"Cannot send stats: {e}")
         except Exception as e:
+            # Catch-all for other unexpected errors during the process
             logger.error(f"An unexpected error occurred sending stats to web app: {e}", exc_info=True)
 
     @send_stats_to_webapp.before_loop
