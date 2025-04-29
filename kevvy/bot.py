@@ -478,11 +478,20 @@ class SecurityBot(commands.Bot):
                     continue # Skip this CVE, already processed recently
                 # --- End Cache Check ---
 
+                # Increment lookup count AFTER cache check passes
+                async with self.stats_lock:
+                    self.stats_cve_lookups += 1
+
                 # Fetch CVE data (this handles VulnCheck/NVD)
                 cve_data = await self.cve_monitor.get_cve_data(cve_id_upper)
                 if not cve_data:
                      logger.warning(f"No data found for {cve_id_upper} mentioned in message {message.id}.")
+                     # Maybe increment an error/not_found counter here?
                      continue # Skip this CVE
+                else:
+                    # Assume NVD success if data is found (simplification)
+                    async with self.stats_lock:
+                         self.stats_nvd_fallback_success += 1
 
                 # --- Check Severity Threshold --- 
                 min_severity_str = guild_config.get('severity_threshold', 'all')
@@ -511,7 +520,14 @@ class SecurityBot(commands.Bot):
                 await asyncio.sleep(1.0) # Sleep AFTER sending CVE embed
 
                 # Check KEV status
-                kev_status = await self.cve_monitor.check_kev(cve_id_upper) # Use uppercase ID for KEV check too
+                kev_status = None # Initialize kev_status
+                try:
+                    kev_status = await self.cve_monitor.check_kev(cve_id_upper) # Use uppercase ID for KEV check too
+                except Exception as kev_err:
+                     logger.error(f"Error checking KEV status for {cve_id_upper}: {kev_err}", exc_info=True)
+                     async with self.stats_lock:
+                         self.stats_api_errors_kev += 1
+                
                 if kev_status:
                     kev_embed = self.cve_monitor.create_kev_status_embed(cve_id_upper, kev_status, verbose=is_verbose) # Use uppercase ID for KEV embed
                     await message.channel.send(embed=kev_embed)
@@ -524,13 +540,20 @@ class SecurityBot(commands.Bot):
                  break # Stop processing this message if permissions fail
             except discord.HTTPException as e:
                  logger.error(f"HTTP error sending embed for {cve_id_upper} in channel {channel_id} (Guild: {guild_id}): {e}")
+                 # Could increment a generic discord error stat here if needed
                  # Continue to next CVE potentially
             except NVDRateLimitError as e:
                  logger.error(f"NVD rate limit hit processing {cve_id_upper}: {e}")
-                 # Potentially add a break or longer sleep here if desired
+                 async with self.stats_lock:
+                     self.stats_rate_limits_hit_nvd += 1 # Use the specific rate limit counter
+                     self.stats_api_errors_nvd += 1 # Also count as a general NVD API error
                  continue # Allow processing of other CVEs if possible
             except Exception as e:
                  logger.error(f"Unexpected error processing CVE {cve_id_upper} from message {message.id}: {e}", exc_info=True)
+                 # Increment a generic error counter? Need more specific API error counters maybe.
+                 # For now, let's assume this might be an NVD error if it wasn't caught above
+                 async with self.stats_lock:
+                     self.stats_api_errors_nvd += 1 
                  # Continue to next CVE potentially
 
     async def on_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
