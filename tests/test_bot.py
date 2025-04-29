@@ -8,6 +8,7 @@ import logging
 import os
 import aiohttp
 import platform
+import importlib.metadata
 
 # Import the bot class and other necessary components
 from kevvy.bot import SecurityBot, MAX_EMBEDS_PER_MESSAGE
@@ -984,6 +985,41 @@ async def test_send_stats_to_webapp_connection_error(mocker, mock_bot_with_tasks
 
     # Verify last sent time was NOT updated
     assert mock_bot_with_tasks.last_stats_sent_time == start_time
+
+# --- Tests for Bot Initialization ---
+
+@patch('kevvy.bot.VulnCheckClient') # Mock client used in init
+def test_bot_init_version_success(MockVulnCheckClient, mocker):
+    """Test bot correctly reads version from metadata."""
+    test_version = "9.9.9-test"
+    # Patch importlib.metadata.version to return our test version
+    mock_get_version = mocker.patch('importlib.metadata.version', return_value=test_version)
+    
+    # Instantiate the bot (pass dummy args)
+    bot = SecurityBot(nvd_api_key=None, vulncheck_api_token=None)
+    
+    # Assert version was called correctly and attribute is set
+    mock_get_version.assert_called_once_with('kevvy')
+    assert bot.version == test_version
+
+@patch('kevvy.bot.VulnCheckClient') # Mock client used in init
+def test_bot_init_version_not_found(MockVulnCheckClient, mocker, caplog):
+    """Test bot handles PackageNotFoundError and sets default version."""
+    # Patch importlib.metadata.version to raise error
+    mock_get_version = mocker.patch(
+        'importlib.metadata.version',
+        side_effect=importlib.metadata.PackageNotFoundError("Package not found")
+    )
+    
+    # Instantiate the bot
+    with caplog.at_level(logging.ERROR):
+        bot = SecurityBot(nvd_api_key=None, vulncheck_api_token=None)
+    
+    # Assert version was called correctly and fallback attribute is set
+    mock_get_version.assert_called_once_with('kevvy')
+    assert bot.version == "0.0.0-unknown"
+    # Assert error was logged
+    assert "Could not determine package version for 'kevvy'. Using default." in caplog.text
 
 # TODO: Add more tests based on PRD_TESTS.md Section 6.1:
 # - Message with multiple CVEs (below and above MAX_EMBEDS_PER_MESSAGE)

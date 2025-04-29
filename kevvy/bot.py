@@ -19,6 +19,7 @@ import signal
 import platform
 import json
 import re # Needed for regex
+import importlib.metadata # Added for dynamic versioning
 MAX_EMBEDS_PER_MESSAGE = 5
 WEBAPP_ENDPOINT_URL = os.getenv("KEVVY_WEB_URL", "YOUR_WEBAPP_ENDPOINT_URL_HERE") 
 WEBAPP_API_KEY = os.getenv("KEVVY_WEB_API_KEY", None) 
@@ -61,6 +62,12 @@ class SecurityBot(commands.Bot):
         # --- End Statistics Counters ---
 
         self.version = "0.1.0-test" # Add a version attribute
+        # Read version dynamically from package metadata
+        try:
+            self.version = importlib.metadata.version('kevvy') 
+        except importlib.metadata.PackageNotFoundError:
+             logger.error("Could not determine package version for 'kevvy'. Using default.")
+             self.version = "0.0.0-unknown"
 
         self.vulncheck_client = VulnCheckClient(api_key=vulncheck_api_token)
         self.last_stats_sent_time: Optional[datetime.datetime] = None
