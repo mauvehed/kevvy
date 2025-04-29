@@ -36,8 +36,8 @@ cp .env.example .env
 Then, edit the `.env` file:
 
 *   `DISCORD_TOKEN` (Required): Your Discord bot token.
-*   `NVD_API_KEY` (Optional): Your NVD API key. Request one [here](https://nvd.nist.gov/developers/request-an-api-key) for significantly higher request rate limits. Used as a fallback data source if VulnCheck is unavailable or fails.
-*   `VULNCHECK_API_TOKEN` (Optional): Your VulnCheck API key. Get one from [VulnCheck](https://vulncheck.com/). If provided, VulnCheck becomes the *primary* data source for CVE details.
+*   `NVD_API_KEY` (Optional): Your NVD API key. Request one [here](https://nvd.nist.gov/developers/request-an-api-key) for significantly higher request rate limits. Used as the primary data source for CVE details.
+*   `VULNCHECK_API_TOKEN` (Optional): Your VulnCheck API key. *(Note: This is planned for future integration as a potential primary data source but is not currently used by the core CVE lookup commands).* Get one from [VulnCheck](https://vulncheck.com/).
 *   `DISCORD_COMMAND_PREFIX` (Optional): The prefix for traditional commands (if any are added later). Defaults to `!`. The primary interaction is automatic detection and slash commands.
 *   `LOGGING_CHANNEL_ID` (Optional): The ID of the Discord channel to which log messages should be sent.
 *   `DISABLE_DISCORD_LOGGING` (Optional): Set to `true` to disable sending logs to the Discord channel specified by `LOGGING_CHANNEL_ID`. Defaults to `false`.

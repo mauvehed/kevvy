@@ -12,17 +12,17 @@ This PRD defines the structure and behavior of Kevvy's security-related commands
 - Listens to messages in guilds where the bot is present.
 - Ignores messages from bots (including itself) and messages in DMs.
 - Uses regex (`CVE-\d{4}-\d{4,}`) to detect potential CVE IDs.
-- For each detected CVE ID:
-    - Checks if CVE monitoring is enabled globally for the guild (`cve_guild_config.enabled`).
-    - Checks if the specific channel is configured for monitoring (`cve_channel_configs` table).
-    - If global monitoring is enabled AND the channel is configured:
+- For each detected CVE ID (up to a limit per message):
+    - Checks if CVE monitoring is enabled globally for the guild (`cve_guild_config.cve_monitoring_enabled`).
+    - Checks if the specific channel is configured for monitoring (`cve_channel_configs` table and `enabled=True`).
+    - If global monitoring is enabled AND the channel is configured/enabled:
         - Fetches CVE details (NVD).
         - Checks if the CVE's severity meets the *globally* configured threshold (`cve_guild_config.severity_threshold`).
         - Determines the appropriate verbosity (checking channel override from `cve_channel_configs.verbose_mode` then global setting from `cve_guild_config.verbose_mode`).
         - Creates a CVE information embed (standard or verbose).
         - Checks if the CVE is present in the CISA KEV catalog.
-        - Sends the CVE embed to the channel.
-        - If in KEV, sends a separate KEV information embed.
+        - Sends the CVE embed to the channel, followed by a short delay (`asyncio.sleep`).
+        - If in KEV, sends a separate KEV information embed, followed by a short delay (`asyncio.sleep`).
 - Handles potential errors during API lookups gracefully.
 
 ### 2.2 `/cve` Group
@@ -44,14 +44,16 @@ This PRD defines the structure and behavior of Kevvy's security-related commands
 - Fields: CVSS Score, Severity, Vector, CWEs, Published Date, Modified Date, References, KEV Status (if applicable).
 
 #### 2.2.2 `/cve channel` Group
-**Purpose:** Configure specific channels for automatic CVE scanning (`on_message`).
+**Purpose:** Configure channels for automatic CVE scanning (`on_message`) and manage global scanning status.
 **Permission:** Requires "Manage Server" permission
 
 ##### Subcommands:
-- `/cve channel enable <channel>`: Enable automatic CVE scanning for messages in the specified channel. Ensures global monitoring is also enabled for the server.
-- `/cve channel disable`: Disable automatic CVE scanning *globally* for the entire server. No messages will be scanned in any channel.
-- `/cve channel set <channel>`: Updates the channel configuration (same effect as `enable`).
-- `/cve channel all`: Lists all channels currently configured for automatic CVE scanning.
+- `/cve channel add <channel>`: Enable automatic CVE scanning for messages in the specified channel. Also ensures global monitoring is enabled for the server.
+- `/cve channel remove <channel>`: Remove the configuration for the specified channel, stopping automatic scans there.
+- `/cve channel list`: Lists all channels currently configured and enabled for automatic CVE scanning.
+- `/cve channel status`: Shows the global CVE monitoring status (enabled/disabled) and lists the configured channels.
+- `/cve channel enable_global`: Enables automatic CVE message scanning globally for the server. Channels still need to be explicitly added via `/cve channel add` to be monitored.
+- `/cve channel disable_global`: Disables automatic CVE message scanning globally for the entire server. No messages will be scanned in any channel.
 
 #### 2.2.3 `/cve latest`
 **Purpose:** Display the most recent CVEs published on NVD.
@@ -154,7 +156,7 @@ This PRD defines the structure and behavior of Kevvy's security-related commands
 -- Stores global settings for both KEV feed and CVE on_message scanning
 CREATE TABLE IF NOT EXISTS cve_guild_config (
     guild_id INTEGER PRIMARY KEY,
-    enabled BOOLEAN DEFAULT true, -- Global switch for CVE on_message scanning
+    cve_monitoring_enabled BOOLEAN DEFAULT true, -- Global switch for CVE on_message scanning
     verbose_mode BOOLEAN DEFAULT false, -- Global default verbosity for CVE on_message
     severity_threshold TEXT DEFAULT 'all', -- Global severity threshold for CVE on_message
     last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP

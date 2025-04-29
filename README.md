@@ -63,16 +63,16 @@
 
 **kevvy** is a Discord bot with the following main functions:
 
-1.  **Automatic CVE Detection:** It automatically monitors chat messages for CVE (Common Vulnerabilities and Exposures) identifiers (e.g., `CVE-2023-12345`). When a CVE is detected, the bot fetches detailed information primarily from the [VulnCheck API](https://vulncheck.com/) (if an API key is provided). If VulnCheck is unavailable or doesn't return data, it falls back to the [NIST National Vulnerability Database (NVD) API v2.0](https://nvd.nist.gov/developers/vulnerabilities).
+1.  **Automatic CVE Detection:** It automatically monitors chat messages for CVE (Common Vulnerabilities and Exposures) identifiers (e.g., `CVE-2023-12345`). When a CVE is detected, the bot fetches detailed information primarily from the [NIST National Vulnerability Database (NVD) API v2.0](https://nvd.nist.gov/developers/vulnerabilities). (*Note: Integration with VulnCheck as a primary source is planned for future enhancement.*)
 2.  **Direct CVE Lookup:** Users can explicitly request details for a specific CVE using the `/cve lookup` command.
 3.  **CISA KEV Monitoring:** Optionally monitors the [CISA Known Exploited Vulnerabilities (KEV) catalog](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) and sends alerts for new entries to configured channels.
 
 Key features:
 *   Automatic detection of CVE IDs in messages.
 *   Direct lookup of specific CVEs via `/cve lookup`.
-*   Fetches details primarily from VulnCheck (if available), falling back to NVD.
+*   Fetches details primarily from NVD (*VulnCheck planned for future*).
 *   Displays CVSS score (v3.1/v3.0/v2.0), vector string, description, publication dates, CWEs, and reference links.
-*   Consolidates responses for messages containing multiple CVEs (max 5 embeds per message by default) to prevent spam.
+*   Consolidates responses for messages containing multiple CVEs (max 5 embeds per message by default, with delays between sends) to prevent spam.
 *   Optionally checks the CISA KEV catalog periodically and posts alerts for new entries to a designated channel (configurable per server).
 
 ### Built With
@@ -82,7 +82,6 @@ Key features:
 *   <img src="https://img.shields.io/badge/Poetry-1.8+-60A5FA?style=for-the-badge&logo=poetry&logoColor=white" />
 *   <img src="https://img.shields.io/badge/Docker-26.1+-0db7ed?style=for-the-badge&logo=docker&logoColor=white" />
 *   <img src="https://img.shields.io/badge/aiohttp-library-blueviolet?style=for-the-badge&logo=python&logoColor=white" />
-*   <img src="https://img.shields.io/badge/VulnCheck SDK-blue?style=for-the-badge&logo=python&logoColor=white" />
 *   <img src="https://img.shields.io/badge/NVD API v2.0-darkgreen?style=for-the-badge&logo=python&logoColor=white" />
 *   <img src="https://img.shields.io/badge/CISA KEV Catalog-red?style=for-the-badge&logo=python&logoColor=white" />
 
@@ -98,10 +97,12 @@ Key features:
     *   `/kev feed status`: Checks the status of KEV monitoring.
     *   `/kev latest [count] [days] ...`: Shows the latest KEV entries with optional filters.
 5.  **CVE Monitoring Channel Configuration:**
-    *   `/cve channel enable channel:<#channel>`: Enables CVE monitoring for a *specific channel* and ensures global monitoring is enabled for the server. Messages with CVEs in this channel will trigger alerts.
-    *   `/cve channel disable`: Disables CVE monitoring *globally* for the server. No automatic CVE detection will occur in any channel.
-    *   `/cve channel set channel:<#channel>`: Sets/updates the specific channel for CVE alerts (effectively the same as `/cve channel enable`).
-    *   `/cve channel all`: Lists channels specifically configured for CVE alerts using `/cve channel enable` or `/cve channel set`.
+    *   `/cve channel add channel:<#channel>`: Enables automatic CVE scanning for messages in the specified channel. Ensures global monitoring is also enabled for the server.
+    *   `/cve channel remove channel:<#channel>`: Removes automatic CVE monitoring configuration for the specified channel.
+    *   `/cve channel list`: Lists all channels currently configured for automatic CVE scanning.
+    *   `/cve channel status`: Shows the global CVE monitoring status (enabled/disabled) and lists configured channels.
+    *   `/cve channel enable_global`: Enables automatic CVE message scanning globally for the server (channels still need to be added via `/cve channel add` to be monitored).
+    *   `/cve channel disable_global`: Disables automatic CVE message scanning globally for the server. No messages will be scanned in any channel.
 6.  **Alert Verbosity Configuration:**
     *   `/verbose enable_global`: Sets the default alert style to **verbose** for the whole server.
     *   `/verbose disable_global`: Sets the default alert style to **standard** (non-verbose) for the whole server.
@@ -149,8 +150,8 @@ cp .env.example .env
 Then, edit the `.env` file:
 
 *   `DISCORD_TOKEN` (Required): Your Discord bot token.
-*   `NVD_API_KEY` (Optional): Your NVD API key. Request one [here](https://nvd.nist.gov/developers/request-an-api-key) for significantly higher request rate limits. Used as a fallback data source if VulnCheck is unavailable or fails.
-*   `VULNCHECK_API_TOKEN` (Optional): Your VulnCheck API key. Get one from [VulnCheck](https://vulncheck.com/). If provided, VulnCheck becomes the *primary* data source for CVE details.
+*   `NVD_API_KEY` (Optional): Your NVD API key. Request one [here](https://nvd.nist.gov/developers/request-an-api-key) for significantly higher request rate limits. Used as the primary data source for CVE details.
+*   `VULNCHECK_API_TOKEN` (Optional): Your VulnCheck API key. *(Note: This is planned for future integration as a potential primary data source but is not currently used by the core CVE lookup commands).* Get one from [VulnCheck](https://vulncheck.com/).
 *   `DISCORD_COMMAND_PREFIX` (Optional): The prefix for traditional commands (if any are added later). Defaults to `!`. The primary interaction is automatic detection and slash commands.
 *   `LOGGING_CHANNEL_ID` (Optional): The ID of the Discord channel to which log messages should be sent.
 *   `DISABLE_DISCORD_LOGGING` (Optional): Set to `true` to disable sending logs to the Discord channel specified by `LOGGING_CHANNEL_ID`. Defaults to `false`.
@@ -225,8 +226,8 @@ See [LICENSE](LICENSE) for more information.
 
 ## Acknowledgements
 
-*   Data sourced primarily from [VulnCheck](https://vulncheck.com/) (when configured).
-*   Fallback CVE data lookup via [NVD](https://nvd.nist.gov).
+*   Data sourced primarily from [NVD](https://nvd.nist.gov).
+*   [VulnCheck](https://vulncheck.com/) integration planned for future enhancement.
 *   Known Exploited Vulnerabilities feed monitored via [CISA](https://www.cisa.gov/known-exploited-vulnerabilities-catalog).
 *   Thanks to all contributors and users who have helped make this project better!
 

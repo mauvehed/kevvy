@@ -193,8 +193,6 @@ class CVELookupCog(commands.Cog):
         days="Look back N days (default 7, max 30)",
         vendor="Filter by vendor name (case-insensitive match)",
         product="Filter by product name (case-insensitive match)",
-        # type="Filter by vulnerability type (e.g., rce, xss) - NOT IMPLEMENTED",
-        # has_exploit="Filter for CVEs with known exploits (True/False) - NOT IMPLEMENTED",
         in_kev="Filter for CVEs also in the KEV catalog (True/False)"
     )
     @app_commands.choices(severity=[
@@ -210,8 +208,6 @@ class CVELookupCog(commands.Cog):
         severity: Optional[SeverityLevelChoices] = None,
         vendor: Optional[str] = None,
         product: Optional[str] = None,
-        # type: Optional[str] = None, # Not implemented yet
-        # has_exploit: Optional[bool] = None, # Not implemented yet
         in_kev: Optional[bool] = None
     ):
         """Displays the most recent CVEs with optional filters."""
