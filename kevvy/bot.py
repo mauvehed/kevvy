@@ -453,10 +453,11 @@ class SecurityBot(commands.Bot):
                 break # Stop processing this message
 
             try:
+                cve_id_upper = cve_id.upper() # Convert to uppercase for API lookup
                 # Fetch CVE data (this handles VulnCheck/NVD)
-                cve_data = await self.cve_monitor.get_cve_data(cve_id)
+                cve_data = await self.cve_monitor.get_cve_data(cve_id_upper)
                 if not cve_data:
-                     logger.warning(f"No data found for {cve_id} mentioned in message {message.id}.")
+                     logger.warning(f"No data found for {cve_id_upper} mentioned in message {message.id}.")
                      continue # Skip this CVE
 
                 # --- Check Severity Threshold --- 
@@ -465,7 +466,7 @@ class SecurityBot(commands.Bot):
                     cve_data, min_severity_str
                 )
                 if not passes_threshold:
-                     logger.info(f"CVE {cve_id} (Severity: {cve_severity_str}) does not meet threshold '{min_severity_str}' for guild {guild_id}. Skipping alert.")
+                     logger.info(f"CVE {cve_id_upper} (Severity: {cve_severity_str}) does not meet threshold '{min_severity_str}' for guild {guild_id}. Skipping alert.")
                      continue
                 # --- End Severity Check --- 
 
@@ -477,29 +478,29 @@ class SecurityBot(commands.Bot):
                 cve_embed = self.cve_monitor.create_cve_embed(cve_data, verbose=is_verbose)
                 await message.channel.send(embed=cve_embed)
                 processed_count += 1
-                logger.info(f"Sent alert for {cve_id} (Severity: {cve_severity_str}, Verbose: {is_verbose}) from message {message.id}.")
+                logger.info(f"Sent alert for {cve_id_upper} (Severity: {cve_severity_str}, Verbose: {is_verbose}) from message {message.id}.")
 
                 # Check KEV status
-                kev_status = await self.cve_monitor.check_kev(cve_id)
+                kev_status = await self.cve_monitor.check_kev(cve_id_upper) # Use uppercase ID for KEV check too
                 if kev_status:
-                    kev_embed = self.cve_monitor.create_kev_status_embed(cve_id, kev_status, verbose=is_verbose)
+                    kev_embed = self.cve_monitor.create_kev_status_embed(cve_id_upper, kev_status, verbose=is_verbose) # Use uppercase ID for KEV embed
                     await message.channel.send(embed=kev_embed)
-                    logger.info(f"Sent KEV status for {cve_id} (Verbose: {is_verbose}) from message {message.id}.")
+                    logger.info(f"Sent KEV status for {cve_id_upper} (Verbose: {is_verbose}) from message {message.id}.")
 
                 await asyncio.sleep(0.5) # Short delay between embeds for rate limits
 
             except discord.Forbidden:
-                 logger.error(f"Missing permissions to send message/embed in channel {channel_id} (Guild: {guild_id}) for CVE {cve_id}.")
+                 logger.error(f"Missing permissions to send message/embed in channel {channel_id} (Guild: {guild_id}) for CVE {cve_id_upper}.")
                  break # Stop processing this message if permissions fail
             except discord.HTTPException as e:
-                 logger.error(f"HTTP error sending embed for {cve_id} in channel {channel_id} (Guild: {guild_id}): {e}")
+                 logger.error(f"HTTP error sending embed for {cve_id_upper} in channel {channel_id} (Guild: {guild_id}): {e}")
                  # Continue to next CVE potentially
             except NVDRateLimitError as e:
-                 logger.error(f"NVD rate limit hit processing {cve_id}: {e}")
+                 logger.error(f"NVD rate limit hit processing {cve_id_upper}: {e}")
                  # Potentially add a break or longer sleep here if desired
                  continue # Allow processing of other CVEs if possible
             except Exception as e:
-                 logger.error(f"Unexpected error processing CVE {cve_id} from message {message.id}: {e}", exc_info=True)
+                 logger.error(f"Unexpected error processing CVE {cve_id_upper} from message {message.id}: {e}", exc_info=True)
                  # Continue to next CVE potentially
 
     async def on_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
