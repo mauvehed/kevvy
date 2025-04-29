@@ -9,6 +9,7 @@ import os
 import aiohttp
 import platform
 import importlib.metadata
+from discord.ext import commands
 
 # Import the bot class and other necessary components
 from kevvy.bot import SecurityBot, MAX_EMBEDS_PER_MESSAGE
@@ -686,6 +687,45 @@ async def test_on_message_error_generic_exception(mock_bot, mock_message, mock_d
     assert mock_bot.stats_nvd_fallback_success == 1 # Found data before error
     assert mock_bot.stats_api_errors_nvd == 1 # Generic exception falls back to this stat
 
+@pytest.mark.asyncio
+async def test_on_message_cve_data_not_found(mock_bot, mock_message, mock_db, mock_cve_monitor):
+    """Test scenario where CVE is detected but no data is found via API."""
+    cve_id = "CVE-2023-0000"
+    cve_id_upper = cve_id.upper()
+    mock_message.content = f"Look at {cve_id}"
+    
+    # --- Mock Setup ---
+    # DB: Defaults are okay (enabled, non-verbose)
+    # Monitor: get_cve_data returns None
+    mock_cve_monitor.get_cve_data.return_value = None
+    
+    # --- Run Test ---
+    await mock_bot.on_message(mock_message)
+    
+    # --- Assertions ---
+    # Basic config checks should happen
+    mock_db.get_cve_guild_config.assert_called_once_with(mock_message.guild.id)
+    mock_db.get_cve_channel_config.assert_called_once_with(mock_message.guild.id, mock_message.channel.id)
+    
+    # API call was made
+    mock_cve_monitor.get_cve_data.assert_awaited_once_with(cve_id_upper)
+    
+    # No further processing or sending should occur
+    mock_cve_monitor.check_severity_threshold.assert_not_called()
+    mock_db.get_effective_verbosity.assert_not_called()
+    mock_message.channel.send.assert_not_called()
+    mock_cve_monitor.check_kev.assert_not_awaited()
+    
+    # Cache should not be updated as processing failed early
+    assert (mock_message.channel.id, cve_id_upper) not in mock_bot.recently_processed_cves
+    
+    # Stats Update
+    assert mock_bot.stats_messages_processed == 1
+    assert mock_bot.stats_cve_lookups == 1 # Lookup attempted
+    assert mock_bot.stats_nvd_fallback_success == 0 # No data found
+    assert mock_bot.stats_api_errors_nvd == 0 # Not necessarily an API error, just no data
+    assert mock_bot.stats_api_errors_kev == 0
+
 # --- Tests for check_cisa_kev_feed Task ---
 
 @pytest.mark.asyncio
@@ -816,6 +856,67 @@ async def test_check_cisa_kev_feed_discord_forbidden(mock_bot_with_tasks, mock_c
     assert mock_bot_with_tasks.stats_api_errors_cisa == 0 # CISA fetch succeeded
     assert mock_bot_with_tasks.timestamp_last_kev_check_success is not None
     assert mock_bot_with_tasks.timestamp_last_kev_alert_sent is None # Not updated
+
+@pytest.mark.asyncio
+async def test_check_cisa_kev_feed_missing_guild_channel(mock_bot_with_tasks, mock_cisa_kev_client, mock_db, caplog):
+    """Test KEV check when configured guild or channel is missing."""
+    # --- Mock Setup ---
+    new_entry1 = {'cveID': 'CVE-2023-1111'}
+    mock_cisa_kev_client.get_new_kev_entries.return_value = [new_entry1]
+    
+    valid_guild_id = 1001
+    valid_channel_id = 2001
+    missing_guild_id = 1002
+    missing_channel_config = {'guild_id': valid_guild_id, 'channel_id': 9999} # Valid guild, missing channel
+    
+    mock_db.get_enabled_kev_configs.return_value = [
+        {'guild_id': missing_guild_id, 'channel_id': 3001}, # Guild 1002 missing
+        missing_channel_config, # Guild 1001 exists, channel 9999 missing
+        {'guild_id': valid_guild_id, 'channel_id': valid_channel_id} # Valid config
+    ]
+    
+    mock_valid_guild = AsyncMock(spec=discord.Guild, id=valid_guild_id, name="Valid Guild")
+    mock_valid_channel = AsyncMock(spec=discord.TextChannel, id=valid_channel_id, name="valid-channel")
+    
+    def mock_get_guild(gid):
+        if gid == valid_guild_id:
+            return mock_valid_guild
+        elif gid == missing_guild_id:
+            return None # Simulate missing guild
+        return MagicMock() # Default mock for any other unexpected ID
+        
+    def mock_get_channel(cid):
+        if cid == valid_channel_id:
+            return mock_valid_channel
+        elif cid == 9999:
+            return None # Simulate missing channel
+        return MagicMock()
+
+    mock_bot_with_tasks.get_guild.side_effect = mock_get_guild
+    mock_bot_with_tasks.get_channel.side_effect = mock_get_channel
+    
+    # --- Run Task --- 
+    with caplog.at_level(logging.WARNING):
+        await mock_bot_with_tasks.check_cisa_kev_feed()
+
+    # --- Assertions ---
+    mock_cisa_kev_client.get_new_kev_entries.assert_awaited_once()
+    mock_db.get_enabled_kev_configs.assert_called_once()
+    
+    # Check warnings were logged for missing guild/channel
+    assert f"Could not find guild {missing_guild_id} from KEV config, skipping." in caplog.text
+    assert f"Could not find CISA KEV target channel with ID: {missing_channel_config['channel_id']}" in caplog.text
+    
+    # Check embed creation only happened for the valid config
+    mock_bot_with_tasks._create_kev_embed.assert_called_once_with(new_entry1)
+    
+    # Check send only happened in the valid channel
+    mock_valid_channel.send.assert_awaited_once()
+    
+    # Check stats (only 1 alert sent)
+    assert mock_bot_with_tasks.stats_kev_alerts_sent == 1
+    assert mock_bot_with_tasks.timestamp_last_kev_check_success is not None
+    assert mock_bot_with_tasks.timestamp_last_kev_alert_sent is not None
 
 # --- Tests for send_stats_to_webapp Task ---
 
@@ -1020,6 +1121,160 @@ def test_bot_init_version_not_found(MockVulnCheckClient, mocker, caplog):
     assert bot.version == "0.0.0-unknown"
     # Assert error was logged
     assert "Could not determine package version for 'kevvy'. Using default." in caplog.text
+
+# --- Tests for Bot Lifecycle (Setup/Close) ---
+
+# Mock dependencies that might be needed even for basic init/setup_hook
+@patch('kevvy.bot.VulnCheckClient') 
+@patch('kevvy.bot.NVDClient')
+@patch('kevvy.bot.KEVConfigDB')
+@patch('kevvy.bot.CisaKevClient')
+@patch('kevvy.bot.CVEMonitor')
+@patch('kevvy.bot.aiohttp.ClientSession') # Also mock the session creation
+@pytest.mark.asyncio
+async def test_setup_hook_success(
+    MockSession, MockMonitor, MockKevClient, MockDB, MockNvdClient, MockVulnCheck, mocker
+):
+    """Test successful execution of the setup_hook."""
+    # Instantiate the bot
+    bot = SecurityBot(nvd_api_key="fake_key", vulncheck_api_token="fake_token")
+    
+    # Mock methods called by setup_hook
+    mock_load = mocker.patch.object(bot, 'load_extension', new_callable=AsyncMock)
+    mock_sync = mocker.patch.object(bot.tree, 'sync', new_callable=AsyncMock)
+    mock_kev_task_start = mocker.patch.object(bot.check_cisa_kev_feed, 'start')
+    mock_stats_task_start = mocker.patch.object(bot.send_stats_to_webapp, 'start')
+    # Mock signal setup to avoid issues on different platforms
+    mocker.patch.object(bot, '_setup_signal_handlers') 
+    
+    # --- Run setup_hook ---
+    await bot.setup_hook()
+    
+    # --- Assertions ---
+    # Check dependencies initialized (mocks should have been assigned)
+    MockSession.assert_called_once() # Check session was created
+    assert bot.http_session is not None
+    MockNvdClient.assert_called_once() 
+    assert bot.nvd_client is not None
+    MockDB.assert_called_once()
+    assert bot.db is not None
+    MockKevClient.assert_called_once()
+    assert bot.cisa_kev_client is not None
+    MockMonitor.assert_called_once()
+    assert bot.cve_monitor is not None
+    
+    # Check extensions loaded
+    expected_extensions = ['kevvy.cogs.kev_commands', 'kevvy.cogs.cve_lookup']
+    assert mock_load.await_count == len(expected_extensions)
+    mock_load.assert_has_awaits([call(ext) for ext in expected_extensions])
+    assert bot.loaded_cogs == expected_extensions
+    assert not bot.failed_cogs
+    
+    # Check signal handlers setup
+    bot._setup_signal_handlers.assert_called_once()
+    
+    # Check commands synced
+    mock_sync.assert_awaited_once()
+    
+    # Check tasks started
+    mock_kev_task_start.assert_called_once()
+    mock_stats_task_start.assert_called_once()
+
+@patch('kevvy.bot.VulnCheckClient') 
+@patch('kevvy.bot.NVDClient')
+@patch('kevvy.bot.KEVConfigDB')
+@patch('kevvy.bot.CisaKevClient')
+@patch('kevvy.bot.CVEMonitor')
+@patch('kevvy.bot.aiohttp.ClientSession') 
+@pytest.mark.asyncio
+async def test_setup_hook_extension_load_error(
+    MockSession, MockMonitor, MockKevClient, MockDB, MockNvdClient, MockVulnCheck, mocker, caplog
+):
+    """Test setup_hook handling commands.ExtensionError during load_extension."""
+    bot = SecurityBot(nvd_api_key=None, vulncheck_api_token=None)
+    
+    failing_extension = 'kevvy.cogs.cve_lookup'
+    load_error = commands.ExtensionFailed(failing_extension, Exception("Cog init failed"))
+    
+    # Mock load_extension to raise error for one specific extension
+    async def mock_load_side_effect(extension):
+        if extension == failing_extension:
+            raise load_error
+        # No else needed, just don't raise for successful ones
+        # The actual setup_hook will append to bot.loaded_cogs
+            
+    mock_load = mocker.patch.object(bot, 'load_extension', side_effect=mock_load_side_effect)
+    mock_sync = mocker.patch.object(bot.tree, 'sync', new_callable=AsyncMock)
+    mock_kev_task_start = mocker.patch.object(bot.check_cisa_kev_feed, 'start')
+    mock_stats_task_start = mocker.patch.object(bot.send_stats_to_webapp, 'start')
+    mocker.patch.object(bot, '_setup_signal_handlers') 
+
+    # --- Run setup_hook ---
+    with caplog.at_level(logging.ERROR):
+        await bot.setup_hook()
+        
+    # --- Assertions ---
+    # Check initialization happened
+    assert bot.http_session is not None
+    assert bot.db is not None
+    
+    # Check load was attempted for all
+    expected_extensions = ['kevvy.cogs.kev_commands', 'kevvy.cogs.cve_lookup']
+    assert mock_load.call_count == len(expected_extensions) 
+    
+    # Check loaded/failed lists are correct
+    assert bot.loaded_cogs == [ext for ext in expected_extensions if ext != failing_extension]
+    assert len(bot.failed_cogs) == 1
+    assert failing_extension in bot.failed_cogs[0] # Check the name is part of the string
+    assert "Load Error" in bot.failed_cogs[0] # Check reason
+    assert f"Failed to load extension {failing_extension}" in caplog.text
+    
+    # Check sync and task start still happened
+    mock_sync.assert_awaited_once()
+    mock_kev_task_start.assert_called_once()
+    mock_stats_task_start.assert_called_once()
+
+@patch('kevvy.bot.VulnCheckClient') 
+@patch('kevvy.bot.NVDClient')
+@patch('kevvy.bot.KEVConfigDB')
+@patch('kevvy.bot.CisaKevClient')
+@patch('kevvy.bot.CVEMonitor')
+@patch('kevvy.bot.aiohttp.ClientSession') 
+@pytest.mark.asyncio
+async def test_setup_hook_command_sync_error(
+    MockSession, MockMonitor, MockKevClient, MockDB, MockNvdClient, MockVulnCheck, mocker, caplog
+):
+    """Test setup_hook handling an error during tree.sync()."""
+    bot = SecurityBot(nvd_api_key=None, vulncheck_api_token=None)
+    
+    sync_error = discord.HTTPException(MagicMock(), "Sync Failed")
+    
+    # Mock methods called by setup_hook
+    mock_load = mocker.patch.object(bot, 'load_extension', new_callable=AsyncMock)
+    # Mock sync to raise an error
+    mock_sync = mocker.patch.object(bot.tree, 'sync', side_effect=sync_error)
+    mock_kev_task_start = mocker.patch.object(bot.check_cisa_kev_feed, 'start')
+    mock_stats_task_start = mocker.patch.object(bot.send_stats_to_webapp, 'start')
+    mocker.patch.object(bot, '_setup_signal_handlers') 
+
+    # --- Run setup_hook ---
+    with caplog.at_level(logging.ERROR):
+        await bot.setup_hook()
+        
+    # --- Assertions ---
+    # Check initialization and loading still happened
+    assert bot.http_session is not None
+    assert bot.db is not None
+    assert mock_load.await_count > 0 # Check load was attempted
+    assert not bot.failed_cogs # Loading succeeded
+    
+    # Check sync was attempted and failed
+    mock_sync.assert_awaited_once()
+    assert "Failed to sync application commands" in caplog.text
+    
+    # Check tasks still started
+    mock_kev_task_start.assert_called_once()
+    mock_stats_task_start.assert_called_once()
 
 # TODO: Add more tests based on PRD_TESTS.md Section 6.1:
 # - Message with multiple CVEs (below and above MAX_EMBEDS_PER_MESSAGE)
