@@ -11,7 +11,7 @@ from .db_utils import KEVConfigDB
 import logging
 import os
 import asyncio
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from collections import defaultdict
 from .discord_log_handler import DiscordLogHandler
 import datetime
@@ -62,6 +62,9 @@ class SecurityBot(commands.Bot):
 
         self.vulncheck_client = VulnCheckClient(api_key=vulncheck_api_token)
         self.last_stats_sent_time: Optional[datetime.datetime] = None
+        # Add cache for recently processed CVEs in channels
+        self.recently_processed_cves: Dict[Tuple[int, str], datetime.datetime] = {}
+        self.RECENT_CVE_CACHE_SECONDS = 20 # Cache duration in seconds
 
     async def _handle_signal(self, sig: signal.Signals):
         """Handles received OS signals for graceful shutdown."""
@@ -228,7 +231,7 @@ class SecurityBot(commands.Bot):
                                 await target_channel.send(embed=embed)
                                 alerts_sent_this_run += 1
                                 self.timestamp_last_kev_alert_sent = datetime.datetime.now(datetime.timezone.utc) # Update timestamp
-                                await asyncio.sleep(0.75)
+                                await asyncio.sleep(1.5) # Increase sleep duration
                             except discord.Forbidden:
                                  logger.error(f"Missing permissions to send message in CISA KEV channel {channel_id} (Guild: {guild_id})")
                                  break
@@ -442,6 +445,18 @@ class SecurityBot(commands.Bot):
         # Process unique CVEs found
         unique_cves = sorted(list(set(potential_cves)), key=lambda x: potential_cves.index(x))
         processed_count = 0
+        now = datetime.datetime.now(datetime.timezone.utc)
+        cache_expiry_time = now - datetime.timedelta(seconds=self.RECENT_CVE_CACHE_SECONDS)
+
+        # Opportunistic Cache Cleanup (Remove expired entries)
+        # Doing this less frequently might be better, but simple for now
+        expired_keys = [key for key, ts in self.recently_processed_cves.items() if ts < cache_expiry_time]
+        for key in expired_keys:
+            try:
+                del self.recently_processed_cves[key]
+                logger.debug(f"Removed expired CVE cache entry: {key}")
+            except KeyError:
+                pass # Ignore if already deleted by concurrent process
 
         for cve_id in unique_cves:
             if processed_count >= MAX_EMBEDS_PER_MESSAGE:
@@ -453,7 +468,16 @@ class SecurityBot(commands.Bot):
                 break # Stop processing this message
 
             try:
-                cve_id_upper = cve_id.upper() # Convert to uppercase for API lookup
+                cve_id_upper = cve_id.upper() # Convert to uppercase
+                cache_key = (channel_id, cve_id_upper)
+
+                # --- Cache Check --- 
+                last_processed_time = self.recently_processed_cves.get(cache_key)
+                if last_processed_time and last_processed_time > cache_expiry_time:
+                    logger.debug(f"Skipping recently processed CVE {cve_id_upper} in channel {channel_id} (Cached at {last_processed_time}).")
+                    continue # Skip this CVE, already processed recently
+                # --- End Cache Check ---
+
                 # Fetch CVE data (this handles VulnCheck/NVD)
                 cve_data = await self.cve_monitor.get_cve_data(cve_id_upper)
                 if not cve_data:
@@ -479,6 +503,12 @@ class SecurityBot(commands.Bot):
                 await message.channel.send(embed=cve_embed)
                 processed_count += 1
                 logger.info(f"Sent alert for {cve_id_upper} (Severity: {cve_severity_str}, Verbose: {is_verbose}) from message {message.id}.")
+                
+                # --- Update Cache on Success --- 
+                self.recently_processed_cves[cache_key] = now 
+                # --- End Update Cache ---
+                
+                await asyncio.sleep(1.0) # Sleep AFTER sending CVE embed
 
                 # Check KEV status
                 kev_status = await self.cve_monitor.check_kev(cve_id_upper) # Use uppercase ID for KEV check too
@@ -486,8 +516,8 @@ class SecurityBot(commands.Bot):
                     kev_embed = self.cve_monitor.create_kev_status_embed(cve_id_upper, kev_status, verbose=is_verbose) # Use uppercase ID for KEV embed
                     await message.channel.send(embed=kev_embed)
                     logger.info(f"Sent KEV status for {cve_id_upper} (Verbose: {is_verbose}) from message {message.id}.")
-
-                await asyncio.sleep(0.5) # Short delay between embeds for rate limits
+                    # No need to update cache again here, CVE embed send was enough
+                    await asyncio.sleep(1.0) # Sleep AFTER sending KEV embed
 
             except discord.Forbidden:
                  logger.error(f"Missing permissions to send message/embed in channel {channel_id} (Guild: {guild_id}) for CVE {cve_id_upper}.")
