@@ -120,7 +120,6 @@ class CVELookupCog(commands.Cog):
             embed.add_field(name="Product", value=kev_entry.get('product', 'N/A'), inline=True)
             embed.add_field(name="Known Ransomware Use", value=kev_entry.get('knownRansomwareCampaignUse', 'N/A'), inline=True)
             embed.add_field(name="Links", value=f"[NVD]({nvd_link}) | [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog)", inline=False)
-            embed.set_footer(text="Source: CISA KEV Catalog")
             embed.timestamp = discord.utils.utcnow()
         else:
             # Standard KEV Embed (Concise)

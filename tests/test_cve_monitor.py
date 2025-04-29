@@ -159,11 +159,3 @@ async def test_create_cve_embed_with_kev_verbose(monitor: CVEMonitor, mock_kev_c
     # Check CVE embed (should be verbose)
     assert len(embed.fields) >= 6
     assert embed.description == SAMPLE_CVE_DATA['description']
-
-    # KEV check/embed creation is now separate, remove checks for KEV embed here
-    # # Check KEV embed (should be detailed)
-    # kev_embed = embeds[1]
-    # assert kev_embed.title == f"🚨 CISA KEV Alert: {SAMPLE_KEV_DATA['cveID']}"
-    # assert kev_embed.description == SAMPLE_KEV_DATA['shortDescription']
-    # assert len(kev_embed.fields) >= 6 # Detailed KEV has multiple fields
-    # assert kev_embed.footer.text == "Source: CISA KEV Catalog" 

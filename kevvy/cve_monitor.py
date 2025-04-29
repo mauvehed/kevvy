@@ -197,8 +197,7 @@ class CVEMonitor:
                 color=discord.Color.dark_red()
             )
             # No fields in terse mode
-            
-        embed.set_footer(text="Source: CISA KEV Catalog")
+        
         embed.timestamp = discord.utils.utcnow() # Use discord utils for timestamp
         return embed
 
