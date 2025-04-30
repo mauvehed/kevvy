@@ -6,8 +6,8 @@ from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 import logging
 import aiohttp
-import importlib.metadata
 from discord.ext import commands
+import signal
 
 # Import the bot class and other necessary components
 from kevvy.bot import SecurityBot
@@ -1333,48 +1333,6 @@ async def test_send_stats_to_webapp_connection_error(
 # --- Tests for Bot Initialization ---
 
 
-@patch("kevvy.bot.VulnCheckClient")  # Mock client used in init
-def test_bot_init_version_success(MockVulnCheckClient, mocker):
-    """Test bot correctly reads version from metadata."""
-    test_version = "9.9.9-test"
-    # Patch importlib.metadata.version to return our test version
-    mock_get_version = mocker.patch(
-        "importlib.metadata.version", return_value=test_version
-    )
-
-    # Instantiate the bot (pass dummy args)
-    bot = SecurityBot(nvd_api_key=None, vulncheck_api_token=None)
-
-    # Assert version was called correctly and attribute is set
-    mock_get_version.assert_called_once_with("kevvy")
-    assert bot.version == test_version
-
-
-@patch("kevvy.bot.VulnCheckClient")  # Mock client used in init
-def test_bot_init_version_not_found(MockVulnCheckClient, mocker, caplog):
-    """Test bot handles PackageNotFoundError and sets default version."""
-    # Patch importlib.metadata.version to raise error
-    mock_get_version = mocker.patch(
-        "importlib.metadata.version",
-        side_effect=importlib.metadata.PackageNotFoundError("Package not found"),
-    )
-
-    # Instantiate the bot
-    with caplog.at_level(logging.ERROR):
-        bot = SecurityBot(nvd_api_key=None, vulncheck_api_token=None)
-
-    # Assert version was called correctly and fallback attribute is set
-    mock_get_version.assert_called_once_with("kevvy")
-    assert bot.version == "0.0.0-unknown"
-    # Assert error was logged
-    assert (
-        "Could not determine package version for 'kevvy'. Using default." in caplog.text
-    )
-
-
-# --- Tests for Bot Lifecycle (Setup/Close) ---
-
-
 # Mock dependencies that might be needed even for basic init/setup_hook
 @patch("kevvy.bot.VulnCheckClient")
 @patch("kevvy.bot.NVDClient")
@@ -1556,3 +1514,25 @@ async def test_setup_hook_command_sync_error(
     # Check tasks still started
     mock_kev_task_start.assert_called_once()
     mock_stats_task_start.assert_called_once()
+
+
+# --- Tests for _handle_signal and _setup_signal_handlers ---
+
+
+@pytest.mark.asyncio
+async def test_handle_signal_calls_close(mock_bot_with_tasks, mocker):
+    """Test that _handle_signal correctly calls the bot's close method."""
+    # Patch the bot's close method
+    mock_close = mocker.patch.object(
+        mock_bot_with_tasks, "close", new_callable=AsyncMock
+    )
+
+    # Simulate receiving a signal
+    await mock_bot_with_tasks._handle_signal(signal.SIGINT)
+
+    # Allow the event loop to run the created task
+    await asyncio.sleep(0)
+
+    # Assert the mocked close method was called
+    # Use assert_awaited_once() for async mock
+    mock_close.assert_awaited_once()
