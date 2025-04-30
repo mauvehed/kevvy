@@ -1,8 +1,9 @@
 import aiohttp
 import asyncio
 import logging
+import json
 
-from typing import Optional, Dict, List, Any
+from typing import Optional, Dict, List, Any, Tuple
 from datetime import datetime, timedelta, timezone
 from aiohttp import ClientTimeout
 
@@ -33,58 +34,74 @@ class NVDClient:
         else:
             self.retry_delay = self.RETRY_DELAY_PUBLIC
 
+    async def _execute_get_request(self, params: Dict[str, Any]) -> Tuple[int, Dict[str, Any] | None]:
+        """Executes the aiohttp GET request and returns status and JSON data."""
+        request_timeout = ClientTimeout(total=self.REQUEST_TIMEOUT)
+        try:
+            logger.debug(f"Executing GET {self.BASE_URL} with params: {params}")
+            async with self.session.get(
+                self.BASE_URL,
+                params=params,
+                headers=self.headers,
+                timeout=request_timeout
+            ) as response:
+                status = response.status
+                # Attempt to read JSON regardless of status for potential error details
+                try:
+                    data = await response.json()
+                except (aiohttp.ContentTypeError, json.JSONDecodeError):
+                     logger.warning(f"Non-JSON response received from NVD (Status: {status}).")
+                     data = None # Treat as no data
+                return status, data
+        except asyncio.TimeoutError as e:
+             logger.warning(f"Timeout during GET request to NVD: {params}")
+             raise # Re-raise timeout
+        except aiohttp.ClientError as e:
+            logger.warning(f"ClientError during GET request to NVD: {params} - {e}")
+            raise # Re-raise client error
+        except Exception as e:
+             logger.error(f"Unexpected error during GET execution for NVD: {e}", exc_info=True)
+             raise # Re-raise other errors
+
     async def _make_request(self, params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Makes a request to the NVD API with retry logic."""
         retries = 0
-        request_timeout = ClientTimeout(total=self.REQUEST_TIMEOUT)
         last_status_code = None
 
         while retries <= self.MAX_RETRIES:
             last_status_code = None
             try:
-                logger.debug(f"Querying NVD API with params: {params}")
-                async with self.session.get(
-                    self.BASE_URL,
-                    params=params,
-                    headers=self.headers,
-                    timeout=request_timeout
-                ) as response:
-                    last_status_code = response.status
-                    if response.status == 200:
-                        return await response.json()
-                    elif response.status in [403, 429, 503, 504] and retries < self.MAX_RETRIES:
-                        retries += 1
-                        logger.warning(f"NVD API error (status {response.status}). Retrying in {self.retry_delay}s... ({retries}/{self.MAX_RETRIES})")
-                        await asyncio.sleep(self.retry_delay)
-                        continue
-                    else:
-                        logger.error(f"HTTP error fetching from NVD: {response.status} {response.reason}")
-                        if response.status in [403, 429]:
-                            raise NVDRateLimitError(f"NVD API rate limit hit (Status: {response.status})")
-                        return None
-            except asyncio.TimeoutError:
-                logger.warning("Timeout fetching from NVD.")
-                if retries < self.MAX_RETRIES:
+                # Call the new helper method
+                status_code, data = await self._execute_get_request(params)
+                last_status_code = status_code
+
+                if status_code == 200:
+                    return data # Return the JSON data on success
+                elif status_code in [403, 429, 503, 504] and retries < self.MAX_RETRIES:
                     retries += 1
-                    logger.warning(f"Retrying NVD fetch after timeout... ({retries}/{self.MAX_RETRIES})")
+                    logger.warning(f"NVD API retryable error (status {status_code}). Retrying in {self.retry_delay}s... ({retries}/{self.MAX_RETRIES})")
                     await asyncio.sleep(self.retry_delay)
                     continue
                 else:
-                    logger.error(f"Timeout fetching from NVD after {self.MAX_RETRIES} retries.")
-                    return None
-            except aiohttp.ClientError as e:
-                logger.warning(f"Network/Client error fetching NVD ({e}).")
-                if retries < self.MAX_RETRIES:
-                    retries += 1
-                    logger.warning(f"Retrying... ({retries}/{self.MAX_RETRIES})")
-                    await asyncio.sleep(self.retry_delay)
-                    continue
-                else:
-                    logger.error(f"Network/Client error fetching from NVD after {self.MAX_RETRIES} retries: {e}", exc_info=True)
-                    return None
+                    logger.error(f"HTTP error fetching from NVD: {status_code}")
+                    if status_code in [403, 429]:
+                        raise NVDRateLimitError(f"NVD API rate limit hit (Status: {status_code})")
+                    return None # Non-retryable HTTP error or final retry failed
+            except (asyncio.TimeoutError, aiohttp.ClientError) as e:
+                 # Catch errors raised by _execute_get_request
+                 logger.warning(f"Request execution failed ({type(e).__name__}).")
+                 if retries < self.MAX_RETRIES:
+                     retries += 1
+                     logger.warning(f"Retrying... ({retries}/{self.MAX_RETRIES})")
+                     await asyncio.sleep(self.retry_delay)
+                     continue
+                 else:
+                     logger.error(f"Request failed after {self.MAX_RETRIES} retries: {e}")
+                     return None
             except Exception as e:
-                logger.error(f"An unexpected error occurred during NVD request: {e}", exc_info=True)
-                return None
+                # Catch unexpected errors from _execute_get_request or this loop
+                logger.error(f"An unexpected error occurred during NVD request processing: {e}", exc_info=True)
+                return None # Stop processing on unexpected errors
 
         logger.error(f"Failed to fetch from NVD after {self.MAX_RETRIES} retries.")
         if last_status_code in [403, 429]:

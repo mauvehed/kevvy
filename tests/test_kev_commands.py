@@ -318,5 +318,3 @@ async def test_latest_range_error(kev_cog: KEVCog, mock_interaction: AsyncMock):
     mock_interaction.response.send_message.assert_called_once()
     # We can check the *content* of the call if the exact message is known for RangeCheckFailure
     # For now, just checking it sent *something* is a start.
-
-# TODO: Add permission tests for /kev feed commands (using a helper) 
