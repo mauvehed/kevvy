@@ -210,6 +210,9 @@ class SecurityBot(commands.Bot):
         self.check_cisa_kev_feed.start()
         self.send_stats_to_webapp.start()
 
+        # Setup Discord logging handler (it will be activated in on_ready)
+        await self._setup_discord_logging()
+
     async def _post_stats(
         self, url: str, payload: dict, headers: dict
     ) -> Tuple[int, str]:
@@ -628,17 +631,23 @@ class SecurityBot(commands.Bot):
         # Activate Discord logging handler if prepared
         if self.discord_log_handler:
             root_logger = logging.getLogger()
-            # Check if handler already exists to prevent duplicates on reconnect
+            # Check if handler already exists
             handler_exists = any(
                 h is self.discord_log_handler for h in root_logger.handlers
             )
             if not handler_exists:
+                # Add a small delay before activating to potentially space out initial logs
+                await asyncio.sleep(5)  # Add 5-second delay
                 root_logger.addHandler(self.discord_log_handler)
                 logger.info(
                     f"Discord logging handler activated for channel ID {self.discord_log_handler.channel_id}."
                 )
             else:
                 logger.debug("Discord logging handler already active.")
+        else:
+            logger.warning(
+                "Discord log handler was not prepared (self.discord_log_handler is None), cannot activate."
+            )
 
     async def on_guild_join(self, guild: discord.Guild):
         """Called when the bot joins a new guild."""
@@ -1024,3 +1033,9 @@ class SecurityBot(commands.Bot):
             logging.info(
                 "LOGGING_CHANNEL_ID not set, skipping Discord log handler setup."
             )
+
+        # Add final log regardless of success/failure in preparing
+        log_status = "SET" if self.discord_log_handler else "NOT SET"
+        logging.debug(
+            f"_setup_discord_logging finished. self.discord_log_handler is {log_status}."
+        )
