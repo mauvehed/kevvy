@@ -1,6 +1,5 @@
 import logging
 import aiohttp
-import asyncio
 from aiohttp import ClientTimeout
 from typing import Set, List, Dict, Any, Optional
 from .db_utils import KEVConfigDB
@@ -8,14 +7,16 @@ import time
 
 logger = logging.getLogger(__name__)
 
+
 class CisaKevClient:
     """
     Client to fetch and process the CISA Known Exploited Vulnerabilities (KEV) catalog.
     Monitors the KEV JSON feed for new additions.
     """
+
     KEV_CATALOG_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
-    HEADERS = {'User-Agent': 'kevvy-bot/1.0'}
-    CACHE_DURATION_SECONDS = 300 # Cache KEV catalog for 5 minutes
+    HEADERS = {"User-Agent": "kevvy-bot/1.0"}
+    CACHE_DURATION_SECONDS = 300  # Cache KEV catalog for 5 minutes
 
     def __init__(self, session: aiohttp.ClientSession, db: KEVConfigDB):
         """
@@ -36,20 +37,22 @@ class CisaKevClient:
         request_timeout = ClientTimeout(total=30)
         try:
             async with self.session.get(
-                self.KEV_CATALOG_URL,
-                headers=self.HEADERS,
-                timeout=request_timeout
+                self.KEV_CATALOG_URL, headers=self.HEADERS, timeout=request_timeout
             ) as response:
                 response.raise_for_status()
-                if response.content_type == 'application/json':
+                if response.content_type == "application/json":
                     return await response.json()
 
-                logger.error(f"Unexpected content type received from CISA KEV feed: {response.content_type}")
+                logger.error(
+                    f"Unexpected content type received from CISA KEV feed: {response.content_type}"
+                )
                 try:
                     logger.warning("Attempting to parse non-JSON response as JSON...")
                     return await response.json()
                 except Exception:
-                    logger.error("Failed to decode CISA KEV response even after content-type mismatch.")
+                    logger.error(
+                        "Failed to decode CISA KEV response even after content-type mismatch."
+                    )
                     return None
         except aiohttp.ClientError as e:
             logger.error(f"HTTP error fetching CISA KEV data: {e}")
@@ -61,29 +64,33 @@ class CisaKevClient:
     async def get_full_kev_catalog(self) -> Optional[List[Dict[str, Any]]]:
         """Fetches the full KEV catalog, using a time-based cache."""
         now = time.monotonic()
-        if self._cache is not None and (now - self._cache_time < self.CACHE_DURATION_SECONDS):
+        if self._cache is not None and (
+            now - self._cache_time < self.CACHE_DURATION_SECONDS
+        ):
             logger.debug("Returning cached KEV catalog.")
             return self._cache
 
         logger.debug("Fetching fresh KEV catalog data.")
         data = await self._fetch_kev_data()
-        if not data or 'vulnerabilities' not in data:
+        if not data or "vulnerabilities" not in data:
             logger.warning("Could not fetch or parse CISA KEV data for full catalog.")
             # Return old cache if fetch fails but cache exists
             return self._cache if self._cache is not None else None
 
-        fetched_vulns = data.get('vulnerabilities', [])
+        fetched_vulns = data.get("vulnerabilities", [])
         self._cache = fetched_vulns
         self._cache_time = now
         # Check before len call
-        cache_len = len(self._cache) # self._cache assigned above, should not be None here, but check anyway for safety?
-        # Let's be explicit: 
+        cache_len = len(
+            self._cache
+        )  # self._cache assigned above, should not be None here, but check anyway for safety?
+        # Let's be explicit:
         if self._cache is not None:
-             cache_len = len(self._cache)
-             logger.info(f"Fetched and cached {cache_len} KEV entries.")
+            cache_len = len(self._cache)
+            logger.info(f"Fetched and cached {cache_len} KEV entries.")
         else:
-             logger.warning("Fetched KEV data but cache ended up None unexpectedly.")
-             # This case should ideally not happen if data.get worked
+            logger.warning("Fetched KEV data but cache ended up None unexpectedly.")
+            # This case should ideally not happen if data.get worked
 
         return self._cache
 
@@ -91,10 +98,10 @@ class CisaKevClient:
         """
         Fetches the KEV entry for a specific CVE if it exists in the catalog.
         Uses the cached catalog if available.
-        
+
         Args:
             cve_id: The CVE ID to look up (e.g., 'CVE-2021-44228')
-            
+
         Returns:
             Optional[Dict[str, Any]]: The KEV entry if found, None otherwise
         """
@@ -103,7 +110,7 @@ class CisaKevClient:
             logger.warning("Could not get KEV catalog while checking for specific CVE.")
             return None
 
-        return next((vuln for vuln in catalog if vuln.get('cveID') == cve_id), None)
+        return next((vuln for vuln in catalog if vuln.get("cveID") == cve_id), None)
 
     async def get_new_kev_entries(self) -> List[Dict[str, Any]]:
         """
@@ -119,22 +126,28 @@ class CisaKevClient:
             return []
 
         # Get all potential IDs, including None
-        all_catalog_ids: Set[Optional[str]] = {vuln.get('cveID') for vuln in catalog}
+        all_catalog_ids: Set[Optional[str]] = {vuln.get("cveID") for vuln in catalog}
         # Filter out None values explicitly
-        current_kev_ids: Set[str] = {cid for cid in all_catalog_ids if isinstance(cid, str)}
+        current_kev_ids: Set[str] = {
+            cid for cid in all_catalog_ids if isinstance(cid, str)
+        }
 
         new_vuln_details = []
 
         if new_ids := current_kev_ids - self.seen_kev_ids:
-            logger.info(f"Found {len(new_ids)} new CISA KEV entries: {', '.join(sorted(list(new_ids)))}")
+            logger.info(
+                f"Found {len(new_ids)} new CISA KEV entries: {', '.join(sorted(list(new_ids)))}"
+            )
 
             try:
                 self.db.add_seen_kevs(new_ids)
             except Exception as e:
-                logger.error(f"Failed to persist new KEV IDs to database: {e}", exc_info=True)
+                logger.error(
+                    f"Failed to persist new KEV IDs to database: {e}", exc_info=True
+                )
 
             for vuln in catalog:
-                cve_id = vuln.get('cveID')
+                cve_id = vuln.get("cveID")
                 # Check cve_id is not None before adding
                 if cve_id and cve_id in new_ids:
                     new_vuln_details.append(vuln)

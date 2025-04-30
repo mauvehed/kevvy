@@ -1,53 +1,61 @@
 # Kevvy Command Structure PRD
 
 ## 1. Command Overview
+
 This PRD defines the structure and behavior of Kevvy's security-related commands, focusing on CVE and CISA KEV catalog monitoring and lookups within Discord.
 
 ## 2. Core Features
 
 ### 2.1 Automatic Message Scanning (`on_message`)
+
 **Purpose:** Passively scan messages in configured channels for CVE IDs and provide relevant information.
 **Permission:** Relies on channel configurations set by users with "Manage Server" permission.
 **Behavior:**
+
 - Listens to messages in guilds where the bot is present.
 - Ignores messages from bots (including itself) and messages in DMs.
 - Uses regex (`CVE-\d{4}-\d{4,}`) to detect potential CVE IDs.
 - For each detected CVE ID (up to a limit per message):
-    - Checks if CVE monitoring is enabled globally for the guild (`cve_guild_config.cve_monitoring_enabled`).
-    - Checks if the specific channel is configured for monitoring (`cve_channel_configs` table and `enabled=True`).
-    - If global monitoring is enabled AND the channel is configured/enabled:
-        - Fetches CVE details (NVD).
-        - Checks if the CVE's severity meets the *globally* configured threshold (`cve_guild_config.severity_threshold`).
-        - Determines the appropriate verbosity (checking channel override from `cve_channel_configs.verbose_mode` then global setting from `cve_guild_config.verbose_mode`).
-        - Creates a CVE information embed (standard or verbose).
-        - Checks if the CVE is present in the CISA KEV catalog.
-        - Sends the CVE embed to the channel, followed by a short delay (`asyncio.sleep`).
-        - If in KEV, sends a separate KEV information embed, followed by a short delay (`asyncio.sleep`).
+  - Checks if CVE monitoring is enabled globally for the guild (`cve_guild_config.cve_monitoring_enabled`).
+  - Checks if the specific channel is configured for monitoring (`cve_channel_configs` table and `enabled=True`).
+  - If global monitoring is enabled AND the channel is configured/enabled:
+    - Fetches CVE details (NVD).
+    - Checks if the CVE's severity meets the _globally_ configured threshold (`cve_guild_config.severity_threshold`).
+    - Determines the appropriate verbosity (checking channel override from `cve_channel_configs.verbose_mode` then global setting from `cve_guild_config.verbose_mode`).
+    - Creates a CVE information embed (standard or verbose).
+    - Checks if the CVE is present in the CISA KEV catalog.
+    - Sends the CVE embed to the channel, followed by a short delay (`asyncio.sleep`).
+    - If in KEV, sends a separate KEV information embed, followed by a short delay (`asyncio.sleep`).
 - Handles potential errors during API lookups gracefully.
 
 ### 2.2 `/cve` Group
+
 **Purpose:** Manage CVE lookups and monitoring configuration.
 **Base Permission:** None (public access for lookup)
 
 #### 2.2.1 `/cve lookup <cve_id>`
+
 **Purpose:** Look up detailed information about a specific CVE.
 **Parameters:**
+
 - `cve_id`: The CVE identifier (e.g., "CVE-2024-1234")
-**Behavior:**
+  **Behavior:**
 - Searches NVD for the CVE ID.
 - Displays comprehensive CVE information in a standard embed format.
 - Includes a check and notes if the CVE is present in the CISA KEV catalog.
-**Response Format (Embed):**
+  **Response Format (Embed):**
 - Title: CVE ID
 - URL: Link to NVD page
 - Description: CVE description text.
 - Fields: CVSS Score, Severity, Vector, CWEs, Published Date, Modified Date, References, KEV Status (if applicable).
 
 #### 2.2.2 `/cve channel` Group
+
 **Purpose:** Configure channels for automatic CVE scanning (`on_message`) and manage global scanning status.
 **Permission:** Requires "Manage Server" permission
 
 ##### Subcommands:
+
 - `/cve channel add <channel>`: Enable automatic CVE scanning for messages in the specified channel. Also ensures global monitoring is enabled for the server.
 - `/cve channel remove <channel>`: Remove the configuration for the specified channel, stopping automatic scans there.
 - `/cve channel list`: Lists all channels currently configured and enabled for automatic CVE scanning.
@@ -56,33 +64,39 @@ This PRD defines the structure and behavior of Kevvy's security-related commands
 - `/cve channel disable_global`: Disables automatic CVE message scanning globally for the entire server. No messages will be scanned in any channel.
 
 #### 2.2.3 `/cve latest`
+
 **Purpose:** Display the most recent CVEs published on NVD.
 **Parameters:**
+
 - `count`: (Optional) Number of CVEs to display (default: 5, max: 10)
 - `days`: (Optional) Look back period in days (default: 7, max: 30)
 - `severity`: (Optional) Filter by minimum severity level (`critical`, `high`, `medium`, `low`).
 - `in_kev`: (Optional, Boolean) Show only CVEs also present in the KEV catalog.
-**Behavior:**
+  **Behavior:**
 - Fetches recent CVEs from NVD based on publication date range (`days` parameter).
 - Displays in chronological order (most recent first).
 - Includes basic information (ID, Score, Title excerpt, Published date).
 - Supports filtering by severity and KEV status.
-**Response Format (Embed):**
+  **Response Format (Embed):**
 - Title: Includes date range and any filters used.
 - Description: List of CVEs matching criteria.
 
 **Future Enhancements:**
+
 - More advanced filtering (vendor, product, vulnerability type, exploit status).
 
 #### 2.2.4 `/verbose` Group (Top-Level)
-**Purpose:** Configure global and per-channel verbosity of *automatic* CVE alerts triggered by messages (`on_message`).
+
+**Purpose:** Configure global and per-channel verbosity of _automatic_ CVE alerts triggered by messages (`on_message`).
 **Permission:** Requires "Manage Server" permission
 
 **Default Behavior:**
+
 - The default global setting is **non-verbose** (standard format).
 - Channels inherit the global setting unless overridden.
 
 **Subcommands:**
+
 - `/verbose enable_global`: Set the default alert format to verbose globally.
 - `/verbose disable_global`: Set the default alert format to standard (non-verbose) globally.
 - `/verbose set <channel> <verbosity: True|False>`: Set a verbosity override (verbose/standard) for a specific channel.
@@ -91,67 +105,80 @@ This PRD defines the structure and behavior of Kevvy's security-related commands
 - `/verbose status [channel]`: Show the current global verbosity setting and any channel-specific overrides. If a channel is specified, shows the effective setting for that channel.
 
 **Verbose Mode Differences (Automatic `on_message` Responses):**
+
 - **Standard Mode:**
-    - **CVE Embed:** Shows minimal info: CVE ID, Title link, CVSS Score.
-    - **KEV Embed (if applicable):** Shows minimal info: Confirmation, NVD link.
+  - **CVE Embed:** Shows minimal info: CVE ID, Title link, CVSS Score.
+  - **KEV Embed (if applicable):** Shows minimal info: Confirmation, NVD link.
 - **Verbose Mode:**
-    - **CVE Embed:** Shows full details: CVE ID, Title, Full Description, CVSS Score & Vector, Dates, CWEs, References.
-    - **KEV Embed (if applicable):** Shows full KEV details.
+  - **CVE Embed:** Shows full details: CVE ID, Title, Full Description, CVSS Score & Vector, Dates, CWEs, References.
+  - **KEV Embed (if applicable):** Shows full KEV details.
 
 **Interaction:**
+
 - Per-channel settings (`/verbose set`) take precedence over the global setting.
 - `/verbose setall` overrides all existing per-channel settings.
 
 #### 2.2.5 `/cve threshold` Group
-**Purpose:** Set the minimum severity level for CVEs to trigger *automatic* alerts via `on_message`. This is a **global** setting for the server, affecting all configured channels.
+
+**Purpose:** Set the minimum severity level for CVEs to trigger _automatic_ alerts via `on_message`. This is a **global** setting for the server, affecting all configured channels.
 **Permission:** Requires "Manage Server" permission
 
 **Subcommands:**
+
 - `/cve threshold set <level>`: Set the global minimum severity level.
-    - Levels: "critical", "high", "medium", "low", "all" (default)
+  - Levels: "critical", "high", "medium", "low", "all" (default)
 - `/cve threshold view`: Display the current global threshold.
 - `/cve threshold reset`: Reset the global threshold to the default ("all").
 
 #### 2.2.6 `/cve format` Group (Future)
+
 **Purpose:** Allow servers to customize how automatic CVE alerts appear.
 **Permission:** Requires "Manage Server" permission
-*(Details omitted as it's a future feature)*
+_(Details omitted as it's a future feature)_
 
 ### 2.3 `/kev` Group
+
 **Purpose:** Manage CISA KEV catalog monitoring and lookups.
 **Base Permission:** None (public access for lookups)
 
 #### 2.3.1 `/kev feed` Group
-**Purpose:** Manage CISA KEV feed monitoring configuration (periodic checks for *new* KEV entries).
+
+**Purpose:** Manage CISA KEV feed monitoring configuration (periodic checks for _new_ KEV entries).
 **Permission:** Requires "Manage Server" permission
 
 ##### Subcommands:
-- `/kev feed enable <channel>`: Enable KEV feed alerts in the specified channel. *(Note: Currently supports only one channel per server for the feed).* Updates `kev_config` table.
+
+- `/kev feed enable <channel>`: Enable KEV feed alerts in the specified channel. _(Note: Currently supports only one channel per server for the feed)._ Updates `kev_config` table.
 - `/kev feed disable`: Disable KEV feed alerts for the server. Updates `kev_config` table.
 - `/kev feed status`: Check current KEV feed monitoring status and configured channel from `kev_config` table.
 
 #### 2.3.2 `/kev latest`
+
 **Purpose:** Display the most recent entries added to the KEV catalog.
 **Parameters:**
+
 - `count`: (Optional) Number of entries to display (default: 5, max: 10)
 - `days`: (Optional) Look back period in days based on date added to KEV (default: 30, max: 30)
 - `vendor`: (Optional) Filter by vendor name.
 - `product`: (Optional) Filter by product name.
-**Behavior:**
+  **Behavior:**
 - Fetches recent KEV entries from CISA KEV data source.
 - Displays in chronological order based on date added.
 - Includes comprehensive KEV information for each entry.
 - Supports filtering options.
-**Response Format (Embed):**
+  **Response Format (Embed):**
 - Title: Indicates date range and filters.
 - Description: List of KEV entries with details (CVE ID, Title, Vendor, Product, Date Added, Due Date, Ransomware Use).
 
 **Future Enhancements:**
+
 - Enhanced filtering (severity - requires mapping CVE severity to KEV entry, ransomware use).
 - Multiple feed channels.
 
 ## 3. Database Schema
-*(Current Schema Representation)*
+
+_(Current Schema Representation)_
+
 ```sql
 -- Stores global settings for both KEV feed and CVE on_message scanning
 CREATE TABLE IF NOT EXISTS cve_guild_config (
@@ -201,7 +228,7 @@ CREATE TABLE IF NOT EXISTS kev_latest_queries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     guild_id INTEGER,
     user_id INTEGER,
-    query_params TEXT, 
+    query_params TEXT,
     queried_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ```
@@ -209,26 +236,31 @@ CREATE TABLE IF NOT EXISTS kev_latest_queries (
 ## 4. Implementation Requirements
 
 ### 4.1 Code Structure
+
 - Use Discord.py Cogs for organizing commands (`CVELookupCog`, `KEVCog`).
 - Implement command groups (`/cve channel`, `/kev feed`, etc.).
 - Clear separation of concerns (API clients, database utilities, Cog logic).
 
 ### 4.2 Permissions & Error Handling
+
 - Apply `app_commands.checks.has_permissions(manage_guild=True)` decorator appropriately.
 - Implement robust error handling for API calls (timeouts, rate limits, invalid responses) and database operations.
 - Provide clear user feedback for success, failure, and invalid usage.
 
 ### 4.3 Database Integration (`db_utils.py`)
+
 - Use standard `sqlite3` module (or consider `aiosqlite` if intensive async DB ops needed).
 - Implement functions for all required CRUD operations based on the schema in Section 3.
 - Ensure proper handling of database connections and cursors.
 - Handle database schema creation and potential migrations (like the ones already implemented).
 
 ### 4.4 API Integration (`nvd_client.py`, `cisa_kev_client.py`)
+
 - Maintain and potentially enhance existing API client classes.
 - Implement caching strategies (e.g., in-memory with TTL) for frequently accessed data like KEV entries or recent CVEs to reduce API load.
 
 ## 5. Future Considerations / Enhancements
+
 - Per-channel severity thresholds for CVE `on_message` alerts.
 - Custom alert formatting (`/cve format`).
 - More advanced filtering for `/cve latest` and `/kev latest`.
@@ -236,12 +268,14 @@ CREATE TABLE IF NOT EXISTS kev_latest_queries (
 - Potential use of other vulnerability data sources beyond NVD.
 
 ## 6. Success Metrics
+
 - Command responsiveness and reliability.
 - User satisfaction via feedback channels.
 - Low rate of API errors or unhandled exceptions.
 - Adoption rate of configuration features (thresholds, verbosity, channel management).
 
 ## 7. Technical Considerations
+
 - Scalability as the bot joins more servers.
 - Rate limiting (Discord commands, external APIs).
 - Database performance (indexing, query optimization).

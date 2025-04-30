@@ -1,7 +1,6 @@
 import pytest
 import aiohttp
 from unittest.mock import AsyncMock
-from datetime import datetime, timezone
 
 from kevvy.nvd_client import NVDClient
 
@@ -22,8 +21,14 @@ SAMPLE_NVD_RESPONSE_DATA = {
                 "lastModified": "2024-04-28T15:30:00.000",
                 "vulnStatus": "Analyzed",
                 "descriptions": [
-                    {"lang": "en", "value": "This is a test vulnerability description."},
-                    {"lang": "es", "value": "Esta es una descripción de vulnerabilidad de prueba."}
+                    {
+                        "lang": "en",
+                        "value": "This is a test vulnerability description.",
+                    },
+                    {
+                        "lang": "es",
+                        "value": "Esta es una descripción de vulnerabilidad de prueba.",
+                    },
                 ],
                 "metrics": {
                     "cvssMetricV31": [
@@ -42,10 +47,10 @@ SAMPLE_NVD_RESPONSE_DATA = {
                                 "integrityImpact": "HIGH",
                                 "availabilityImpact": "HIGH",
                                 "baseScore": 9.8,
-                                "baseSeverity": "CRITICAL"
+                                "baseSeverity": "CRITICAL",
                             },
                             "exploitabilityScore": 3.9,
-                            "impactScore": 5.9
+                            "impactScore": 5.9,
                         }
                     ]
                 },
@@ -53,7 +58,7 @@ SAMPLE_NVD_RESPONSE_DATA = {
                     {
                         "source": "test@example.com",
                         "type": "Primary",
-                        "description": [{"lang": "en", "value": "CWE-79"}]
+                        "description": [{"lang": "en", "value": "CWE-79"}],
                     }
                 ],
                 "configurations": [],
@@ -61,34 +66,38 @@ SAMPLE_NVD_RESPONSE_DATA = {
                     {
                         "url": "http://example.com/ref1",
                         "source": "test@example.com",
-                        "tags": ["Vendor Advisory"]
+                        "tags": ["Vendor Advisory"],
                     },
-                     {
-                        "url": "http://example.com/ref2",
-                        "source": "other@example.com"
-                    }
-                ]
+                    {"url": "http://example.com/ref2", "source": "other@example.com"},
+                ],
             }
         }
-    ]
+    ],
 }
 
-@pytest.fixture(scope="session") # Add fixture decorator, scope=session is typical for constant data
+
+@pytest.fixture(
+    scope="session"
+)  # Add fixture decorator, scope=session is typical for constant data
 def SAMPLE_NVD_RESPONSE():
     """Provides the sample NVD API response data."""
     return SAMPLE_NVD_RESPONSE_DATA
+
 
 @pytest.fixture
 def mock_session():
     """Fixture for a mocked aiohttp.ClientSession."""
     session = AsyncMock(spec=aiohttp.ClientSession)
-    session.get = AsyncMock() # Mock the .get method
+    session.get = AsyncMock()  # Mock the .get method
     return session
+
 
 @pytest.fixture
 def nvd_client(mock_session):
     """Fixture for an NVDClient instance with a mocked session."""
-    client = NVDClient(session=mock_session, api_key="test-api-key") # Use API key for faster retry tests
+    client = NVDClient(
+        session=mock_session, api_key="test-api-key"
+    )  # Use API key for faster retry tests
     # Patch the internal sleep to speed up retry tests
     client._sleep = AsyncMock()
-    return client 
+    return client
