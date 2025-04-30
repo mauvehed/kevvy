@@ -100,8 +100,7 @@ Key features:
 5.  **CVE Monitoring Channel Configuration:**
     - `/cve channel add channel:<#channel>`: Enables automatic CVE scanning for messages in the specified channel. Ensures global monitoring is also enabled for the server.
     - `/cve channel remove channel:<#channel>`: Removes automatic CVE monitoring configuration for the specified channel.
-    - `/cve channel list`: Lists all channels currently configured for automatic CVE scanning.
-    - `/cve channel status`: Shows the global CVE monitoring status (enabled/disabled) and lists configured channels.
+    - `/cve channel list`: Shows the global CVE monitoring status (enabled/disabled) and lists channels configured for scanning.
     - `/cve channel enable_global`: Enables automatic CVE message scanning globally for the server (channels still need to be added via `/cve channel add` to be monitored).
     - `/cve channel disable_global`: Disables automatic CVE message scanning globally for the server. No messages will be scanned in any channel.
 6.  **Alert Verbosity Configuration:**

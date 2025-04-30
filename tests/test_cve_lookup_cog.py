@@ -120,8 +120,8 @@ async def test_cve_lookup_success_nvd(
 
         # --- Act ---
         await cve_lookup_cog.lookup_subcommand.callback(
-            cve_lookup_cog, mock_interaction, test_cve_id
-        )
+            cve_lookup_cog, mock_interaction, cve_id=test_cve_id
+        )  # type: ignore
 
         # --- Assert ---
         # Check interaction was deferred
@@ -164,8 +164,8 @@ async def test_cve_lookup_nvd_fail(cve_lookup_cog: CVELookupCog, mock_bot: Magic
 
         # --- Act ---
         await cve_lookup_cog.lookup_subcommand.callback(
-            cve_lookup_cog, mock_interaction, test_cve_id
-        )
+            cve_lookup_cog, mock_interaction, cve_id=test_cve_id
+        )  # type: ignore
 
         # --- Assert ---
         # Check interaction was deferred
@@ -203,8 +203,8 @@ async def test_cve_lookup_invalid_format(
 
         # --- Act ---
         await cve_lookup_cog.lookup_subcommand.callback(
-            cve_lookup_cog, mock_interaction, invalid_cve_id
-        )
+            cve_lookup_cog, mock_interaction, cve_id=invalid_cve_id
+        )  # type: ignore
 
         # --- Assert ---
         # Check interaction was deferred
@@ -254,8 +254,8 @@ async def test_cve_lookup_nvd_client_unavailable(
 
         # --- Act ---
         await cve_lookup_cog.lookup_subcommand.callback(
-            cve_lookup_cog, mock_interaction, test_cve_id
-        )
+            cve_lookup_cog, mock_interaction, cve_id=test_cve_id
+        )  # type: ignore
 
         # --- Assert ---
         # Check interaction was deferred
@@ -296,8 +296,8 @@ async def test_cve_lookup_nvd_exception(
 
         # --- Act ---
         await cve_lookup_cog.lookup_subcommand.callback(
-            cve_lookup_cog, mock_interaction, test_cve_id
-        )
+            cve_lookup_cog, mock_interaction, cve_id=test_cve_id
+        )  # type: ignore
 
         # --- Assert ---
         # Check interaction was deferred
@@ -469,7 +469,7 @@ async def test_channel_list_enabled(
 
     mock_bot.get_channel.side_effect = get_channel_side_effect
 
-    await cve_lookup_cog.channels_list_command.callback(
+    await cve_lookup_cog.channels_status_command.callback(
         cve_lookup_cog, mock_interaction
     )
 
@@ -479,11 +479,21 @@ async def test_channel_list_enabled(
     # Verify get_channel was called ONLY for the enabled channel
     mock_bot.get_channel.assert_called_once_with(67890)
 
-    # Verify the response message lists only the enabled channel
-    expected_message = f"ℹ️ Channels configured for automatic CVE monitoring:\n- {mock_channel_1.mention}"
+    # Verify the response message lists only the enabled channel and includes global status
+    # Assume global is enabled by default in the mock fixture or ensure it is
+    mock_db.get_cve_guild_config.return_value = {
+        "cve_monitoring_enabled": True
+    }  # Ensure global enabled
+    expected_message = f"ℹ️ Global automatic CVE monitoring is currently **enabled** for this server.\n\nConfigured channels:\n- {mock_channel_1.mention}"
     mock_interaction.response.send_message.assert_called_once_with(
         expected_message, ephemeral=True
     )
+
+    # Check the DBs were queried
+    mock_db.get_all_cve_channel_configs_for_guild.assert_called_once_with(mock_guild_id)
+    mock_db.get_cve_guild_config.assert_called_once_with(
+        mock_guild_id
+    )  # Verify it IS called
 
 
 @pytest.mark.asyncio
@@ -496,6 +506,8 @@ async def test_channel_list_disabled(mock_bot, mock_db, mock_interaction):
     mock_db.get_all_cve_channel_configs_for_guild.return_value = [
         {"channel_id": 67890, "enabled": False}
     ]
+    # Mock guild config as enabled (since the command checks global status)
+    mock_db.get_cve_guild_config.return_value = {"cve_monitoring_enabled": True}
     # Mock bot's channel fetching (though it might not be called if channel isn't enabled)
     channel1 = MagicMock(spec=discord.TextChannel, id=67890, name="alerts")
     channel1.mention = "<#67890>"
@@ -503,18 +515,18 @@ async def test_channel_list_disabled(mock_bot, mock_db, mock_interaction):
 
     cve_lookup_cog = CVELookupCog(mock_bot)
 
-    # --- Use the correct command name ---
-    await cve_lookup_cog.channels_list_command.callback(
+    # --- Call the renamed method ---
+    await cve_lookup_cog.channels_status_command.callback(
         cve_lookup_cog, mock_interaction
     )
 
-    # Check the DB was queried
+    # Check the DBs were queried
     mock_db.get_all_cve_channel_configs_for_guild.assert_called_once_with(guild_id)
-    # --- Assert get_cve_guild_config is NOT called ---
-    mock_db.get_cve_guild_config.assert_not_called()
+    # Check that get_cve_guild_config IS called
+    mock_db.get_cve_guild_config.assert_called_once_with(guild_id)
 
-    # Check the response for no enabled channels
-    expected_message = "ℹ️ No channels are currently configured for automatic CVE monitoring. Use `/cve channels add`."
+    # Check the response for no enabled channels, including global status
+    expected_message = "ℹ️ Global automatic CVE monitoring is currently **enabled** for this server.\n\nNo specific channels are currently configured and enabled. Use `/cve channels add` to add one."
     mock_interaction.response.send_message.assert_called_once_with(
         expected_message, ephemeral=True
     )
@@ -528,21 +540,23 @@ async def test_channel_list_no_config(mock_bot, mock_db, mock_interaction):
 
     # Mock DB: No channel configs returned for the guild
     mock_db.get_all_cve_channel_configs_for_guild.return_value = []
+    # Mock guild config as enabled (since the command checks global status)
+    mock_db.get_cve_guild_config.return_value = {"cve_monitoring_enabled": True}
 
     cve_lookup_cog = CVELookupCog(mock_bot)
 
-    # --- Use the correct command name ---
-    await cve_lookup_cog.channels_list_command.callback(
+    # --- Call the renamed method ---
+    await cve_lookup_cog.channels_status_command.callback(
         cve_lookup_cog, mock_interaction
     )
 
-    # Check the DB was queried
+    # Check the DBs were queried
     mock_db.get_all_cve_channel_configs_for_guild.assert_called_once_with(guild_id)
-    # --- Assert get_cve_guild_config is NOT called ---
-    mock_db.get_cve_guild_config.assert_not_called()
+    # Check that get_cve_guild_config IS called
+    mock_db.get_cve_guild_config.assert_called_once_with(guild_id)
 
-    # Check the response for no configured channels
-    expected_message = "ℹ️ No channels are currently configured for automatic CVE monitoring. Use `/cve channels add`."
+    # Check the response for no configured channels, including global status
+    expected_message = "ℹ️ Global automatic CVE monitoring is currently **enabled** for this server.\n\nNo specific channels are currently configured and enabled. Use `/cve channels add` to add one."
     mock_interaction.response.send_message.assert_called_once_with(
         expected_message, ephemeral=True
     )

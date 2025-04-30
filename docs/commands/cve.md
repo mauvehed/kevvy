@@ -14,7 +14,7 @@ Look up detailed information about a specific CVE identifier.
 
 **Behavior:**
 
-- Fetches details primarily from VulnCheck (if configured), falling back to NVD.
+- Fetches details primarily from the NVD API v2.0.
 - Displays description, CVSS score, publication dates, CWEs, references, and KEV status (if applicable).
 
 **Example:**
@@ -57,7 +57,7 @@ Disables automatic CVE scanning for messages posted in the specified channel. Th
 
 ### `/cve channel list`
 
-Lists all channels currently configured for automatic CVE scanning.
+Shows the global CVE message scanning status (enabled/disabled) and lists the channels currently configured for automatic scanning.
 
 **Example:**
 
@@ -68,7 +68,8 @@ Lists all channels currently configured for automatic CVE scanning.
 **Example Response:**
 
 ```
-ℹ️ Global CVE message scanning is **enabled**.
+ℹ️ Global automatic CVE monitoring is currently **enabled** for this server.
+
 Configured channels:
 - #security-feed
 - #vuln-reports
@@ -77,34 +78,15 @@ Configured channels:
 or
 
 ```
-ℹ️ Global CVE message scanning is **enabled**.
-Configured channels:
-No channels are specifically configured. Use `/cve channel add`.
-```
+ℹ️ Global automatic CVE monitoring is currently **enabled** for this server.
 
-### `/cve channel status`
-
-Shows the global CVE message scanning status (enabled/disabled) and lists the configured channels.
-
-**Example:**
-
-```
-/cve channel status
-```
-
-**Example Response:** (Similar to `/cve channel list`)
-
-```
-ℹ️ Global CVE message scanning is **enabled**.
-Configured channels:
-- #security-feed
+No specific channels are currently configured and enabled. Use `/cve channel add` to add one.
 ```
 
 or
 
 ```
-⚪ Global CVE message scanning is **disabled**.
-Use `/cve channel enable_global` to activate it.
+⚪ Global automatic CVE monitoring is currently **disabled** for this server.
 ```
 
 ### `/cve channel enable_global`
