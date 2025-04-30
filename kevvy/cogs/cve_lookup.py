@@ -609,56 +609,6 @@ class CVELookupCog(commands.Cog):
 
     @channels_group.command(
         name="list",
-        description="List all channels currently configured for CVE monitoring.",
-    )
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def channels_list_command(self, interaction: discord.Interaction):
-        """Lists channels actively configured for CVE monitoring."""
-        if not self.db or not interaction.guild_id:
-            await interaction.response.send_message(
-                "❌ Bot error: Cannot access database or Guild ID.", ephemeral=True
-            )
-            return
-
-        guild_id = interaction.guild_id
-        try:
-            channel_configs = self.db.get_all_cve_channel_configs_for_guild(guild_id)
-            enabled_channels = []
-            if channel_configs:
-                for config in channel_configs:
-                    # Only list channels specifically marked as enabled in their row
-                    if config.get("enabled", False):  # Default to False if missing
-                        channel_id = config.get("channel_id")
-                        channel = (
-                            self.bot.get_channel(channel_id) if channel_id else None
-                        )
-                        enabled_channels.append(
-                            channel.mention
-                            if isinstance(channel, discord.TextChannel)
-                            else f"ID: {channel_id} (Not Found?)"
-                        )
-
-            if not enabled_channels:
-                await interaction.response.send_message(
-                    "ℹ️ No channels are currently configured for automatic CVE monitoring. Use `/cve channels add`.",
-                    ephemeral=True,
-                )
-                return
-
-            message = f"ℹ️ Channels configured for automatic CVE monitoring:\n- {'\\n- '.join(enabled_channels)}"
-            await interaction.response.send_message(message, ephemeral=True)
-
-        except Exception as e:
-            logger.error(
-                f"Error fetching CVE channel list for guild {guild_id}: {e}",
-                exc_info=True,
-            )
-            await interaction.response.send_message(
-                "❌ An error occurred while fetching the channel list.", ephemeral=True
-            )
-
-    @channels_group.command(
-        name="status",
         description="Show global CVE monitoring status and list configured channels.",
     )
     @app_commands.checks.has_permissions(manage_guild=True)
@@ -687,15 +637,32 @@ class CVELookupCog(commands.Cog):
             if channel_configs:
                 for config in channel_configs:
                     if config.get("enabled", False):
-                        channel_id = config.get("channel_id")
-                        channel = (
-                            self.bot.get_channel(channel_id) if channel_id else None
-                        )
-                        enabled_channels.append(
-                            channel.mention
-                            if isinstance(channel, discord.TextChannel)
-                            else f"ID: {channel_id} (Not Found?)"
-                        )
+                        channel_id = config.get("channel_id")  # Get the ID
+                        mention_or_id = f"ID: {channel_id} (Unknown)"  # Default text
+
+                        if isinstance(channel_id, int):
+                            channel = self.bot.get_channel(channel_id)
+                            if channel is not None:
+                                # If it's a TextChannel, use mention
+                                if isinstance(channel, discord.TextChannel):
+                                    mention_or_id = channel.mention
+                                # Otherwise, try to get name, fallback to ID
+                                else:
+                                    channel_name = getattr(
+                                        channel, "name", f"ID: {channel_id}"
+                                    )
+                                    mention_or_id = f"{channel_name} (Non-Text Channel)"
+                            else:
+                                # Channel not found by ID
+                                mention_or_id = f"ID: {channel_id} (Not Found)"
+                        else:
+                            # ID wasn't an int in the first place
+                            logger.warning(
+                                f"Invalid channel ID type ({type(channel_id)}) found in config for guild {guild_id}: {channel_id}"
+                            )
+                            mention_or_id = f"ID: {channel_id} (Invalid Type)"
+
+                        enabled_channels.append(mention_or_id)
 
             if not enabled_channels:
                 channel_message = (

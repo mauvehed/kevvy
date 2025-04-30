@@ -14,8 +14,9 @@ This PRD defines the structure and behavior of Kevvy's security-related commands
 
 - Listens to messages in guilds where the bot is present.
 - Ignores messages from bots (including itself) and messages in DMs.
-- Uses regex (`CVE-\d{4}-\d{4,}`) to detect potential CVE IDs.
+- Uses regex (`CVE(?:-| )\d{4}(?:-| )\d{4,7}`) to detect potential CVE IDs (allowing spaces or hyphens).
 - For each detected CVE ID (up to a limit per message):
+  - Normalizes the found ID to uppercase with hyphens (e.g., `CVE-YYYY-NNNNN`) before further processing.
   - Checks if CVE monitoring is enabled globally for the guild (`cve_guild_config.cve_monitoring_enabled`).
   - Checks if the specific channel is configured for monitoring (`cve_channel_configs` table and `enabled=True`).
   - If global monitoring is enabled AND the channel is configured/enabled:
@@ -58,8 +59,7 @@ This PRD defines the structure and behavior of Kevvy's security-related commands
 
 - `/cve channel add <channel>`: Enable automatic CVE scanning for messages in the specified channel. Also ensures global monitoring is enabled for the server.
 - `/cve channel remove <channel>`: Remove the configuration for the specified channel, stopping automatic scans there.
-- `/cve channel list`: Lists all channels currently configured and enabled for automatic CVE scanning.
-- `/cve channel status`: Shows the global CVE monitoring status (enabled/disabled) and lists the configured channels.
+- `/cve channel list`: Shows the global CVE monitoring status (enabled/disabled) and lists channels currently configured for scanning.
 - `/cve channel enable_global`: Enables automatic CVE message scanning globally for the server. Channels still need to be explicitly added via `/cve channel add` to be monitored.
 - `/cve channel disable_global`: Disables automatic CVE message scanning globally for the entire server. No messages will be scanned in any channel.
 
