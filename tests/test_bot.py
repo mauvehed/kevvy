@@ -1275,12 +1275,3 @@ async def test_setup_hook_command_sync_error(
     # Check tasks still started
     mock_kev_task_start.assert_called_once()
     mock_stats_task_start.assert_called_once()
-
-# TODO: Add more tests based on PRD_TESTS.md Section 6.1:
-# - Message with multiple CVEs (below and above MAX_EMBEDS_PER_MESSAGE)
-# - Failing severity threshold
-# - Verbose mode enabled (global and channel override)
-# - Cache hit scenario
-# - KEV hit scenario (verbose and non-verbose)
-# - Error conditions (NVDRateLimitError, Forbidden, HTTPException, KEV error)
-# - Stat increments for errors 

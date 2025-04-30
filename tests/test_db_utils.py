@@ -209,14 +209,6 @@ def test_is_kev_enabled(kev_db: KEVConfigDB):
     config_nonexistent = kev_db.get_kev_config(guild_id_nonexistent)
     assert config_nonexistent is None
 
-
-# Removed the TODO comment as tests cover set, disable, get_enabled, count.
-# Need to implement and test is_kev_enabled properly in KEVConfigDB.
-
-
-# Clean up TODO
-# TODO: Add tests for remove, get_enabled, count, is_enabled 
-
 # --- Tests for seen_kevs table ---
 
 def test_load_seen_kevs_empty(kev_db: KEVConfigDB):

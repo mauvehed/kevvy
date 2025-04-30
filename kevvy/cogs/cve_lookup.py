@@ -48,7 +48,7 @@ class CVELookupCog(commands.Cog):
             url=cve_data.get('link'),
             color=discord.Color.purple() # Or choose another color
         )
-        
+
         # Always show score if available
         if cve_data.get('cvss'):
             cvss_info = f"**Score:** {cve_data['cvss']}"
@@ -62,7 +62,7 @@ class CVELookupCog(commands.Cog):
                  embed.description = cve_data.get('description')
             else:
                  embed.description = 'No description provided.'
-                 
+
             if cve_data.get('cvss_vector'):
                  embed.add_field(name="CVSS Vector", value=f"`{cve_data['cvss_vector']}`", inline=False)
 
@@ -86,18 +86,17 @@ class CVELookupCog(commands.Cog):
                 if len(references) > ref_limit:
                     ref_text += f"*...and {len(references) - ref_limit} more.*"
                 embed.add_field(name="References", value=ref_text.strip(), inline=False)
-                
-            embed.set_footer(text=f"Source: {cve_data.get('source', 'N/A')}")
-            embed.timestamp = discord.utils.utcnow()
         else:
             # Standard mode: Keep it concise
-            # Maybe add a very short description snippet if needed?
             desc_snippet = cve_data.get('description', 'No description provided.')[:100] # Limit standard description
             if len(cve_data.get('description', '')) > 100:
                  desc_snippet += "..."
-            embed.description = desc_snippet 
-            embed.set_footer(text=f"Source: {cve_data.get('source', 'N/A')} | Use /verbose enable_global for more details.")
-            # No timestamp in standard mode to save space
+            embed.description = desc_snippet
+            # Removed footer setting from here
+
+        # Footer and timestamp should apply regardless of verbosity
+        embed.set_footer(text=f"Source: {cve_data.get('source', 'N/A')}")
+        embed.timestamp = discord.utils.utcnow()
 
         return embed
 
