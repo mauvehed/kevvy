@@ -14,6 +14,10 @@ RUN pip install --no-cache-dir poetry && \
 # Copy the rest of the application code
 COPY . .
 
+# Now, install the application itself using the copied source
+# Use pip to install the current project from source
+RUN pip install .
+
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV DISCORD_TOKEN=""

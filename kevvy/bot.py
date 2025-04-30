@@ -16,14 +16,20 @@ from collections import defaultdict
 from .discord_log_handler import DiscordLogHandler
 import datetime
 import signal
-import re  # Needed for regex
-import importlib.metadata  # Added for dynamic versioning
+import re
+import importlib.metadata
 
 MAX_EMBEDS_PER_MESSAGE = 5
 WEBAPP_ENDPOINT_URL = os.getenv("KEVVY_WEB_URL", "YOUR_WEBAPP_ENDPOINT_URL_HERE")
 WEBAPP_API_KEY = os.getenv("KEVVY_WEB_API_KEY", None)
 
 logger = logging.getLogger(__name__)
+
+try:
+    bot_version = importlib.metadata.version("kevvy")  # Assumes package name is 'kevvy'
+except importlib.metadata.PackageNotFoundError:
+    bot_version = "unknown"
+    logger.warning("Could not determine bot version. Package 'kevvy' not found.")
 
 
 class SecurityBot(commands.Bot):
@@ -65,21 +71,19 @@ class SecurityBot(commands.Bot):
         self.stats_app_command_errors: Dict[str, int] = defaultdict(int)
         # --- End Statistics Counters ---
 
-        self.version = "0.1.0-test"  # Add a version attribute
-        # Read version dynamically from package metadata
-        try:
-            self.version = importlib.metadata.version("kevvy")
-        except importlib.metadata.PackageNotFoundError:
-            logger.error(
-                "Could not determine package version for 'kevvy'. Using default."
-            )
-            self.version = "0.0.0-unknown"
+        # Assign the version determined at module level
+        self.version = bot_version  # Use the already determined version
 
         self.vulncheck_client = VulnCheckClient(api_key=vulncheck_api_token)
         self.last_stats_sent_time: Optional[datetime.datetime] = None
         # Add cache for recently processed CVEs in channels
         self.recently_processed_cves: Dict[Tuple[int, str], datetime.datetime] = {}
         self.RECENT_CVE_CACHE_SECONDS = 20  # Cache duration in seconds
+
+        # Flag for KEV check initial run
+        self.kev_check_first_run = True
+        # Placeholder for the Discord log handler
+        self.discord_log_handler: Optional[DiscordLogHandler] = None
 
     def get_uptime(self) -> str:
         """Calculates the bot's uptime."""
@@ -191,6 +195,8 @@ class SecurityBot(commands.Bot):
 
         # Setup signal handlers before syncing commands or starting tasks
         self._setup_signal_handlers()
+
+        logger.info(f"--- Initializing Kevvy Bot Version: {self.version} ---")
 
         # Sync the commands
         try:
@@ -309,6 +315,19 @@ class SecurityBot(commands.Bot):
                 alerts_sent_this_run = 0
                 enabled_configs = self.db.get_enabled_kev_configs()
 
+                # Limit entries on the very first run after startup
+                max_initial_entries = 3
+                if self.kev_check_first_run and len(new_entries) > max_initial_entries:
+                    logger.warning(
+                        f"First KEV check run found {len(new_entries)} entries. Processing only the first {max_initial_entries} to avoid rate limits."
+                    )
+                    new_entries_to_process = new_entries[:max_initial_entries]
+                    self.kev_check_first_run = False  # Set flag so next run is full
+                else:
+                    new_entries_to_process = new_entries
+                    if self.kev_check_first_run:
+                        self.kev_check_first_run = False  # Set flag even if fewer than max were found initially
+
                 if enabled_configs:
                     for config in enabled_configs:
                         guild_id = config["guild_id"]
@@ -334,11 +353,11 @@ class SecurityBot(commands.Bot):
                             continue
 
                         logger.info(
-                            f"Sending {len(new_entries)} new KEV entries to channel #{target_channel.name} in guild {guild.name}"
+                            f"Sending {len(new_entries_to_process)} new KEV entries to channel #{target_channel.name} in guild {guild.name}"
                         )
                         # Track alerts sent to *this specific* channel for logging/delay purposes maybe?
                         # alerts_sent_to_this_channel = 0
-                        for entry in new_entries:
+                        for entry in new_entries_to_process:
                             embed = self._create_kev_embed(entry)
                             try:
                                 await target_channel.send(embed=embed)
@@ -605,7 +624,21 @@ class SecurityBot(commands.Bot):
         logger.info(f"Command prefix: {self.command_prefix}")
         logger.info(f"Successfully fetched {len(self.guilds)} guilds.")
         logger.info("Bot is ready! Listening for CVEs...")
-        await self._setup_discord_logging()
+
+        # Activate Discord logging handler if prepared
+        if self.discord_log_handler:
+            root_logger = logging.getLogger()
+            # Check if handler already exists to prevent duplicates on reconnect
+            handler_exists = any(
+                h is self.discord_log_handler for h in root_logger.handlers
+            )
+            if not handler_exists:
+                root_logger.addHandler(self.discord_log_handler)
+                logger.info(
+                    f"Discord logging handler activated for channel ID {self.discord_log_handler.channel_id}."
+                )
+            else:
+                logger.debug("Discord logging handler already active.")
 
     async def on_guild_join(self, guild: discord.Guild):
         """Called when the bot joins a new guild."""
@@ -967,9 +1000,17 @@ class SecurityBot(commands.Bot):
                     )
                     discord_handler.setFormatter(fallback_formatter)
 
-                root_logger.addHandler(discord_handler)
+                # Set the logging level for this handler
+                discord_handler.setLevel(
+                    logging.INFO
+                )  # Only send INFO and above to Discord
+
+                # Store the handler but don't add it yet
+                self.discord_log_handler = discord_handler
+                # root_logger.addHandler(discord_handler)
                 logging.info(
-                    f"Successfully added Discord logging handler for channel ID {log_channel_id}"
+                    # f"Successfully added Discord logging handler for channel ID {log_channel_id}"
+                    f"Discord logging handler prepared for channel ID {log_channel_id}. Will activate on_ready."
                 )
             except ValueError:
                 logging.error(
