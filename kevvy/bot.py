@@ -19,6 +19,14 @@ import signal
 import re
 import importlib.metadata
 
+
+class IgnoreHttpRateLimitFilter(logging.Filter):
+    def filter(self, record):
+        # Reject logs from 'discord.http' logger to prevent feedback loops
+        # during rate limiting.
+        return not record.name.startswith("discord.http")
+
+
 MAX_EMBEDS_PER_MESSAGE = 5
 WEBAPP_ENDPOINT_URL = os.getenv("KEVVY_WEB_URL", "YOUR_WEBAPP_ENDPOINT_URL_HERE")
 WEBAPP_API_KEY = os.getenv("KEVVY_WEB_API_KEY", None)
@@ -1013,6 +1021,10 @@ class SecurityBot(commands.Bot):
                 discord_handler.setLevel(
                     logging.INFO
                 )  # Only send INFO and above to Discord
+
+                # Add the custom filter to prevent discord.http logs from being sent to Discord
+                ignore_filter = IgnoreHttpRateLimitFilter()
+                discord_handler.addFilter(ignore_filter)
 
                 # Store the handler but don't add it yet
                 self.discord_log_handler = discord_handler
