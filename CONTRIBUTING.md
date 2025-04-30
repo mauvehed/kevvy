@@ -30,11 +30,11 @@ Please note we have a [Code of Conduct](CODE_OF_CONDUCT.md), please follow it in
 
 There are many ways to contribute to Kevvy:
 
-*   **Reporting Bugs:** If you find a bug, please report it by opening an issue.
-*   **Suggesting Enhancements:** Have an idea for a new feature or improvement? Open an issue to discuss it.
-*   **Improving Documentation:** Help us make the documentation clearer and more comprehensive.
-*   **Writing Code:** Fix bugs or implement new features.
-*   **Adding Tests:** Improve test coverage for better stability.
+- **Reporting Bugs:** If you find a bug, please report it by opening an issue.
+- **Suggesting Enhancements:** Have an idea for a new feature or improvement? Open an issue to discuss it.
+- **Improving Documentation:** Help us make the documentation clearer and more comprehensive.
+- **Writing Code:** Fix bugs or implement new features.
+- **Adding Tests:** Improve test coverage for better stability.
 
 ## Reporting Bugs
 
@@ -42,29 +42,29 @@ Before creating a bug report, please check existing [GitHub Issues](https://gith
 
 If you find a new bug, please provide a clear and concise report including:
 
-*   Steps to reproduce the bug.
-*   Expected behavior.
-*   Actual behavior.
-*   Screenshots (if applicable).
-*   Your environment details (e.g., OS, Python version, Docker version if used).
+- Steps to reproduce the bug.
+- Expected behavior.
+- Actual behavior.
+- Screenshots (if applicable).
+- Your environment details (e.g., OS, Python version, Docker version if used).
 
 ## Suggesting Enhancements
 
 We welcome suggestions for new features and improvements! Please open an issue to describe your suggestion, including:
 
-*   The problem your enhancement solves.
-*   A clear description of the proposed solution.
-*   Any potential alternatives you considered.
+- The problem your enhancement solves.
+- A clear description of the proposed solution.
+- Any potential alternatives you considered.
 
 ## Setting Up Your Development Environment
 
 ### Prerequisites
 
-*   **Git:** For version control.
-*   **Python:** Version 3.10 or higher.
-*   **Poetry:** For dependency management and packaging. Install it following the [official Poetry documentation](https://python-poetry.org/docs/#installation).
-*   **(Optional) Docker & Docker Compose:** If you plan to build or run the Docker image locally.
-    *   Note: A development image tagged as `:dev` may be available (e.g., `ghcr.io/mauvehed/kevvy:dev`). Check the project's container registry or `docker-compose.yml` for details on using development-specific images.
+- **Git:** For version control.
+- **Python:** Version 3.10 or higher.
+- **Poetry:** For dependency management and packaging. Install it following the [official Poetry documentation](https://python-poetry.org/docs/#installation).
+- **(Optional) Docker & Docker Compose:** If you plan to build or run the Docker image locally.
+  - Note: A development image tagged as `:dev` may be available (e.g., `ghcr.io/mauvehed/kevvy:dev`). Check the project's container registry or `docker-compose.yml` for details on using development-specific images.
 
 ### Installation
 
@@ -129,22 +129,23 @@ git checkout -b your-branch-name
 
 We use `pytest` for testing. Tests are located in the `tests/` directory. Ensure all existing tests pass and add new tests for your changes.
 
-*   **Run all tests:**
-    ```bash
-    poetry run pytest
-    ```
+- **Run all tests:**
+  ```bash
+  poetry run pytest
+  ```
 
 ### Writing Commit Messages
 
 We follow the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) specification. This helps automate changelog generation and makes commit history easier to understand.
 
 Examples:
-*   `feat: add /cve latest command`
-*   `fix: correct assertion in test_channel_list_enabled`
-*   `docs: update README with new channel commands`
-*   `refactor: simplify embed creation logic`
-*   `test: add tests for verbose status command`
-*   `chore: update dependencies`
+
+- `feat: add /cve latest command`
+- `fix: correct assertion in test_channel_list_enabled`
+- `docs: update README with new channel commands`
+- `refactor: simplify embed creation logic`
+- `test: add tests for verbose status command`
+- `chore: update dependencies`
 
 ### Submitting Pull Requests
 
@@ -160,42 +161,44 @@ Examples:
 
 ## Project Structure Overview
 
-*   `kevvy/`: Contains the main bot source code.
-    *   `cogs/`: Houses the different command groups (Cogs).
-    *   `clients/`: (If applicable) API client implementations (e.g., `nvd_client.py`).
-    *   `bot.py`: The main `discord.Bot` subclass definition.
-    *   `db_utils.py`: Database interaction logic.
-    *   `cve_monitor.py`: Helper class for CVE processing.
-    *   ... (other core modules)
-*   `tests/`: Contains all automated tests (`pytest`).
-*   `docs/`: Project documentation source files (for `mkdocs`).
-*   `main.py`: The entry point for running the bot.
-*   `pyproject.toml`: Defines project metadata, dependencies, and tool configurations (Poetry, linters, etc.).
-*   `.env.example`: Example environment variable file.
-*   `Dockerfile`, `docker-compose.yml`: Docker configuration.
-*   `README.md`, `PRD.md`: High-level project information.
-*   `LICENSE`: Project license.
+- `kevvy/`: Contains the main bot source code.
+  - `cogs/`: Houses the different command groups (Cogs).
+  - `clients/`: (If applicable) API client implementations (e.g., `nvd_client.py`).
+  - `bot.py`: The main `discord.Bot` subclass definition.
+  - `db_utils.py`: Database interaction logic.
+  - `cve_monitor.py`: Helper class for CVE processing.
+  - ... (other core modules)
+- `tests/`: Contains all automated tests (`pytest`).
+- `docs/`: Project documentation source files (for `mkdocs`).
+- `main.py`: The entry point for running the bot.
+- `pyproject.toml`: Defines project metadata, dependencies, and tool configurations (Poetry, linters, etc.).
+- `.env.example`: Example environment variable file.
+- `Dockerfile`, `docker-compose.yml`: Docker configuration.
+- `README.md`, `PRD.md`: High-level project information.
+- `LICENSE`: Project license.
 
 ## Documentation
 
 Documentation is important! If your changes affect user-facing features, commands, or configuration, please update the relevant documentation:
 
-*   `README.md`: For the main overview and usage examples.
-*   `PRD.md`: For the detailed command specification.
-*   `docs/`: For the `mkdocs` generated documentation site (especially files in `docs/commands/`).
+- `README.md`: For the main overview and usage examples.
+- `PRD.md`: For the detailed command specification.
+- `docs/`: For the `mkdocs` generated documentation site (especially files in `docs/commands/`).
 
 To build and preview the documentation locally:
+
 ```bash
 # Assuming mkdocs is installed via development dependencies
 poetry run mkdocs serve
 ```
+
 Then open `http://127.0.0.1:8000` in your browser.
 
 ## Getting Help
 
 If you have questions about contributing or need help with your development setup, feel free to:
 
-*   Open an issue on GitHub.
-*   Reach out to the maintainer ([@mauvehed](https://github.com/mauvehed)).
+- Open an issue on GitHub.
+- Reach out to the maintainer ([@mauvehed](https://github.com/mauvehed)).
 
-Thank you for contributing to Kevvy! 
+Thank you for contributing to Kevvy!

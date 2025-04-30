@@ -4,10 +4,10 @@
 
 Key features include:
 
-*   **Automatic CVE Detection:** Identifies CVE IDs in chat messages and provides details.
-*   **Direct CVE Lookup:** `/cve lookup` command for specific vulnerability details.
-*   **CISA KEV Monitoring:** Optional alerts for new additions to the Known Exploited Vulnerabilities catalog.
-*   **Configurable Alerts:** Control alert channels and verbosity using slash commands.
+- **Automatic CVE Detection:** Identifies CVE IDs in chat messages and provides details.
+- **Direct CVE Lookup:** `/cve lookup` command for specific vulnerability details.
+- **CISA KEV Monitoring:** Optional alerts for new additions to the Known Exploited Vulnerabilities catalog.
+- **Configurable Alerts:** Control alert channels and verbosity using slash commands.
 
 For a full overview, installation instructions, and contribution guidelines, please see the main [README.md file on GitHub](https://github.com/mauvehed/kevvy/blob/main/README.md).
 
@@ -21,9 +21,9 @@ The easiest way to get started with the bot is to simply invite it to your Disco
 
 ### Prerequisites
 
-*   **Docker** and **Docker Compose** (Recommended for running)
-*   OR **Python 3.10+** and **Poetry** (For local development/running)
-*   A **Discord Bot Token**. You can create a bot and get a token from the [Discord Developer Portal](https://discord.com/developers/applications).
+- **Docker** and **Docker Compose** (Recommended for running)
+- OR **Python 3.10+** and **Poetry** (For local development/running)
+- A **Discord Bot Token**. You can create a bot and get a token from the [Discord Developer Portal](https://discord.com/developers/applications).
 
 ### Configuration
 
@@ -35,12 +35,12 @@ cp .env.example .env
 
 Then, edit the `.env` file:
 
-*   `DISCORD_TOKEN` (Required): Your Discord bot token.
-*   `NVD_API_KEY` (Optional): Your NVD API key. Request one [here](https://nvd.nist.gov/developers/request-an-api-key) for significantly higher request rate limits. Used as the primary data source for CVE details.
-*   `VULNCHECK_API_TOKEN` (Optional): Your VulnCheck API key. *(Note: This is planned for future integration as a potential primary data source but is not currently used by the core CVE lookup commands).* Get one from [VulnCheck](https://vulncheck.com/).
-*   `DISCORD_COMMAND_PREFIX` (Optional): The prefix for traditional commands (if any are added later). Defaults to `!`. The primary interaction is automatic detection and slash commands.
-*   `LOGGING_CHANNEL_ID` (Optional): The ID of the Discord channel to which log messages should be sent.
-*   `DISABLE_DISCORD_LOGGING` (Optional): Set to `true` to disable sending logs to the Discord channel specified by `LOGGING_CHANNEL_ID`. Defaults to `false`.
+- `DISCORD_TOKEN` (Required): Your Discord bot token.
+- `NVD_API_KEY` (Optional): Your NVD API key. Request one [here](https://nvd.nist.gov/developers/request-an-api-key) for significantly higher request rate limits. Used as the primary data source for CVE details.
+- `VULNCHECK_API_TOKEN` (Optional): Your VulnCheck API key. _(Note: This is planned for future integration as a potential primary data source but is not currently used by the core CVE lookup commands)._ Get one from [VulnCheck](https://vulncheck.com/).
+- `DISCORD_COMMAND_PREFIX` (Optional): The prefix for traditional commands (if any are added later). Defaults to `!`. The primary interaction is automatic detection and slash commands.
+- `LOGGING_CHANNEL_ID` (Optional): The ID of the Discord channel to which log messages should be sent.
+- `DISABLE_DISCORD_LOGGING` (Optional): Set to `true` to disable sending logs to the Discord channel specified by `LOGGING_CHANNEL_ID`. Defaults to `false`.
 
 ### Running with Docker (Recommended)
 
@@ -68,12 +68,11 @@ Then, edit the `.env` file:
 4.  Configure your `.env` file.
 5.  Run the bot: `poetry run python main.py`
 
-
 ## Commands
 
 Explore the available slash commands:
 
-*   [Overview](commands/index.md)
-*   [KEV Commands (`/kev`)](commands/kev.md)
-*   [CVE Commands (`/cve`)](commands/cve.md)
-*   [Verbosity Commands (`/verbose`)](commands/verbose.md) 
+- [Overview](commands/index.md)
+- [KEV Commands (`/kev`)](commands/kev.md)
+- [CVE Commands (`/cve`)](commands/cve.md)
+- [Verbosity Commands (`/verbose`)](commands/verbose.md)

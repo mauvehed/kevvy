@@ -1,6 +1,5 @@
 import pytest
 from unittest.mock import AsyncMock
-import discord # Add discord import for Color
 
 from kevvy.cve_monitor import CVEMonitor
 
@@ -13,49 +12,56 @@ from kevvy.cve_monitor import CVEMonitor
 
 # --- Fixtures ---
 
+
 @pytest.fixture
 def mock_nvd_client():
     return AsyncMock()
 
+
 @pytest.fixture
 def mock_kev_client():
     return AsyncMock()
+
 
 @pytest.fixture
 def monitor(mock_nvd_client, mock_kev_client):
     # This fixture is now used for all tests needing a monitor instance
     return CVEMonitor(nvd_client=mock_nvd_client, kev_client=mock_kev_client)
 
+
 # Sample CVE data for testing embeds
 SAMPLE_CVE_DATA = {
-    'id': 'CVE-2024-12345',
-    'title': 'Test Vulnerability',
-    'link': 'https://nvd.nist.gov/vuln/detail/CVE-2024-12345',
-    'description': 'This is a detailed test description.',
-    'cvss': 7.5,
-    'cvss_version': '3.1 (HIGH)',
-    'cvss_vector': 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N',
-    'cwe_ids': ['CWE-79'],
-    'published': '2024-01-01T10:00:00',
-    'modified': '2024-01-02T11:00:00',
-    'references': [{'url': 'https://example.com/ref1', 'source': 'Example', 'tags': ['Patch']}],
-    'source': 'NVD'
+    "id": "CVE-2024-12345",
+    "title": "Test Vulnerability",
+    "link": "https://nvd.nist.gov/vuln/detail/CVE-2024-12345",
+    "description": "This is a detailed test description.",
+    "cvss": 7.5,
+    "cvss_version": "3.1 (HIGH)",
+    "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+    "cwe_ids": ["CWE-79"],
+    "published": "2024-01-01T10:00:00",
+    "modified": "2024-01-02T11:00:00",
+    "references": [
+        {"url": "https://example.com/ref1", "source": "Example", "tags": ["Patch"]}
+    ],
+    "source": "NVD",
 }
 
 SAMPLE_KEV_DATA = {
-    'cveID': 'CVE-2024-12345',
-    'shortDescription': 'KEV Description.',
-    'vulnerabilityName': 'Test KEV Vuln',
-    'vendorProject': 'TestVendor',
-    'product': 'TestProduct',
-    'dateAdded': '2024-01-10',
-    'requiredAction': 'Apply patch.',
-    'dueDate': '2024-01-31',
-    'knownRansomwareCampaignUse': 'No',
-    'notes': 'Some notes here.'
+    "cveID": "CVE-2024-12345",
+    "shortDescription": "KEV Description.",
+    "vulnerabilityName": "Test KEV Vuln",
+    "vendorProject": "TestVendor",
+    "product": "TestProduct",
+    "dateAdded": "2024-01-10",
+    "requiredAction": "Apply patch.",
+    "dueDate": "2024-01-31",
+    "knownRansomwareCampaignUse": "No",
+    "notes": "Some notes here.",
 }
 
-# --- Test Cases for find_cves --- 
+# --- Test Cases for find_cves ---
+
 
 @pytest.mark.parametrize(
     "message_content, expected_cves",
@@ -63,7 +69,10 @@ SAMPLE_KEV_DATA = {
         # Basic cases
         ("Check out CVE-2023-12345", ["CVE-2023-12345"]),
         ("Potential issue: cve-2024-9876", ["cve-2024-9876"]),
-        ("Multiple CVEs: CVE-2022-0001 and CVE-2022-0002", ["CVE-2022-0001", "CVE-2022-0002"]),
+        (
+            "Multiple CVEs: CVE-2022-0001 and CVE-2022-0002",
+            ["CVE-2022-0001", "CVE-2022-0002"],
+        ),
         # Case insensitivity
         ("cVe-2021-54321 reported", ["cVe-2021-54321"]),
         # No CVEs
@@ -76,14 +85,14 @@ SAMPLE_KEV_DATA = {
         # Mixed case and duplicates (should return unique based on input casing)
         ("Look at CVE-2023-1000 and cve-2023-1000", ["CVE-2023-1000", "cve-2023-1000"]),
         # Edge cases
-        ("CVE-2023-1234", ["CVE-2023-1234"]), # 4-digit year, 4-digit sequence
-        ("CVE-1999-99999", ["CVE-1999-99999"]), # Older year, longer sequence
+        ("CVE-2023-1234", ["CVE-2023-1234"]),  # 4-digit year, 4-digit sequence
+        ("CVE-1999-99999", ["CVE-1999-99999"]),  # Older year, longer sequence
         ("Text with CVE-2023-00001 inside", ["CVE-2023-00001"]),
         # Ensure it doesn't match invalid formats
         ("Not a CVE-202-12345", []),
         ("Not a CVE-20230-1234", []),
         ("Not a CVE-2023-123", []),
-    ]
+    ],
 )
 def test_find_cves(monitor: CVEMonitor, message_content: str, expected_cves: list[str]):
     """Test the find_cves method with various message formats."""
@@ -91,45 +100,62 @@ def test_find_cves(monitor: CVEMonitor, message_content: str, expected_cves: lis
     # We compare lists directly - order matters and duplicates matter based on input casing
     assert actual_cves == expected_cves
 
+
 # --- NEW Test Cases for create_cve_embed (verbose) ---
+
 
 @pytest.mark.asyncio
 async def test_create_cve_embed_non_verbose(monitor: CVEMonitor, mock_kev_client):
     """Test the non-verbose embed format."""
-    mock_kev_client.get_kev_entry.return_value = None # Assume not in KEV for simplicity
-    
+    mock_kev_client.get_kev_entry.return_value = (
+        None  # Assume not in KEV for simplicity
+    )
+
     embed = monitor.create_cve_embed(SAMPLE_CVE_DATA, verbose=False)
-    
+
     # Check essential fields are present
-    assert embed.title == SAMPLE_CVE_DATA['id']
-    assert embed.url == SAMPLE_CVE_DATA['link']
-    assert embed.color.value == 0xFF8C00 # Compare .value
-    assert len(embed.fields) == 3 # Expect ID, Score, Source
-    assert embed.fields[0].name == "CVE ID" and embed.fields[0].value == SAMPLE_CVE_DATA['id']
-    assert embed.fields[1].name == "CVSS Score" and embed.fields[1].value == f"{SAMPLE_CVE_DATA['cvss']} (v{SAMPLE_CVE_DATA['cvss_version']})"
-    assert embed.fields[2].name == "Source" and embed.fields[2].value == SAMPLE_CVE_DATA['source']
-    assert embed.description is None # Non-verbose should have no description set
+    assert embed.title == SAMPLE_CVE_DATA["id"]
+    assert embed.url == SAMPLE_CVE_DATA["link"]
+    assert embed.color.value == 0xFF8C00  # Compare .value
+    assert len(embed.fields) == 3  # Expect ID, Score, Source
+    assert (
+        embed.fields[0].name == "CVE ID"
+        and embed.fields[0].value == SAMPLE_CVE_DATA["id"]
+    )
+    assert (
+        embed.fields[1].name == "CVSS Score"
+        and embed.fields[1].value
+        == f"{SAMPLE_CVE_DATA['cvss']} (v{SAMPLE_CVE_DATA['cvss_version']})"
+    )
+    assert (
+        embed.fields[2].name == "Source"
+        and embed.fields[2].value == SAMPLE_CVE_DATA["source"]
+    )
+    assert embed.description is None  # Non-verbose should have no description set
     # assert embed.footer.text == f"Data via {SAMPLE_CVE_DATA['source']}" # Footer not set here anymore
+
 
 @pytest.mark.asyncio
 async def test_create_cve_embed_verbose(monitor: CVEMonitor, mock_kev_client):
     """Test the verbose embed format."""
     mock_kev_client.get_kev_entry.return_value = None
-    
+
     embed = monitor.create_cve_embed(SAMPLE_CVE_DATA, verbose=True)
-    
+
     # Check essential fields
-    assert embed.title == SAMPLE_CVE_DATA['id']
-    assert embed.url == SAMPLE_CVE_DATA['link']
-    assert embed.description == SAMPLE_CVE_DATA['description']
-    assert embed.color.value == 0xFF8C00 # Compare .value
-    
+    assert embed.title == SAMPLE_CVE_DATA["id"]
+    assert embed.url == SAMPLE_CVE_DATA["link"]
+    assert embed.description == SAMPLE_CVE_DATA["description"]
+    assert embed.color.value == 0xFF8C00  # Compare .value
+
     # Check all expected verbose fields are present
-    assert len(embed.fields) >= 7 # ID, Score, Source, Published, Modified, Vector, CWE, References (if present)
+    assert (
+        len(embed.fields) >= 7
+    )  # ID, Score, Source, Published, Modified, Vector, CWE, References (if present)
     field_names = [f.name for f in embed.fields]
     assert "CVE ID" in field_names
     assert "CVSS Score" in field_names
-    assert "Source" in field_names # Added Source field check
+    assert "Source" in field_names  # Added Source field check
     assert "Published" in field_names
     assert "Last Modified" in field_names
     assert "CVSS Vector" in field_names
@@ -137,25 +163,29 @@ async def test_create_cve_embed_verbose(monitor: CVEMonitor, mock_kev_client):
     assert "References" in field_names
     # assert embed.footer.text == f"Data via {SAMPLE_CVE_DATA['source']}" # Footer not set here anymore
 
+
 @pytest.mark.asyncio
-async def test_create_cve_embed_with_kev_non_verbose(monitor: CVEMonitor, mock_kev_client):
+async def test_create_cve_embed_with_kev_non_verbose(
+    monitor: CVEMonitor, mock_kev_client
+):
     """Test non-verbose embed when KEV entry exists."""
     mock_kev_client.get_kev_entry.return_value = SAMPLE_KEV_DATA
-    
+
     embed = monitor.create_cve_embed(SAMPLE_CVE_DATA, verbose=False)
-    
+
     # Check CVE embed (should be non-verbose)
-    assert len(embed.fields) == 3 # Expect ID, Score, Source
-    assert embed.description is None # Non-verbose should have no description set
+    assert len(embed.fields) == 3  # Expect ID, Score, Source
+    assert embed.description is None  # Non-verbose should have no description set
     # assert embed.footer.text == f"Data via {SAMPLE_CVE_DATA['source']}" # Footer not set here anymore
+
 
 @pytest.mark.asyncio
 async def test_create_cve_embed_with_kev_verbose(monitor: CVEMonitor, mock_kev_client):
     """Test verbose embed when KEV entry exists."""
     mock_kev_client.get_kev_entry.return_value = SAMPLE_KEV_DATA
-    
+
     embed = monitor.create_cve_embed(SAMPLE_CVE_DATA, verbose=True)
-    
+
     # Check CVE embed (should be verbose)
     assert len(embed.fields) >= 6
-    assert embed.description == SAMPLE_CVE_DATA['description']
+    assert embed.description == SAMPLE_CVE_DATA["description"]

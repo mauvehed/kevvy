@@ -1,0 +1,38 @@
+# .pre-commit-config.yaml
+# This file contains the configuration for pre-commit hooks.
+# Each hook helps maintain code quality by running automated checks before commits.
+#
+exclude: '(\..*\.y[a]?ml|\.github/workflows|build-version\.json)'
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: no-commit-to-branch
+        args: ['--branch', 'main']
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: check-ast
+      - id: debug-statements
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.2
+    hooks:
+      - id: gitleaks
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v4.0.0-alpha.8
+    hooks:
+      - id: prettier
+        types_or: [markdown]
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: 'v0.5.5'
+    hooks:
+      - id: ruff
+        args: [--fix, --unsafe-fixes]
+      - id: ruff-format
+  - repo: https://github.com/psf/black
+    rev: 24.4.2
+    hooks:
+      - id: black
+        language_version: python3.12

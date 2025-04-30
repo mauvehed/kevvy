@@ -12,9 +12,9 @@ This allows for direct, private communication with the maintainers and helps tra
 2.  Click on the **Security** tab (located under the repository name).
 3.  Click on **Report a vulnerability**.
 4.  Fill out the form with as much detail as possible, including:
-    *   A clear description of the vulnerability.
-    *   Steps to reproduce the behavior.
-    *   A proof of concept (if applicable).
+    - A clear description of the vulnerability.
+    - Steps to reproduce the behavior.
+    - A proof of concept (if applicable).
 5.  Submit the report.
 
 We will evaluate the vulnerability report submitted via GitHub and communicate through the GitHub Security Advisory platform. We appreciate your efforts in responsibly disclosing security issues.

@@ -63,57 +63,58 @@
 
 **kevvy** is a Discord bot with the following main functions:
 
-1.  **Automatic CVE Detection:** It automatically monitors chat messages for CVE (Common Vulnerabilities and Exposures) identifiers (e.g., `CVE-2023-12345`). When a CVE is detected, the bot fetches detailed information primarily from the [NIST National Vulnerability Database (NVD) API v2.0](https://nvd.nist.gov/developers/vulnerabilities). (*Note: Integration with VulnCheck as a primary source is planned for future enhancement.*)
+1.  **Automatic CVE Detection:** It automatically monitors chat messages for CVE (Common Vulnerabilities and Exposures) identifiers (e.g., `CVE-2023-12345`). When a CVE is detected, the bot fetches detailed information primarily from the [NIST National Vulnerability Database (NVD) API v2.0](https://nvd.nist.gov/developers/vulnerabilities). (_Note: Integration with VulnCheck as a primary source is planned for future enhancement._)
 2.  **Direct CVE Lookup:** Users can explicitly request details for a specific CVE using the `/cve lookup` command.
 3.  **CISA KEV Monitoring:** Optionally monitors the [CISA Known Exploited Vulnerabilities (KEV) catalog](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) and sends alerts for new entries to configured channels.
 
 Key features:
-*   Automatic detection of CVE IDs in messages.
-*   Direct lookup of specific CVEs via `/cve lookup`.
-*   Fetches details primarily from NVD (*VulnCheck planned for future*).
-*   Displays CVSS score (v3.1/v3.0/v2.0), vector string, description, publication dates, CWEs, and reference links.
-*   Consolidates responses for messages containing multiple CVEs (max 5 embeds per message by default, with delays between sends) to prevent spam.
-*   Optionally checks the CISA KEV catalog periodically and posts alerts for new entries to a designated channel (configurable per server).
+
+- Automatic detection of CVE IDs in messages.
+- Direct lookup of specific CVEs via `/cve lookup`.
+- Fetches details primarily from NVD (_VulnCheck planned for future_).
+- Displays CVSS score (v3.1/v3.0/v2.0), vector string, description, publication dates, CWEs, and reference links.
+- Consolidates responses for messages containing multiple CVEs (max 5 embeds per message by default, with delays between sends) to prevent spam.
+- Optionally checks the CISA KEV catalog periodically and posts alerts for new entries to a designated channel (configurable per server).
 
 ### Built With
 
-*   <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" />
-*   <img src="https://img.shields.io/badge/discord.py-2.x-5865F2?style=for-the-badge&logo=discord&logoColor=white" />
-*   <img src="https://img.shields.io/badge/Poetry-1.8+-60A5FA?style=for-the-badge&logo=poetry&logoColor=white" />
-*   <img src="https://img.shields.io/badge/Docker-26.1+-0db7ed?style=for-the-badge&logo=docker&logoColor=white" />
-*   <img src="https://img.shields.io/badge/aiohttp-library-blueviolet?style=for-the-badge&logo=python&logoColor=white" />
-*   <img src="https://img.shields.io/badge/NVD API v2.0-darkgreen?style=for-the-badge&logo=python&logoColor=white" />
-*   <img src="https://img.shields.io/badge/CISA KEV Catalog-red?style=for-the-badge&logo=python&logoColor=white" />
+- <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" />
+- <img src="https://img.shields.io/badge/discord.py-2.x-5865F2?style=for-the-badge&logo=discord&logoColor=white" />
+- <img src="https://img.shields.io/badge/Poetry-1.8+-60A5FA?style=for-the-badge&logo=poetry&logoColor=white" />
+- <img src="https://img.shields.io/badge/Docker-26.1+-0db7ed?style=for-the-badge&logo=docker&logoColor=white" />
+- <img src="https://img.shields.io/badge/aiohttp-library-blueviolet?style=for-the-badge&logo=python&logoColor=white" />
+- <img src="https://img.shields.io/badge/NVD API v2.0-darkgreen?style=for-the-badge&logo=python&logoColor=white" />
+- <img src="https://img.shields.io/badge/CISA KEV Catalog-red?style=for-the-badge&logo=python&logoColor=white" />
 
 ## Usage
 
 1.  **Invite the Bot:** Invite the configured bot to your Discord server.
 2.  **Automatic Detection:** Simply type or paste a message containing one or more CVE IDs (e.g., `Check out CVE-2024-1234 and CVE-2024-5678`). The bot will automatically detect them and post embed(s) with the details. The verbosity of the details depends on server and channel settings (see `/verbose` commands).
-    *   If multiple unique CVEs are in one message, the bot will post details for up to 5 of them (by default) and indicate if more were found.
+    - If multiple unique CVEs are in one message, the bot will post details for up to 5 of them (by default) and indicate if more were found.
 3.  **Direct CVE Lookup:** Use the slash command `/cve lookup cve_id:<CVE-ID>` (e.g., `/cve lookup cve_id:CVE-2024-0001`) to get details for a specific vulnerability.
 4.  **CISA KEV Alerts (Optional Setup):**
-    *   `/kev feed enable channel:<#your-alert-channel>`: A server administrator with 'Manage Server' permissions can run this command to enable KEV monitoring and designate a specific channel for alerts.
-    *   `/kev feed disable`: Disables KEV alerts for the server.
-    *   `/kev feed status`: Checks the status of KEV monitoring.
-    *   `/kev latest [count] [days] ...`: Shows the latest KEV entries with optional filters.
+    - `/kev feed enable channel:<#your-alert-channel>`: A server administrator with 'Manage Server' permissions can run this command to enable KEV monitoring and designate a specific channel for alerts.
+    - `/kev feed disable`: Disables KEV alerts for the server.
+    - `/kev feed status`: Checks the status of KEV monitoring.
+    - `/kev latest [count] [days] ...`: Shows the latest KEV entries with optional filters.
 5.  **CVE Monitoring Channel Configuration:**
-    *   `/cve channel add channel:<#channel>`: Enables automatic CVE scanning for messages in the specified channel. Ensures global monitoring is also enabled for the server.
-    *   `/cve channel remove channel:<#channel>`: Removes automatic CVE monitoring configuration for the specified channel.
-    *   `/cve channel list`: Lists all channels currently configured for automatic CVE scanning.
-    *   `/cve channel status`: Shows the global CVE monitoring status (enabled/disabled) and lists configured channels.
-    *   `/cve channel enable_global`: Enables automatic CVE message scanning globally for the server (channels still need to be added via `/cve channel add` to be monitored).
-    *   `/cve channel disable_global`: Disables automatic CVE message scanning globally for the server. No messages will be scanned in any channel.
+    - `/cve channel add channel:<#channel>`: Enables automatic CVE scanning for messages in the specified channel. Ensures global monitoring is also enabled for the server.
+    - `/cve channel remove channel:<#channel>`: Removes automatic CVE monitoring configuration for the specified channel.
+    - `/cve channel list`: Lists all channels currently configured for automatic CVE scanning.
+    - `/cve channel status`: Shows the global CVE monitoring status (enabled/disabled) and lists configured channels.
+    - `/cve channel enable_global`: Enables automatic CVE message scanning globally for the server (channels still need to be added via `/cve channel add` to be monitored).
+    - `/cve channel disable_global`: Disables automatic CVE message scanning globally for the server. No messages will be scanned in any channel.
 6.  **Alert Verbosity Configuration:**
-    *   `/verbose enable_global`: Sets the default alert style to **verbose** for the whole server.
-    *   `/verbose disable_global`: Sets the default alert style to **standard** (non-verbose) for the whole server.
-    *   `/verbose set channel:<#channel> verbosity:<True|False>`: Overrides the verbosity setting for a specific channel.
-    *   `/verbose unset channel:<#channel>`: Removes the override for a specific channel (it uses the global setting).
-    *   `/verbose setall verbosity:<True|False>`: Sets an override for **all** channels.
-    *   `/verbose status [channel]`: Shows the current global and channel-specific verbosity settings.
+    - `/verbose enable_global`: Sets the default alert style to **verbose** for the whole server.
+    - `/verbose disable_global`: Sets the default alert style to **standard** (non-verbose) for the whole server.
+    - `/verbose set channel:<#channel> verbosity:<True|False>`: Overrides the verbosity setting for a specific channel.
+    - `/verbose unset channel:<#channel>`: Removes the override for a specific channel (it uses the global setting).
+    - `/verbose setall verbosity:<True|False>`: Sets an override for **all** channels.
+    - `/verbose status [channel]`: Shows the current global and channel-specific verbosity settings.
 7.  **CVE Threshold Configuration:**
-    *   `/cve threshold set <level>`: Sets the minimum CVSS severity (`critical`, `high`, `medium`, `low`, `all`) required for a CVE mentioned in a message to trigger an automatic alert (global server setting).
-    *   `/cve threshold view`: Shows the current global severity threshold.
-    *   `/cve threshold reset`: Resets the global severity threshold to `all`.
+    - `/cve threshold set <level>`: Sets the minimum CVSS severity (`critical`, `high`, `medium`, `low`, `all`) required for a CVE mentioned in a message to trigger an automatic alert (global server setting).
+    - `/cve threshold view`: Shows the current global severity threshold.
+    - `/cve threshold reset`: Resets the global severity threshold to `all`.
 
 ## Screenshots
 
@@ -135,9 +136,9 @@ Here's the bot in action:
 
 ### Prerequisites
 
-*   **Docker** and **Docker Compose** (Recommended for running)
-*   OR **Python 3.10+** and **Poetry** (For local development/running)
-*   A **Discord Bot Token**. You can create a bot and get a token from the [Discord Developer Portal](https://discord.com/developers/applications).
+- **Docker** and **Docker Compose** (Recommended for running)
+- OR **Python 3.10+** and **Poetry** (For local development/running)
+- A **Discord Bot Token**. You can create a bot and get a token from the [Discord Developer Portal](https://discord.com/developers/applications).
 
 ### Configuration
 
@@ -149,12 +150,12 @@ cp .env.example .env
 
 Then, edit the `.env` file:
 
-*   `DISCORD_TOKEN` (Required): Your Discord bot token.
-*   `NVD_API_KEY` (Optional): Your NVD API key. Request one [here](https://nvd.nist.gov/developers/request-an-api-key) for significantly higher request rate limits. Used as the primary data source for CVE details.
-*   `VULNCHECK_API_TOKEN` (Optional): Your VulnCheck API key. *(Note: This is planned for future integration as a potential primary data source but is not currently used by the core CVE lookup commands).* Get one from [VulnCheck](https://vulncheck.com/).
-*   `DISCORD_COMMAND_PREFIX` (Optional): The prefix for traditional commands (if any are added later). Defaults to `!`. The primary interaction is automatic detection and slash commands.
-*   `LOGGING_CHANNEL_ID` (Optional): The ID of the Discord channel to which log messages should be sent.
-*   `DISABLE_DISCORD_LOGGING` (Optional): Set to `true` to disable sending logs to the Discord channel specified by `LOGGING_CHANNEL_ID`. Defaults to `false`.
+- `DISCORD_TOKEN` (Required): Your Discord bot token.
+- `NVD_API_KEY` (Optional): Your NVD API key. Request one [here](https://nvd.nist.gov/developers/request-an-api-key) for significantly higher request rate limits. Used as the primary data source for CVE details.
+- `VULNCHECK_API_TOKEN` (Optional): Your VulnCheck API key. _(Note: This is planned for future integration as a potential primary data source but is not currently used by the core CVE lookup commands)._ Get one from [VulnCheck](https://vulncheck.com/).
+- `DISCORD_COMMAND_PREFIX` (Optional): The prefix for traditional commands (if any are added later). Defaults to `!`. The primary interaction is automatic detection and slash commands.
+- `LOGGING_CHANNEL_ID` (Optional): The ID of the Discord channel to which log messages should be sent.
+- `DISABLE_DISCORD_LOGGING` (Optional): Set to `true` to disable sending logs to the Discord channel specified by `LOGGING_CHANNEL_ID`. Defaults to `false`.
 
 ### Running with Docker (Recommended)
 
@@ -226,8 +227,7 @@ See [LICENSE](LICENSE) for more information.
 
 ## Acknowledgements
 
-*   Data sourced primarily from [NVD](https://nvd.nist.gov).
-*   [VulnCheck](https://vulncheck.com/) integration planned for future enhancement.
-*   Known Exploited Vulnerabilities feed monitored via [CISA](https://www.cisa.gov/known-exploited-vulnerabilities-catalog).
-*   Thanks to all contributors and users who have helped make this project better!
-
+- Data sourced primarily from [NVD](https://nvd.nist.gov).
+- [VulnCheck](https://vulncheck.com/) integration planned for future enhancement.
+- Known Exploited Vulnerabilities feed monitored via [CISA](https://www.cisa.gov/known-exploited-vulnerabilities-catalog).
+- Thanks to all contributors and users who have helped make this project better!

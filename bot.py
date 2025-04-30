@@ -299,17 +299,13 @@ class SecurityBot(commands.Bot):
                 logger.info(
                     "Completed periodic CISA KEV check. No new KEV entries found."
                 )
-                # No processing needed if no new entries
+                # No return needed here, let it reach the success update
             else:
-                # --- Start: Block moved inside this 'else' ---
                 logger.info(
                     f"Found {len(new_entries)} new KEV entries. Checking configured guilds..."
                 )
-                # Initialize here, only if there are entries to process
-                alerts_sent_this_run = 0
-                enabled_configs = self.db.get_enabled_kev_configs()
-
-                if enabled_configs:
+                if enabled_configs := self.db.get_enabled_kev_configs():
+                    alerts_sent_this_run = 0
                     for config in enabled_configs:
                         guild_id = config["guild_id"]
                         channel_id = config["channel_id"]
@@ -336,14 +332,11 @@ class SecurityBot(commands.Bot):
                         logger.info(
                             f"Sending {len(new_entries)} new KEV entries to channel #{target_channel.name} in guild {guild.name}"
                         )
-                        # Track alerts sent to *this specific* channel for logging/delay purposes maybe?
-                        # alerts_sent_to_this_channel = 0
                         for entry in new_entries:
                             embed = self._create_kev_embed(entry)
                             try:
                                 await target_channel.send(embed=embed)
-                                alerts_sent_this_run += 1  # Increment total sent count
-                                # alerts_sent_to_this_channel += 1
+                                alerts_sent_this_run += 1
                                 self.timestamp_last_kev_alert_sent = (
                                     datetime.datetime.now(datetime.timezone.utc)
                                 )  # Update timestamp
@@ -352,7 +345,7 @@ class SecurityBot(commands.Bot):
                                 logger.error(
                                     f"Missing permissions to send message in CISA KEV channel {channel_id} (Guild: {guild_id})"
                                 )
-                                break  # Stop sending to this channel if permission lost
+                                break
                             except discord.HTTPException as e:
                                 logger.error(
                                     f"Failed to send CISA KEV embed for {entry.get('cveID', 'Unknown CVE')} to channel {channel_id} (Guild: {guild_id}): {e}"
@@ -362,33 +355,17 @@ class SecurityBot(commands.Bot):
                                     f"Unexpected error sending KEV embed for {entry.get('cveID', 'Unknown CVE')} (Guild: {guild_id}): {e}",
                                     exc_info=True,
                                 )
-                        # Consider moving sleep outside inner loop if rate limits are per channel
-                        await asyncio.sleep(
-                            2
-                        )  # Sleep AFTER processing all entries for ONE channel
-
-                    # --- Moved Stat Update Outside Config Loop ---
+                        await asyncio.sleep(2)
+                    # Update global counter after processing all guilds for this run
                     if alerts_sent_this_run > 0:
                         async with self.stats_lock:
                             self.stats_kev_alerts_sent += alerts_sent_this_run
-                        logger.info(
-                            f"Finished sending KEV alerts. Total sent this run: {alerts_sent_this_run}"
-                        )
-                    # --- End Moved Stat Update ---
 
                 else:
                     logger.info("No guilds have KEV monitoring enabled.")
-                # --- End: Block moved inside this 'else' ---
-
             # Update success timestamp if the fetch didn't raise an exception
-            # This should be outside the main try/except for the KEV check logic
-            # to ensure it runs even if there are errors processing entries,
-            # as long as the initial fetch succeeded.
             if success:
                 self.timestamp_last_kev_check_success = task_start_time
-                logger.debug(
-                    f"Updated last KEV check success timestamp to {task_start_time}"
-                )
 
         except Exception as e:
             # Catch errors in the loop logic itself (outside CISA client call)
