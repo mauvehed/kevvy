@@ -27,47 +27,37 @@ Look up detailed information about a specific CVE identifier.
 
 ## Channel Configuration (`/cve channel`)
 
-Configure channels for CVE-related features (currently affects `/cve latest` context, future use for targeted alerts).
+Configure which channels the bot should automatically scan for CVE IDs in messages.
 
 **Permission Required:** Manage Server
 
-### `/cve channel enable <channel>`
+### `/cve channel add <channel>`
 
-Enables CVE monitoring features for the specified channel. This currently sets the context for commands like `/cve latest` and prepares for future targeted alert features.
+Enables automatic CVE scanning for messages posted in the specified channel. Requires global monitoring to be enabled (see `/cve channel enable_global`).
 
-- **`<channel>`:** (Required) The text channel to enable/configure.
-
-**Example:**
-
-```
-/cve channel enable channel:#security-feed
-```
-
-### `/cve channel disable`
-
-Disables global CVE monitoring features for the server (affects `/cve latest` context and future alerts).
+- **`<channel>`:** (Required) The text channel to monitor.
 
 **Example:**
 
 ```
-/cve channel disable
+/cve channel add channel:#security-feed
 ```
 
-### `/cve channel set <channel>`
+### `/cve channel remove <channel>`
 
-Sets or updates the specific channel for CVE features (effectively the same as `/cve channel enable`). Ensures global monitoring is enabled.
+Disables automatic CVE scanning for messages posted in the specified channel. The global setting remains unaffected.
 
-- **`<channel>`:** (Required) The text channel to set.
+- **`<channel>`:** (Required) The text channel to stop monitoring.
 
 **Example:**
 
 ```
-/cve channel set channel:#security-feed
+/cve channel remove channel:#security-feed
 ```
 
 ### `/cve channel list`
 
-Lists all channels specifically configured for CVE alerts.
+Lists all channels currently configured for automatic CVE scanning.
 
 **Example:**
 
@@ -78,19 +68,110 @@ Lists all channels specifically configured for CVE alerts.
 **Example Response:**
 
 ```
-ℹ️ CVE monitoring is **enabled** globally.
+ℹ️ Global CVE message scanning is **enabled**.
 Configured channels:
 - #security-feed
+- #vuln-reports
 ```
 
-### `/cve channel all`
+or
 
-Enables global CVE monitoring and clears any specific channel configurations, making the bot listen for CVEs in all channels.
+```
+ℹ️ Global CVE message scanning is **enabled**.
+Configured channels:
+No channels are specifically configured. Use `/cve channel add`.
+```
+
+### `/cve channel status`
+
+Shows the global CVE message scanning status (enabled/disabled) and lists the configured channels.
 
 **Example:**
 
 ```
-/cve channel all
+/cve channel status
+```
+
+**Example Response:** (Similar to `/cve channel list`)
+
+```
+ℹ️ Global CVE message scanning is **enabled**.
+Configured channels:
+- #security-feed
+```
+
+or
+
+```
+⚪ Global CVE message scanning is **disabled**.
+Use `/cve channel enable_global` to activate it.
+```
+
+### `/cve channel enable_global`
+
+Enables automatic CVE message scanning globally for the server. You still need to add specific channels using `/cve channel add` for the bot to actually scan them.
+
+**Example:**
+
+```
+/cve channel enable_global
+```
+
+### `/cve channel disable_global`
+
+Disables automatic CVE message scanning globally for the server. No messages will be scanned in any channel, regardless of individual channel configurations.
+
+**Example:**
+
+```
+/cve channel disable_global
+```
+
+---
+
+## Severity Threshold (`/cve threshold`)
+
+Configure the minimum CVSS severity required for a CVE found in a message to trigger an automatic alert.
+
+**Permission Required:** Manage Server
+
+### `/cve threshold set <level>`
+
+Set the minimum severity level.
+
+- **`<level>`**: (Required) The minimum severity.
+  - _Choices:_ `critical`, `high`, `medium`, `low`, `all` (default)
+
+**Example:**
+
+```
+/cve threshold set level:high
+```
+
+### `/cve threshold view`
+
+Displays the current global minimum severity threshold setting.
+
+**Example:**
+
+```
+/cve threshold view
+```
+
+**Example Response:**
+
+```
+ℹ️ Current global CVE severity threshold: **high**
+```
+
+### `/cve threshold reset`
+
+Resets the global minimum severity threshold to the default (`all`).
+
+**Example:**
+
+```
+/cve threshold reset
 ```
 
 ---
@@ -132,17 +213,6 @@ Displays a list of recent CVEs matching the criteria, sorted by publication date
 
 _(Note: The following features are planned but not yet implemented)_
 
-### Severity Threshold (`/cve threshold`) (Future)
-
-Configure a minimum CVSS severity threshold for future CVE alert features.
-
-**Permission Required:** Manage Server
-
-- **/cve threshold set `<level>`**: Set the minimum severity.
-  - _Levels:_ `critical`, `high`, `medium`, `low`, `all` (default)
-- **/cve threshold view**: Display the current threshold setting.
-- **/cve threshold reset**: Reset the threshold to the default (`all`).
-
 ### Alert Formatting (`/cve format`) (Future)
 
 Customize the appearance of future CVE alerts.
@@ -154,6 +224,8 @@ Customize the appearance of future CVE alerts.
 - **/cve format reset**: Reset the alert format to the default style.
 
 ### Multi-Channel Configuration (`/cve channels`) (Future)
+
+_(This section might be superseded or clarified by the existing `/cve channel` and `/verbose` commands)_
 
 Configure CVE alerts to be sent to multiple channels with potentially different settings (severity, format, verbosity) per channel.
 
