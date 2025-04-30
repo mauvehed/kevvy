@@ -90,6 +90,7 @@ or
 
 Configured channels:
 - #security-feed
+- #vuln-reports
 ```
 
 ### `/cve channel enable_global`
@@ -151,17 +152,6 @@ Displays a list of recent CVEs matching the criteria, sorted by publication date
 
 _(Note: The following features are planned but not yet implemented)_
 
-### Severity Threshold (`/cve threshold`) (Future)
-
-Configure a minimum CVSS severity threshold for future CVE alert features.
-
-**Permission Required:** Manage Server
-
-- **/cve threshold set `<level>`**: Set the minimum severity.
-  - _Levels:_ `critical`, `high`, `medium`, `low`, `all` (default)
-- **/cve threshold view**: Display the current threshold setting.
-- **/cve threshold reset**: Reset the threshold to the default (`all`).
-
 ### Alert Formatting (`/cve format`) (Future)
 
 Customize the appearance of future CVE alerts.
@@ -173,6 +163,8 @@ Customize the appearance of future CVE alerts.
 - **/cve format reset**: Reset the alert format to the default style.
 
 ### Multi-Channel Configuration (`/cve channels`) (Future)
+
+_(This section might be superseded or clarified by the existing `/cve channel` and `/verbose` commands)_
 
 Configure CVE alerts to be sent to multiple channels with potentially different settings (severity, format, verbosity) per channel.
 
