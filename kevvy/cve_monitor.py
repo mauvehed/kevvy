@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class CVEMonitor:
-    CVE_REGEX = re.compile(r"CVE-\d{4}-\d{4,7}", re.IGNORECASE)
+    CVE_REGEX = re.compile(r"CVE(?:-| )\d{4}(?:-| )\d{4,7}", re.IGNORECASE)
 
     def __init__(
         self, nvd_client: NVDClient, kev_client: Optional[CisaKevClient] = None
