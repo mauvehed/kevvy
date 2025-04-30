@@ -45,7 +45,7 @@ Enables automatic CVE scanning for messages posted in the specified channel. Req
 
 ### `/cve channel remove <channel>`
 
-Removes the automatic CVE scanning configuration for the specified channel.
+Disables automatic CVE scanning for messages posted in the specified channel. The global setting remains unaffected.
 
 - **`<channel>`:** (Required) The text channel to stop monitoring.
 
@@ -87,9 +87,6 @@ or
 
 ```
 ⚪ Global automatic CVE monitoring is currently **disabled** for this server.
-
-Configured channels:
-- #security-feed
 ```
 
 ### `/cve channel enable_global`
@@ -110,6 +107,53 @@ Disables automatic CVE message scanning globally for the server. No messages wil
 
 ```
 /cve channel disable_global
+```
+
+---
+
+## Severity Threshold (`/cve threshold`)
+
+Configure the minimum CVSS severity required for a CVE found in a message to trigger an automatic alert.
+
+**Permission Required:** Manage Server
+
+### `/cve threshold set <level>`
+
+Set the minimum severity level.
+
+- **`<level>`**: (Required) The minimum severity.
+  - _Choices:_ `critical`, `high`, `medium`, `low`, `all` (default)
+
+**Example:**
+
+```
+/cve threshold set level:high
+```
+
+### `/cve threshold view`
+
+Displays the current global minimum severity threshold setting.
+
+**Example:**
+
+```
+/cve threshold view
+```
+
+**Example Response:**
+
+```
+ℹ️ Current global CVE severity threshold: **high**
+```
+
+### `/cve threshold reset`
+
+Resets the global minimum severity threshold to the default (`all`).
+
+**Example:**
+
+```
+/cve threshold reset
 ```
 
 ---
@@ -151,17 +195,6 @@ Displays a list of recent CVEs matching the criteria, sorted by publication date
 
 _(Note: The following features are planned but not yet implemented)_
 
-### Severity Threshold (`/cve threshold`) (Future)
-
-Configure a minimum CVSS severity threshold for future CVE alert features.
-
-**Permission Required:** Manage Server
-
-- **/cve threshold set `<level>`**: Set the minimum severity.
-  - _Levels:_ `critical`, `high`, `medium`, `low`, `all` (default)
-- **/cve threshold view**: Display the current threshold setting.
-- **/cve threshold reset**: Reset the threshold to the default (`all`).
-
 ### Alert Formatting (`/cve format`) (Future)
 
 Customize the appearance of future CVE alerts.
@@ -173,6 +206,8 @@ Customize the appearance of future CVE alerts.
 - **/cve format reset**: Reset the alert format to the default style.
 
 ### Multi-Channel Configuration (`/cve channels`) (Future)
+
+_(This section might be superseded or clarified by the existing `/cve channel` and `/verbose` commands)_
 
 Configure CVE alerts to be sent to multiple channels with potentially different settings (severity, format, verbosity) per channel.
 
