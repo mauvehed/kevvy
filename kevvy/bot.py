@@ -689,7 +689,7 @@ class SecurityBot(commands.Bot):
             except KeyError:
                 pass  # Ignore if already deleted by concurrent process
 
-        for cve_id in unique_cves:
+        for cve_id_raw in unique_cves:
             if processed_count >= MAX_EMBEDS_PER_MESSAGE:
                 logger.warning(
                     f"Reached max embed limit ({MAX_EMBEDS_PER_MESSAGE}) for message {message.id}. Remaining CVEs: {unique_cves[processed_count:]}"
@@ -706,14 +706,18 @@ class SecurityBot(commands.Bot):
                 break  # Stop processing this message
 
             try:
-                cve_id_upper = cve_id.upper()  # Convert to uppercase
-                cache_key = (channel_id, cve_id_upper)
+                # --- Normalize CVE ID --- #
+                # Ensure uppercase and hyphens for API calls and caching
+                cve_id = cve_id_raw.upper().replace(" ", "-")
+                # --- End Normalization ---
+
+                cache_key = (channel_id, cve_id)
 
                 # --- Cache Check ---
                 last_processed_time = self.recently_processed_cves.get(cache_key)
                 if last_processed_time and last_processed_time > cache_expiry_time:
                     logger.debug(
-                        f"Skipping recently processed CVE {cve_id_upper} in channel {channel_id} (Cached at {last_processed_time})."
+                        f"Skipping recently processed CVE {cve_id} in channel {channel_id} (Cached at {last_processed_time})."
                     )
                     continue  # Skip this CVE, already processed recently
                 # --- End Cache Check ---
@@ -723,10 +727,10 @@ class SecurityBot(commands.Bot):
                     self.stats_cve_lookups += 1
 
                 # Fetch CVE data (this handles VulnCheck/NVD)
-                cve_data = await self.cve_monitor.get_cve_data(cve_id_upper)
+                cve_data = await self.cve_monitor.get_cve_data(cve_id)
                 if not cve_data:
                     logger.warning(
-                        f"No data found for {cve_id_upper} mentioned in message {message.id}."
+                        f"No data found for {cve_id} mentioned in message {message.id}."
                     )
                     # Maybe increment an error/not_found counter here?
                     continue  # Skip this CVE
@@ -744,7 +748,7 @@ class SecurityBot(commands.Bot):
                 )
                 if not passes_threshold:
                     logger.info(
-                        f"CVE {cve_id_upper} (Severity: {cve_severity_str}) does not meet threshold '{min_severity_str}' for guild {guild_id}. Skipping alert."
+                        f"CVE {cve_id} (Severity: {cve_severity_str}) does not meet threshold '{min_severity_str}' for guild {guild_id}. Skipping alert."
                     )
                     continue
                 # --- End Severity Check ---
@@ -762,7 +766,7 @@ class SecurityBot(commands.Bot):
                 await message.channel.send(embed=cve_embed)
                 processed_count += 1
                 logger.info(
-                    f"Sent alert for {cve_id_upper} (Severity: {cve_severity_str}, Verbose: {is_verbose}) from message {message.id}."
+                    f"Sent alert for {cve_id} (Severity: {cve_severity_str}, Verbose: {is_verbose}) from message {message.id}."
                 )
 
                 # --- Update Cache on Success ---
@@ -774,12 +778,10 @@ class SecurityBot(commands.Bot):
                 # Check KEV status
                 kev_status = None  # Initialize kev_status
                 try:
-                    kev_status = await self.cve_monitor.check_kev(
-                        cve_id_upper
-                    )  # Use uppercase ID for KEV check too
+                    kev_status = await self.cve_monitor.check_kev(cve_id)
                 except Exception as kev_err:
                     logger.error(
-                        f"Error checking KEV status for {cve_id_upper}: {kev_err}",
+                        f"Error checking KEV status for {cve_id}: {kev_err}",
                         exc_info=True,
                     )
                     async with self.stats_lock:
@@ -787,28 +789,28 @@ class SecurityBot(commands.Bot):
 
                 if kev_status:
                     kev_embed = self.cve_monitor.create_kev_status_embed(
-                        cve_id_upper, kev_status, verbose=is_verbose
-                    )  # Use uppercase ID for KEV embed
+                        cve_id, kev_status, verbose=is_verbose
+                    )
                     await message.channel.send(embed=kev_embed)
                     logger.info(
-                        f"Sent KEV status for {cve_id_upper} (Verbose: {is_verbose}) from message {message.id}."
+                        f"Sent KEV status for {cve_id} (Verbose: {is_verbose}) from message {message.id}."
                     )
                     # No need to update cache again here, CVE embed send was enough
                     await asyncio.sleep(1.0)  # Sleep AFTER sending KEV embed
 
             except discord.Forbidden:
                 logger.error(
-                    f"Missing permissions to send message/embed in channel {channel_id} (Guild: {guild_id}) for CVE {cve_id_upper}."
+                    f"Missing permissions to send message/embed in channel {channel_id} (Guild: {guild_id}) for CVE {cve_id}."
                 )
                 break  # Stop processing this message if permissions fail
             except discord.HTTPException as e:
                 logger.error(
-                    f"HTTP error sending embed for {cve_id_upper} in channel {channel_id} (Guild: {guild_id}): {e}"
+                    f"HTTP error sending embed for {cve_id} in channel {channel_id} (Guild: {guild_id}): {e}"
                 )
                 # Could increment a generic discord error stat here if needed
                 # Continue to next CVE potentially
             except NVDRateLimitError as e:
-                logger.error(f"NVD rate limit hit processing {cve_id_upper}: {e}")
+                logger.error(f"NVD rate limit hit processing {cve_id}: {e}")
                 async with self.stats_lock:
                     self.stats_rate_limits_hit_nvd += (
                         1  # Use the specific rate limit counter
@@ -819,7 +821,7 @@ class SecurityBot(commands.Bot):
                 continue  # Allow processing of other CVEs if possible
             except Exception as e:
                 logger.error(
-                    f"Unexpected error processing CVE {cve_id_upper} from message {message.id}: {e}",
+                    f"Unexpected error processing CVE {cve_id} from message {message.id}: {e}",
                     exc_info=True,
                 )
                 # Increment a generic error counter? Need more specific API error counters maybe.
