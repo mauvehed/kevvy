@@ -5,7 +5,7 @@
 </h1>
 
 <div align="center">
-  A Discord bot for searching the Common Vulnerabilities and Exposures (CVE) list and providing KEV updates.
+  A Discord bot for searching the Common Vulnerabilities and Exposures (CVE) list and providing Known Exploitable Vulnerabilities (KEV) updates.
 </div>
 
 <div align="center">
