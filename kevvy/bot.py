@@ -461,6 +461,11 @@ class SecurityBot(commands.Bot):
                 "guild_count": len(self.guilds),
                 "latency_ms": round(self.latency * 1000, 2),
                 "start_time": self.start_time.isoformat(),
+                "uptime_seconds": round(
+                    (
+                        datetime.now(datetime.timezone.utc) - self.start_time
+                    ).total_seconds()
+                ),
                 "timestamp": current_time.isoformat(),
                 "last_stats_sent_time": (
                     self.last_stats_sent_time.isoformat()
