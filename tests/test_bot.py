@@ -1182,6 +1182,7 @@ async def test_send_stats_to_webapp_success(mocker, mock_bot_with_tasks, caplog)
         "guild_count": 0,  # Fixture bot isn't in guilds yet
         "latency_ms": round(mock_bot_with_tasks.latency * 1000, 2),
         "start_time": mock_bot_with_tasks.start_time.isoformat(),
+        "uptime_seconds": mocker.ANY,  # Add expected uptime key
         "timestamp": mocker.ANY,  # Use ANY for timestamp
         "last_stats_sent_time": None,  # Initially None before first successful send
         "stats": {

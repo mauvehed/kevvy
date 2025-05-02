@@ -463,7 +463,7 @@ class SecurityBot(commands.Bot):
                 "start_time": self.start_time.isoformat(),
                 "uptime_seconds": round(
                     (
-                        datetime.now(datetime.timezone.utc) - self.start_time
+                        datetime.datetime.now(datetime.timezone.utc) - self.start_time
                     ).total_seconds()
                 ),
                 "timestamp": current_time.isoformat(),
