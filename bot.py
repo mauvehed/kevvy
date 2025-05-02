@@ -399,6 +399,13 @@ class SecurityBot(commands.Bot):
 
         current_time = datetime.datetime.now(datetime.timezone.utc)
         stats_payload = {}
+        kev_enabled_count = 0
+        if self.db:
+            try:
+                # Get the count of KEV-enabled guilds
+                kev_enabled_count = self.db.count_enabled_guilds()
+            except Exception as db_err:
+                logger.error(f"Error fetching KEV enabled guild count: {db_err}", exc_info=True)
 
         # Safely gather stats under lock
         async with self.stats_lock:
@@ -441,7 +448,7 @@ class SecurityBot(commands.Bot):
                         if self.timestamp_last_kev_alert_sent
                         else None
                     ),
-                    # Add other relevant stats like uptime if needed
+                    "kev_enabled_guilds": kev_enabled_count
                 },
             }
 
