@@ -411,6 +411,10 @@ class SecurityBot(commands.Bot):
 
         # Safely gather stats under lock
         async with self.stats_lock:
+            # Calculate uptime seconds
+            uptime_delta = current_time - self.start_time
+            uptime_seconds = int(uptime_delta.total_seconds())
+
             stats_payload = {
                 "bot_id": self.user.id if self.user else None,
                 "bot_name": str(self.user) if self.user else "Unknown",
@@ -419,6 +423,8 @@ class SecurityBot(commands.Bot):
                 "shard_id": self.shard_id if self.shard_id is not None else 0,
                 "shard_count": self.shard_count if self.shard_count is not None else 1,
                 "start_time": self.start_time.isoformat(),
+                "uptime_seconds": uptime_seconds,
+                "is_ready": self.is_ready(),
                 "timestamp": current_time.isoformat(),
                 "last_stats_sent_time": (
                     self.last_stats_sent_time.isoformat()
