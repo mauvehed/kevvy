@@ -168,10 +168,10 @@ class SecurityBot(commands.Bot):
         initial_extensions = [
             "kevvy.cogs.kev_commands",
             "kevvy.cogs.cve_lookup",
-            # 'kevvy.cogs.diagnostics' # Removed as requested
+            "kevvy.cogs.diagnostics",
         ]
-        self.loaded_cogs = []  # Reset on setup
-        self.failed_cogs = []  # Reset on setup
+        self.loaded_cogs = []
+        self.failed_cogs = []
         for extension in initial_extensions:
             try:
                 await self.load_extension(extension)
@@ -405,7 +405,9 @@ class SecurityBot(commands.Bot):
                 # Get the count of KEV-enabled guilds
                 kev_enabled_count = self.db.count_enabled_guilds()
             except Exception as db_err:
-                logger.error(f"Error fetching KEV enabled guild count: {db_err}", exc_info=True)
+                logger.error(
+                    f"Error fetching KEV enabled guild count: {db_err}", exc_info=True
+                )
 
         # Safely gather stats under lock
         async with self.stats_lock:
@@ -448,7 +450,7 @@ class SecurityBot(commands.Bot):
                         if self.timestamp_last_kev_alert_sent
                         else None
                     ),
-                    "kev_enabled_guilds": kev_enabled_count
+                    "kev_enabled_guilds": kev_enabled_count,
                 },
             }
 
