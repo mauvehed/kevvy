@@ -174,6 +174,7 @@ class SecurityBot(commands.Bot):
         self.failed_cogs = []
         for extension in initial_extensions:
             try:
+                logger.debug(f"Attempting to load extension: {extension}")
                 await self.load_extension(extension)
                 logger.info(f"Successfully loaded extension: {extension}")
                 self.loaded_cogs.append(extension)
