@@ -416,6 +416,8 @@ class SecurityBot(commands.Bot):
                 "bot_name": str(self.user) if self.user else "Unknown",
                 "guild_count": len(self.guilds),
                 "latency_ms": round(self.latency * 1000, 2),
+                "shard_id": self.shard_id if self.shard_id is not None else 0,
+                "shard_count": self.shard_count if self.shard_count is not None else 1,
                 "start_time": self.start_time.isoformat(),
                 "timestamp": current_time.isoformat(),
                 "last_stats_sent_time": (
