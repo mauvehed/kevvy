@@ -168,10 +168,10 @@ class SecurityBot(commands.Bot):
         initial_extensions = [
             "kevvy.cogs.kev_commands",
             "kevvy.cogs.cve_lookup",
-            "kevvy.cogs.diagnostics",  # Removed as requested
+            "kevvy.cogs.diagnostics",
         ]
-        self.loaded_cogs = []  # Reset on setup
-        self.failed_cogs = []  # Reset on setup
+        self.loaded_cogs = []
+        self.failed_cogs = []
         for extension in initial_extensions:
             try:
                 await self.load_extension(extension)
