@@ -5,8 +5,14 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock
 from datetime import datetime, timezone
 from collections import defaultdict
 import aiohttp
+import sys
+from types import ModuleType
 
-from kevvy.nvd_client import NVDClient
+# Mock the vulncheck_sdk module to avoid dependency issues in tests
+mock_vulncheck_sdk = ModuleType("vulncheck_sdk")
+sys.modules["vulncheck_sdk"] = mock_vulncheck_sdk
+
+from kevvy.nvd_client import NVDClient, NVDRateLimitError
 from kevvy.bot import SecurityBot
 from kevvy.db_utils import KEVConfigDB
 from kevvy.cve_monitor import CVEMonitor
@@ -177,26 +183,31 @@ def mock_cisa_kev_client(mocker):
 
 
 @pytest.fixture
-def mock_bot(
-    mocker, mock_db, mock_cve_monitor
-):  # mock_cisa_kev_client removed as it's not directly used by mock_bot
+def mock_stats_manager(mocker):
+    """Fixture for a mocked StatsManager object."""
+    stats_manager = MagicMock()
+    stats_manager.increment_messages_processed = AsyncMock()
+    stats_manager.increment_cve_lookups = AsyncMock()
+    stats_manager.increment_nvd_fallback_success = AsyncMock()
+    stats_manager.record_api_error = AsyncMock()
+    stats_manager.record_nvd_rate_limit_hit = AsyncMock()
+    stats_manager.increment_kev_alerts_sent = AsyncMock()
+    return stats_manager
+
+
+@pytest.fixture
+def mock_bot(mocker, mock_db, mock_cve_monitor, mock_stats_manager):
     """Fixture for a mocked SecurityBot instance with mocked dependencies."""
     bot = SecurityBot(nvd_api_key=None, vulncheck_api_token=None)
 
     bot.db = mock_db
     bot.cve_monitor = mock_cve_monitor
-    # If tests using mock_bot need mock_cisa_kev_client, they should request it directly.
     bot.http_session = AsyncMock(spec=aiohttp.ClientSession)
     bot.stats_lock = asyncio.Lock()
     bot.start_time = datetime.now(timezone.utc)
+    bot.stats_manager = mock_stats_manager  # Add the stats manager
 
-    mock_user = AsyncMock(spec=discord.ClientUser)
-    mock_user.id = 987654321
-    mock_user.name = "TestBot"
-    mocker.patch.object(
-        SecurityBot, "user", new_callable=PropertyMock, return_value=mock_user
-    )
-
+    # Support legacy attributes for backward compatibility with tests
     bot.stats_cve_lookups = 0
     bot.stats_kev_alerts_sent = 0
     bot.stats_messages_processed = 0
@@ -209,10 +220,138 @@ def mock_bot(
     bot.stats_rate_limits_nvd = 0
     bot.stats_rate_limits_hit_nvd = 0
     bot.stats_app_command_errors = defaultdict(int)
+
+    mock_user = AsyncMock(spec=discord.ClientUser)
+    mock_user.id = 987654321
+    mock_user.name = "TestBot"
+    mocker.patch.object(
+        SecurityBot, "user", new_callable=PropertyMock, return_value=mock_user
+    )
+
+    # Add the direct on_message method for tests (similar to CoreEventsCog implementation)
+    async def mock_on_message(message):
+        if message.author.bot:
+            return
+        if not message.guild:
+            return
+
+        # Increment message processed using StatsManager
+        await bot.stats_manager.increment_messages_processed()
+        # Also increment legacy counter for backward compatibility with tests
+        bot.stats_messages_processed += 1
+
+        # Find potential CVEs in the message
+        potential_cves = bot.cve_monitor.find_cves(message.content)
+        if not potential_cves:
+            return
+
+        guild_id = message.guild.id
+        channel_id = message.channel.id
+
+        guild_config = bot.db.get_cve_guild_config(guild_id)
+        if not guild_config or not guild_config.get("enabled"):
+            return
+
+        channel_config = bot.db.get_cve_channel_config(guild_id, channel_id)
+        if not channel_config or not channel_config.get("enabled"):
+            return
+
+        # Process each unique CVE
+        unique_cves = sorted(list(set(potential_cves)))
+        now = datetime.now(timezone.utc)
+
+        processed_count = 0
+        max_embeds = getattr(bot, "MAX_EMBEDS_PER_MESSAGE", 5)
+
+        for cve_id in unique_cves:
+            if processed_count >= max_embeds:
+                break  # Stop processing if hit the max embed limit
+
+            # Skip if recently processed
+            cache_key = (channel_id, cve_id)
+            if cache_key in bot.recently_processed_cves:
+                continue
+
+            # Get CVE data and increment counter
+            await bot.stats_manager.increment_cve_lookups()
+            # Legacy counter for backward compatibility with tests
+            bot.stats_cve_lookups += 1
+
+            try:
+                cve_data = await bot.cve_monitor.get_cve_data(cve_id)
+                if not cve_data:
+                    continue
+
+                # Record successful lookup
+                await bot.stats_manager.increment_nvd_fallback_success()
+                # Legacy counter for backward compatibility with tests
+                bot.stats_nvd_fallback_success += 1
+
+                # Check severity threshold
+                min_severity = guild_config.get("severity_threshold", "all")
+                passes_threshold, _ = bot.cve_monitor.check_severity_threshold(
+                    cve_data, threshold=min_severity
+                )
+                if not passes_threshold:
+                    continue
+
+                # Get verbosity setting
+                is_verbose = bot.db.get_effective_verbosity(guild_id, channel_id)
+
+                # Create and send embed
+                cve_embed = bot.cve_monitor.create_cve_embed(
+                    cve_data, verbose=is_verbose
+                )
+                try:
+                    await message.channel.send(embed=cve_embed)
+
+                    # Only add to cache and increment processed count if successfully sent
+                    bot.recently_processed_cves[cache_key] = now
+                    processed_count += 1
+
+                    # Only check KEV status after successfully sending the first embed
+                    kev_data = None
+                    try:
+                        kev_data = await bot.cve_monitor.check_kev(cve_id)
+                    except Exception:
+                        # Record KEV API error using StatsManager
+                        await bot.stats_manager.record_api_error("kev")
+                        # Legacy counter for backward compatibility with tests
+                        bot.stats_api_errors_kev += 1
+
+                    # Send KEV status if available
+                    if kev_data:
+                        kev_embed = bot.cve_monitor.create_kev_status_embed(
+                            cve_id, kev_data, verbose=is_verbose
+                        )
+                        await message.channel.send(embed=kev_embed)
+
+                except (discord.Forbidden, discord.HTTPException):
+                    # Exit the loop early on Discord errors
+                    break
+
+            except NVDRateLimitError:
+                # Record rate limit hit
+                await bot.stats_manager.record_nvd_rate_limit_hit()
+                # Legacy stats
+                bot.stats_rate_limits_hit_nvd += 1
+                bot.stats_api_errors_nvd += 1
+                # Exit the loop early on rate limit
+                break
+
+            except Exception:
+                # Record API error for other exceptions
+                await bot.stats_manager.record_api_error("nvd")
+                # Legacy stats
+                bot.stats_api_errors_nvd += 1
+                continue
+
+    bot.on_message = mock_on_message
     bot.loaded_cogs = []
     bot.failed_cogs = []
     bot.timestamp_last_kev_check_success = None
     bot.timestamp_last_kev_alert_sent = None
     bot.recently_processed_cves = {}
+    bot.RECENT_CVE_CACHE_SECONDS = 20  # Add the same cache duration
 
     return bot

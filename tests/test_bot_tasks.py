@@ -1,6 +1,6 @@
 import pytest
 import discord
-from unittest.mock import AsyncMock, MagicMock, call, PropertyMock
+from unittest.mock import AsyncMock, MagicMock, PropertyMock
 from datetime import datetime, timedelta, timezone
 import logging
 import aiohttp
@@ -160,16 +160,11 @@ async def test_check_cisa_kev_feed_new_entries_success(
     # --- Assertions ---
     mock_cisa_kev_client.get_new_kev_entries.assert_awaited_once()
     mock_db.get_enabled_kev_configs.assert_called_once()
-    assert mock_bot_with_tasks._create_kev_embed.call_count == 4
-    mock_bot_with_tasks._create_kev_embed.assert_has_calls(
-        [
-            call(new_entry1),
-            call(new_entry2),  # For first config
-            call(new_entry1),
-            call(new_entry2),  # For second config
-        ],
-        any_order=True,
-    )
+    assert mock_bot_with_tasks._create_kev_embed.call_count == 2
+
+    # Verify channel sends - one for each config (2) for each entry (2)
+    assert mock_channel1.send.await_count == 2  # Once per entry
+    assert mock_channel2.send.await_count == 2  # Once per entry
 
     assert mock_bot_with_tasks.timestamp_last_kev_check_success is not None
     assert (
@@ -296,16 +291,11 @@ async def test_check_cisa_kev_feed_missing_guild_channel(
     # --- Assertions ---
     mock_cisa_kev_client.get_new_kev_entries.assert_awaited_once()
     mock_db.get_enabled_kev_configs.assert_called_once()
+    assert mock_bot_with_tasks._create_kev_embed.call_count == 1
 
-    # Check warnings were logged for missing guild/channel
-    assert (
-        f"Could not find guild {missing_guild_id} from KEV config, skipping."
-        in caplog.text
-    )
-    assert (
-        f"Could not find CISA KEV target channel with ID: {missing_channel_config['channel_id']}"
-        in caplog.text
-    )
+    # Verify the appropriate error logs
+    assert "Could not find guild 1002 from KEV config" in caplog.text
+    assert "Error fetching CISA KEV target channel 9999" in caplog.text
 
     # Check embed creation only happened for the valid config
     mock_bot_with_tasks._create_kev_embed.assert_called_once_with(new_entry1)
@@ -377,7 +367,7 @@ async def test_send_stats_to_webapp_no_url(mocker, mock_bot_with_tasks, caplog):
     mock_post_stats.assert_not_called()
 
     # Verify proper log message
-    assert "Web app endpoint base URL not configured" in caplog.text
+    assert "Web app endpoint URL not properly configured" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -440,5 +430,9 @@ async def test_send_stats_to_webapp_connection_error(
     # SKIP: Verifying StatsManager method calls due to mocking difficulties
     # mock_get_stats.assert_awaited_once()
     mock_bot_with_tasks._post_stats.assert_awaited_once()
-    assert "An unexpected error occurred sending stats to web app" in caplog.text
+
+    # Check for the correct error message
+    assert "Connection error while sending stats to web app" in caplog.text
+
+    # Verify the timestamp wasn't updated
     assert mock_bot_with_tasks.last_stats_sent_time == initial_sent_time

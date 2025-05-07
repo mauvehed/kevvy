@@ -2,14 +2,14 @@ import pytest
 import discord
 from unittest.mock import MagicMock  # Import necessary mocks
 
-from kevvy.cve_monitor import NVDRateLimitError  # Specific error import
+from kevvy.nvd_client import NVDRateLimitError  # Specific error import
 
 # Fixtures are expected from conftest.py
 
 
 @pytest.mark.asyncio
 async def test_on_message_error_nvd_rate_limit(
-    mock_bot, mock_message, mock_db, mock_cve_monitor
+    mock_bot, mock_message, mock_db, mock_cve_monitor, mock_stats_manager
 ):
     """Test error handling for NVDRateLimitError during data fetch."""
     cve_id = "CVE-2023-8888"
@@ -28,6 +28,12 @@ async def test_on_message_error_nvd_rate_limit(
         mock_message.channel.id,
         cve_id_upper,
     ) not in mock_bot.recently_processed_cves
+
+    mock_stats_manager.increment_messages_processed.assert_awaited_once()
+    mock_stats_manager.increment_cve_lookups.assert_awaited_once()
+    mock_stats_manager.record_nvd_rate_limit_hit.assert_awaited_once()
+
+    # For backward compatibility
     assert mock_bot.stats_cve_lookups == 1
     assert mock_bot.stats_nvd_fallback_success == 0
     assert mock_bot.stats_rate_limits_hit_nvd == 1
@@ -36,7 +42,7 @@ async def test_on_message_error_nvd_rate_limit(
 
 @pytest.mark.asyncio
 async def test_on_message_error_kev_check(
-    mock_bot, mock_message, mock_db, mock_cve_monitor
+    mock_bot, mock_message, mock_db, mock_cve_monitor, mock_stats_manager
 ):
     """Test error handling when check_kev raises an exception."""
     cve_id = "CVE-2023-9999"
@@ -62,6 +68,13 @@ async def test_on_message_error_kev_check(
         embed=mock_cve_monitor.create_cve_embed.return_value
     )
     assert (mock_message.channel.id, cve_id_upper) in mock_bot.recently_processed_cves
+
+    mock_stats_manager.increment_messages_processed.assert_awaited_once()
+    mock_stats_manager.increment_cve_lookups.assert_awaited_once()
+    mock_stats_manager.increment_nvd_fallback_success.assert_awaited_once()
+    mock_stats_manager.record_api_error.assert_awaited_once_with("kev")
+
+    # For backward compatibility
     assert mock_bot.stats_cve_lookups == 1
     assert mock_bot.stats_nvd_fallback_success == 1
     assert mock_bot.stats_api_errors_kev == 1
@@ -69,7 +82,7 @@ async def test_on_message_error_kev_check(
 
 @pytest.mark.asyncio
 async def test_on_message_error_discord_forbidden(
-    mock_bot, mock_message, mock_db, mock_cve_monitor
+    mock_bot, mock_message, mock_db, mock_cve_monitor, mock_stats_manager
 ):
     """Test error handling when discord.Forbidden is raised on send."""
     cve_id = "CVE-2023-1212"
@@ -99,13 +112,19 @@ async def test_on_message_error_discord_forbidden(
         mock_message.channel.id,
         cve_id_upper,
     ) not in mock_bot.recently_processed_cves
+
+    mock_stats_manager.increment_messages_processed.assert_awaited_once()
+    mock_stats_manager.increment_cve_lookups.assert_awaited_once()
+    mock_stats_manager.increment_nvd_fallback_success.assert_awaited_once()
+
+    # For backward compatibility
     assert mock_bot.stats_cve_lookups == 1
     assert mock_bot.stats_nvd_fallback_success == 1
 
 
 @pytest.mark.asyncio
 async def test_on_message_error_discord_http(
-    mock_bot, mock_message, mock_db, mock_cve_monitor
+    mock_bot, mock_message, mock_db, mock_cve_monitor, mock_stats_manager
 ):
     """Test error handling when discord.HTTPException is raised on send."""
     cve_id = "CVE-2023-2323"
@@ -135,13 +154,19 @@ async def test_on_message_error_discord_http(
         mock_message.channel.id,
         cve_id_upper,
     ) not in mock_bot.recently_processed_cves
+
+    mock_stats_manager.increment_messages_processed.assert_awaited_once()
+    mock_stats_manager.increment_cve_lookups.assert_awaited_once()
+    mock_stats_manager.increment_nvd_fallback_success.assert_awaited_once()
+
+    # For backward compatibility
     assert mock_bot.stats_cve_lookups == 1
     assert mock_bot.stats_nvd_fallback_success == 1
 
 
 @pytest.mark.asyncio
 async def test_on_message_error_generic_exception(
-    mock_bot, mock_message, mock_db, mock_cve_monitor
+    mock_bot, mock_message, mock_db, mock_cve_monitor, mock_stats_manager
 ):
     """Test error handling for unexpected exceptions during processing."""
     cve_id = "CVE-2023-4545"
@@ -163,6 +188,13 @@ async def test_on_message_error_generic_exception(
         mock_message.channel.id,
         cve_id_upper,
     ) not in mock_bot.recently_processed_cves
+
+    mock_stats_manager.increment_messages_processed.assert_awaited_once()
+    mock_stats_manager.increment_cve_lookups.assert_awaited_once()
+    mock_stats_manager.increment_nvd_fallback_success.assert_awaited_once()
+    mock_stats_manager.record_api_error.assert_awaited_once_with("nvd")
+
+    # For backward compatibility
     assert mock_bot.stats_cve_lookups == 1
     assert mock_bot.stats_nvd_fallback_success == 1
     assert mock_bot.stats_api_errors_nvd == 1
@@ -170,7 +202,7 @@ async def test_on_message_error_generic_exception(
 
 @pytest.mark.asyncio
 async def test_on_message_cve_data_not_found(
-    mock_bot, mock_message, mock_db, mock_cve_monitor
+    mock_bot, mock_message, mock_db, mock_cve_monitor, mock_stats_manager
 ):
     """Test scenario where CVE is detected but no data is found via API."""
     cve_id = "CVE-2023-0000"
@@ -194,6 +226,12 @@ async def test_on_message_cve_data_not_found(
         mock_message.channel.id,
         cve_id_upper,
     ) not in mock_bot.recently_processed_cves
+
+    mock_stats_manager.increment_messages_processed.assert_awaited_once()
+    mock_stats_manager.increment_cve_lookups.assert_awaited_once()
+    mock_stats_manager.increment_nvd_fallback_success.assert_not_awaited()
+
+    # For backward compatibility
     assert mock_bot.stats_messages_processed == 1
     assert mock_bot.stats_cve_lookups == 1
     assert mock_bot.stats_nvd_fallback_success == 0

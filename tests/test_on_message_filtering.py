@@ -4,7 +4,7 @@ import pytest
 
 
 @pytest.mark.asyncio
-async def test_on_message_ignore_bots(mock_bot, mock_message):
+async def test_on_message_ignore_bots(mock_bot, mock_message, mock_stats_manager):
     """Test that messages from bots are ignored."""
     mock_message.author.bot = True
 
@@ -12,13 +12,13 @@ async def test_on_message_ignore_bots(mock_bot, mock_message):
 
     mock_message.channel.send.assert_not_called()
     mock_bot.cve_monitor.find_cves.assert_not_called()
-    assert (
-        mock_bot.stats_messages_processed == 0
-    )  # Should not increment if ignored early
+    mock_stats_manager.increment_messages_processed.assert_not_called()
+    # For backward compatibility
+    assert mock_bot.stats_messages_processed == 0
 
 
 @pytest.mark.asyncio
-async def test_on_message_ignore_dm(mock_bot, mock_message):
+async def test_on_message_ignore_dm(mock_bot, mock_message, mock_stats_manager):
     """Test that direct messages are ignored."""
     mock_message.guild = None  # No guild means DM
     mock_message.content = "CVE-2023-1234"
@@ -27,19 +27,22 @@ async def test_on_message_ignore_dm(mock_bot, mock_message):
 
     mock_message.channel.send.assert_not_called()
     mock_bot.cve_monitor.find_cves.assert_not_called()
-    assert (
-        mock_bot.stats_messages_processed == 0
-    )  # Should not increment if ignored early
+    mock_stats_manager.increment_messages_processed.assert_not_called()
+    # For backward compatibility
+    assert mock_bot.stats_messages_processed == 0
 
 
 @pytest.mark.asyncio
-async def test_on_message_no_cves(mock_bot, mock_message):
+async def test_on_message_no_cves(mock_bot, mock_message, mock_stats_manager):
     """Test that messages without CVE patterns are ignored."""
     mock_message.content = "This is a regular message."
 
     await mock_bot.on_message(mock_message)
 
     mock_message.channel.send.assert_not_called()
+    mock_stats_manager.increment_messages_processed.assert_awaited_once()
+    mock_stats_manager.increment_cve_lookups.assert_not_called()
+    # For backward compatibility
     assert mock_bot.stats_messages_processed == 1
     assert mock_bot.stats_cve_lookups == 0  # No lookup should occur
 
