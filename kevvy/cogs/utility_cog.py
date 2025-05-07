@@ -3,6 +3,12 @@ from discord import app_commands
 from discord.ext import commands
 from typing import Optional, Union, List
 import datetime  # Added for uptime calculation
+import textwrap
+import io
+import traceback
+import importlib.metadata  # Import here to avoid issues
+import sys
+import logging
 
 # Assuming SecurityBot is in kevvy/bot.py, one level up from kevvy/cogs/
 from ..bot import SecurityBot
@@ -186,29 +192,450 @@ class UtilityCog(commands.Cog, name="Utility"):
     @admin_group.command(
         name="status", description="Shows the operational status of the bot."
     )
-    # @app_commands.check(is_bot_owner) # Temporarily commented out for testing
+    @app_commands.check(is_bot_owner)  # Enable the check for production
     async def admin_status(self, interaction: discord.Interaction):
         """Displays basic operational status of the bot. Restricted to bot owner."""
-        # Placeholder status info - can be expanded later
-        embed = discord.Embed(title="Kevvy Bot Status", color=discord.Color.orange())
+        # Get actual version instead of placeholder
+        version = getattr(self.bot, "version", "Unknown")
+
+        embed = discord.Embed(
+            title="Kevvy Bot Status",
+            color=discord.Color.orange(),
+            timestamp=datetime.datetime.now(datetime.timezone.utc),
+        )
+
+        # Overall status
         embed.add_field(
             name="Overall Status", value=":green_circle: Running", inline=False
         )
+
+        # Bot information
+        embed.add_field(name="Version", value=version, inline=True)
         embed.add_field(
-            name="API Connectivity (NVD, CISA)",
-            value=":white_check_mark: Nominal (Placeholder)",
+            name="Latency", value=f"{round(self.bot.latency * 1000)}ms", inline=True
+        )
+        embed.add_field(name="Uptime", value=self.get_uptime(), inline=True)
+
+        # Guild count
+        guild_count = len(self.bot.guilds)
+        embed.add_field(name="Server Count", value=str(guild_count), inline=True)
+
+        # Show loaded extensions/cogs
+        loaded_cogs = getattr(self.bot, "loaded_cogs", [])
+        failed_cogs = getattr(self.bot, "failed_cogs", [])
+
+        embed.add_field(
+            name="Loaded Cogs",
+            value=f"{len(loaded_cogs)}/{len(loaded_cogs) + len(failed_cogs)}",
+            inline=True,
+        )
+
+        # API Status
+        nvd_client_status = (
+            ":green_circle: Connected"
+            if self.bot.nvd_client
+            else ":red_circle: Not Initialized"
+        )
+        kev_client_status = (
+            ":green_circle: Connected"
+            if self.bot.cisa_kev_client
+            else ":red_circle: Not Initialized"
+        )
+        embed.add_field(
+            name="API Connectivity",
+            value=f"NVD: {nvd_client_status}\nCISA: {kev_client_status}",
             inline=False,
+        )
+
+        # Database Status
+        db_status = (
+            ":green_circle: Connected"
+            if self.bot.db
+            else ":red_circle: Not Initialized"
         )
         embed.add_field(
             name="Database Status",
-            value=":white_check_mark: Nominal (Placeholder)",
+            value=db_status,
             inline=False,
         )
-        embed.add_field(
-            name="Version", value="1.0.0 (Placeholder)", inline=False
-        )  # You can make this dynamic later
+
         embed.set_footer(text=f"Requested by {interaction.user.display_name}")
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @admin_group.command(
+        name="stats",
+        description="Shows detailed statistics about the bot's operations.",
+    )
+    @app_commands.check(is_bot_owner)
+    async def admin_stats(self, interaction: discord.Interaction):
+        """Shows detailed stats about the bot usage. Owner-only."""
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            # Get stats from the bot's StatsManager
+            stats_dict = await self.bot.stats_manager.get_stats_dict()
+
+            embed = discord.Embed(
+                title="Kevvy Bot Statistics",
+                description="Operational statistics since last restart",
+                color=discord.Color.blue(),
+                timestamp=datetime.datetime.now(datetime.timezone.utc),
+            )
+
+            # CVE-related stats
+            cve_stats = [
+                f"Messages Processed: {stats_dict.get('messages_processed', 0):,}",
+                f"CVE Lookups: {stats_dict.get('cve_lookups', 0):,}",
+                f"NVD Rate Limits: {stats_dict.get('nvd_rate_limit_hits', 0):,}",
+                f"NVD Fallbacks: {stats_dict.get('nvd_fallback_success', 0):,}",
+            ]
+            embed.add_field(
+                name="CVE Statistics", value="\n".join(cve_stats), inline=False
+            )
+
+            # KEV-related stats
+            kev_stats = [f"KEV Alerts Sent: {stats_dict.get('kev_alerts_sent', 0):,}"]
+            embed.add_field(
+                name="KEV Statistics", value="\n".join(kev_stats), inline=False
+            )
+
+            # API error stats
+            api_errors = [
+                f"NVD API Errors: {stats_dict.get('api_errors_nvd', 0):,}",
+                f"CISA API Errors: {stats_dict.get('api_errors_cisa', 0):,}",
+                f"KEV API Errors: {stats_dict.get('api_errors_kev', 0):,}",
+                f"VulnCheck API Errors: {stats_dict.get('api_errors_vulncheck', 0):,}",
+            ]
+            embed.add_field(
+                name="API Errors", value="\n".join(api_errors), inline=False
+            )
+
+            # Add command usage statistics
+            command_stats = [
+                f"/cve lookup: {stats_dict.get('command_cve_lookup', 0):,}",
+                f"/kev commands: {stats_dict.get('command_kev', 0):,}",
+            ]
+            embed.add_field(
+                name="Command Usage", value="\n".join(command_stats), inline=False
+            )
+
+            embed.set_footer(text=f"Requested by {interaction.user.display_name}")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(
+                f"Error fetching stats: {str(e)}", ephemeral=True
+            )
+
+    @admin_group.command(name="reload", description="Reloads bot extensions/cogs.")
+    @app_commands.check(is_bot_owner)
+    @app_commands.describe(
+        extension="The extension to reload. If omitted, reloads all extensions."
+    )
+    async def admin_reload(
+        self, interaction: discord.Interaction, extension: Optional[str] = None
+    ):
+        """Reloads bot extensions. Owner-only."""
+        await interaction.response.defer(ephemeral=True)
+
+        if extension:
+            # Reload a specific extension
+            try:
+                await self.bot.reload_extension(extension)
+                await interaction.followup.send(
+                    f"✅ Successfully reloaded extension: `{extension}`", ephemeral=True
+                )
+            except commands.ExtensionError as e:
+                await interaction.followup.send(
+                    f"❌ Error reloading extension `{extension}`: {str(e)}",
+                    ephemeral=True,
+                )
+        else:
+            # Reload all extensions
+            results = []
+            for ext in self.bot.loaded_cogs:
+                try:
+                    await self.bot.reload_extension(ext)
+                    results.append(f"✅ `{ext}`")
+                except commands.ExtensionError as e:
+                    results.append(f"❌ `{ext}`: {str(e)}")
+
+            embed = discord.Embed(
+                title="Extension Reload Results",
+                description="\n".join(results),
+                color=discord.Color.green(),
+                timestamp=datetime.datetime.now(datetime.timezone.utc),
+            )
+            embed.set_footer(text=f"Requested by {interaction.user.display_name}")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @admin_group.command(
+        name="version", description="Shows version information for the bot."
+    )
+    @app_commands.check(is_bot_owner)
+    async def admin_version(self, interaction: discord.Interaction):
+        """Shows detailed version information. Owner-only."""
+        import platform
+        import discord
+
+        version = getattr(self.bot, "version", "Unknown")
+
+        embed = discord.Embed(
+            title="Kevvy Version Information",
+            description=f"**Current Version:** {version}",
+            color=discord.Color.blue(),
+            timestamp=datetime.datetime.now(datetime.timezone.utc),
+        )
+
+        # Environment information
+        env_info = [
+            f"Python: {platform.python_version()}",
+            f"discord.py: {discord.__version__}",
+            f"OS: {platform.system()} {platform.release()}",
+            f"Host: {platform.node()}",
+        ]
+        embed.add_field(name="Environment", value="\n".join(env_info), inline=False)
+
+        # Dependencies - use importlib.metadata
+        try:
+            # Get versions of important packages
+            dependencies = []
+            for pkg_name in ["aiohttp", "sqlalchemy", "pytest", "pytest-asyncio"]:
+                try:
+                    pkg_version = importlib.metadata.version(pkg_name)
+                    dependencies.append(f"{pkg_name} {pkg_version}")
+                except importlib.metadata.PackageNotFoundError:
+                    pass
+
+            embed.add_field(
+                name="Key Dependencies",
+                value="\n".join(dependencies) or "None found",
+                inline=False,
+            )
+        except Exception as e:
+            embed.add_field(
+                name="Key Dependencies",
+                value=f"Error retrieving dependency information: {str(e)}",
+                inline=False,
+            )
+
+        embed.set_footer(text=f"Requested by {interaction.user.display_name}")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @admin_group.command(
+        name="servers", description="Shows a list of servers the bot is in."
+    )
+    @app_commands.check(is_bot_owner)
+    async def admin_servers(self, interaction: discord.Interaction):
+        """Lists all servers the bot is in. Owner-only."""
+        await interaction.response.defer(ephemeral=True)
+
+        if not self.bot.guilds:
+            await interaction.followup.send(
+                "Bot is not in any servers.", ephemeral=True
+            )
+            return
+
+        # Create an embed to display server information
+        embed = discord.Embed(
+            title="Kevvy Server List",
+            description=f"Bot is in {len(self.bot.guilds)} servers",
+            color=discord.Color.blue(),
+            timestamp=datetime.datetime.now(datetime.timezone.utc),
+        )
+
+        # Sort guilds by member count (largest first)
+        # Use a default value of 0 for member_count to ensure it's always an int
+        sorted_guilds = sorted(
+            self.bot.guilds,
+            key=lambda g: getattr(g, "member_count", 0) or 0,
+            reverse=True,
+        )
+
+        # Format guild information
+        guild_list: List[str] = []
+        for i, guild in enumerate(sorted_guilds, 1):
+            # Try to get the guild owner
+            owner = f"<@{guild.owner_id}>" if guild.owner_id else "Unknown"
+
+            # Format guild entry with safe timestamp handling
+            joined_timestamp = 0
+            if guild.me and guild.me.joined_at:
+                joined_timestamp = int(guild.me.joined_at.timestamp())
+
+            created_timestamp = (
+                int(guild.created_at.timestamp()) if guild.created_at else 0
+            )
+
+            guild_entry = (
+                f"**{i}. {guild.name}** (ID: {guild.id})\n"
+                f"  • Members: {getattr(guild, 'member_count', 0) or 0:,}\n"
+                f"  • Owner: {owner}\n"
+                f"  • Created: <t:{created_timestamp}:R>\n"
+                f"  • Joined: <t:{joined_timestamp}:R>\n"
+            )
+            guild_list.append(guild_entry)
+
+        # Split into multiple embeds if needed (Discord has a 6000 character limit)
+        current_chunk: List[str] = []
+        current_length = 0
+        embeds: List[discord.Embed] = []
+
+        for entry in guild_list:
+            if (
+                current_length + len(entry) > 4000
+            ):  # Leave buffer for embed title/footer
+                # Add the current chunk to embeds and start a new one
+                embed = discord.Embed(
+                    title=f"Kevvy Server List ({len(embeds)+1})",
+                    description="\n".join(current_chunk),
+                    color=discord.Color.blue(),
+                    timestamp=datetime.datetime.now(datetime.timezone.utc),
+                )
+                embeds.append(embed)
+                current_chunk = [entry]
+                current_length = len(entry)
+            else:
+                current_chunk.append(entry)
+                current_length += len(entry)
+
+        # Add the last chunk if not empty
+        if current_chunk:
+            embed = discord.Embed(
+                title=f"Kevvy Server List ({len(embeds)+1})",
+                description="\n".join(current_chunk),
+                color=discord.Color.blue(),
+                timestamp=datetime.datetime.now(datetime.timezone.utc),
+            )
+            embeds.append(embed)
+
+        # Send all embeds
+        for i, embed in enumerate(embeds):
+            embed.set_footer(
+                text=f"Page {i+1}/{len(embeds)} • Requested by {interaction.user.display_name}"
+            )
+            if i == 0:
+                await interaction.followup.send(embed=embed, ephemeral=True)
+            else:
+                await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @admin_group.command(
+        name="debug", description="Evaluates Python code for debugging."
+    )
+    @app_commands.check(is_bot_owner)
+    @app_commands.describe(code="The Python code to evaluate.")
+    async def admin_debug(self, interaction: discord.Interaction, code: str):
+        """Evaluates Python code for debugging purposes. Restricted to bot owner."""
+        await interaction.response.defer(ephemeral=True)
+
+        # Create clean environment for code execution
+        local_vars = {
+            "bot": self.bot,
+            "interaction": interaction,
+            "discord": discord,
+            "commands": commands,
+            "guild": interaction.guild,
+            "channel": interaction.channel,
+            "author": interaction.user,
+        }
+
+        # Add globals but avoid potential security issues
+        global_vars = globals().copy()
+
+        # Format code for execution
+        code = code.strip("` ")
+        if code.startswith("py\n"):
+            code = code[3:]
+
+        # Create the function to execute code
+        func_str = f'async def _debug_func():\n{textwrap.indent(code, "    ")}'
+
+        try:
+            # Execute the code
+            exec(func_str, global_vars, local_vars)
+            result = await local_vars["_debug_func"]()
+
+            # Format the result
+            output = (
+                str(result) if result is not None else "Code executed successfully."
+            )
+
+            # Send the output
+            if len(output) > 1990:
+                # If the output is too long, send it as a file
+                file = discord.File(
+                    io.BytesIO(output.encode("utf-8")), filename="debug_output.txt"
+                )
+                await interaction.followup.send(
+                    "Output too large, sending as file:", file=file, ephemeral=True
+                )
+            else:
+                await interaction.followup.send(f"```py\n{output}\n```", ephemeral=True)
+        except Exception:
+            await interaction.followup.send(
+                f"Error executing code: ```py\n{traceback.format_exc()}\n```",
+                ephemeral=True,
+            )
+
+    @commands.Cog.listener()
+    async def on_app_command_error(
+        self,
+        interaction: discord.Interaction,
+        error: discord.app_commands.AppCommandError,
+    ):
+        """Global error handler for all application commands in this cog."""
+        # Check if the error is a permissions check failure
+        if isinstance(error, discord.app_commands.CheckFailure):
+            # Don't respond if interaction is already responded to
+            if interaction.response.is_done():
+                return
+
+            # Log the denied access for monitoring
+            command_name = getattr(interaction.command, "qualified_name", "unknown")
+            logging.warning(
+                f"Access denied for command '{command_name}' by user {interaction.user.id} ({interaction.user.name})"
+            )
+
+            # Check if this is an admin command access attempt
+            if command_name and "admin" in command_name:
+                await interaction.response.send_message(
+                    "These commands are restricted to the bot owner only.",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.response.send_message(
+                    "You don't have permission to use this command.", ephemeral=True
+                )
+        # Handle command invocation errors (errors during command execution)
+        elif isinstance(error, discord.app_commands.CommandInvokeError):
+            # Extract the original error
+            original = error.original
+
+            # Log detailed error information
+            logging.error(
+                f"Command error in {interaction.command.qualified_name if interaction.command else 'unknown command'}: "
+                f"{str(error)}\n{traceback.format_exc()}"
+            )
+
+            # Don't respond if interaction is already responded to
+            if interaction.response.is_done():
+                return
+
+            # Provide a friendly error message to the user
+            await interaction.response.send_message(
+                f"An error occurred during command execution: {str(original)}",
+                ephemeral=True,
+            )
+        else:
+            # Log the error
+            logging.error(f"Unhandled command error: {error}\n{traceback.format_exc()}")
+
+            # Don't respond if interaction is already responded to
+            if interaction.response.is_done():
+                return
+
+            await interaction.response.send_message(
+                f"An error occurred: {str(error)}", ephemeral=True
+            )
 
     # --- End Admin Subgroup ---
 
@@ -225,6 +652,15 @@ class UtilityCog(commands.Cog, name="Utility"):
         Provides help information for Kevvy's commands.
         Can show a general overview or details for a specific command/group.
         """
+        # Check if user is asking for admin help but isn't the bot owner
+        is_bot_owner = interaction.user.id == BOT_OWNER_ID
+        if command_input and ("admin" in command_input.lower()) and not is_bot_owner:
+            await interaction.response.send_message(
+                "Sorry, you don't have permission to view admin command help.",
+                ephemeral=True,
+            )
+            return
+
         if command_input:
             name_parts = [
                 part
@@ -240,6 +676,14 @@ class UtilityCog(commands.Cog, name="Utility"):
 
             target_command = _find_command_by_name(self.bot, name_parts)
             if target_command:
+                # Check if this is an admin command and user is not the bot owner
+                if ("admin" in name_parts) and not is_bot_owner:
+                    await interaction.response.send_message(
+                        "Sorry, you don't have permission to view admin command help.",
+                        ephemeral=True,
+                    )
+                    return
+
                 full_command_name_str = " ".join(name_parts)
                 embed = _build_command_embed(
                     interaction, target_command, full_command_name_str
@@ -267,26 +711,65 @@ class UtilityCog(commands.Cog, name="Utility"):
             ]
             sorted_commands = sorted(relevant_commands, key=lambda cmd: cmd.name)
             for cmd in sorted_commands:
-                field_value = (
-                    getattr(cmd, "description", None) or "No description available."
+                # Skip admin commands in kevvy_group for non-owners
+                if cmd.name == self.kevvy_group.name and not is_bot_owner:
+                    # Filter out admin subcommands when showing kevvy group
+                    kevvy_subcommands = []
+                    for subcmd in cmd.commands:
+                        if subcmd.name != "admin":
+                            kevvy_subcommands.append(subcmd.name)
+                else:
+                    field_value = (
+                        getattr(cmd, "description", None) or "No description available."
+                    )
+                    if (
+                        isinstance(cmd, app_commands.Group)
+                        and cmd.name == self.kevvy_group.name
+                    ):
+                        sub_cmds_names = []
+                        for sub in cmd.commands:
+                            # Only include admin command for bot owner
+                            if sub.name != "admin" or is_bot_owner:
+                                sub_cmds_names.append(sub.name)
+
+                        if sub_cmds_names:
+                            field_value += f"\\nSubcommands: `{'`, `'.join(sorted(sub_cmds_names))}`"
+                        else:
+                            field_value += "\\nSubcommands: `help`"
+                    embed.add_field(
+                        name=f"`/{cmd.name}`", value=field_value, inline=False
+                    )
+
+            # Add a special section for admin commands if the user is the bot owner
+            if is_bot_owner:
+                admin_embed = discord.Embed(
+                    title="🔐 Administrator Commands",
+                    description="The following commands are restricted to the bot owner:",
+                    color=discord.Color.dark_red(),
                 )
-                if (
-                    isinstance(cmd, app_commands.Group)
-                    and cmd.name == self.kevvy_group.name
-                ):
-                    sub_cmds_names = [
-                        sub.name
-                        for sub in cmd.commands
-                        if isinstance(sub, app_commands.Command)
-                    ]
-                    if sub_cmds_names:
-                        field_value += (
-                            f"\\nSubcommands: `{'`, `'.join(sorted(sub_cmds_names))}`"
-                        )
-                    else:
-                        field_value += "\\nSubcommands: `help`"
-                embed.add_field(name=f"`/{cmd.name}`", value=field_value, inline=False)
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+                admin_help_text = (
+                    "• `/kevvy admin status` - Shows the operational status of the bot\n"
+                    "• `/kevvy admin stats` - Shows detailed statistics and usage metrics\n"
+                    "• `/kevvy admin servers` - Lists all servers the bot is in\n"
+                    "• `/kevvy admin reload` - Reloads bot extensions/cogs\n"
+                    "• `/kevvy admin version` - Shows detailed version information\n"
+                    "• `/kevvy admin debug` - Evaluates Python code for debugging"
+                )
+
+                admin_embed.add_field(
+                    name="Available Commands", value=admin_help_text, inline=False
+                )
+
+                admin_embed.set_footer(
+                    text="⚠️ These commands are restricted to the bot owner only"
+                )
+
+                await interaction.response.send_message(
+                    embeds=[embed, admin_embed], ephemeral=True
+                )
+            else:
+                await interaction.response.send_message(embed=embed, ephemeral=True)
 
     # --- Uptime Functionality ---
     def get_uptime(self) -> str:

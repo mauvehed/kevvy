@@ -115,7 +115,17 @@ Key features:
     - `/cve threshold view`: Shows the current global severity threshold.
     - `/cve threshold reset`: Resets the global severity threshold to `all`.
 8.  **Help Command:**
+
     - `/kevvy help [command_name]`: Shows a general overview of all command groups, or detailed help for a specific command or command group (e.g., `/kevvy help cve` or `/kevvy help cve lookup`).
+
+9.  **Admin Commands (Bot Owner Only):**
+    - `/kevvy admin status`: Shows the operational status of the bot (uptime, server count, etc.)
+    - `/kevvy admin stats`: Shows detailed statistics about the bot's operations (command usage, CVE lookups, etc.)
+    - `/kevvy admin reload [extension]`: Reloads bot extensions/cogs (useful for applying code changes without restarting)
+    - `/kevvy admin version`: Shows detailed version information for the bot
+    - `/kevvy admin servers`: Lists all servers the bot is in
+    - `/kevvy admin debug <code>`: Evaluates Python code for debugging
+      > Note: These commands are restricted to the bot owner only (configured via `BOT_OWNER_ID`).
 
 ## Screenshots
 
