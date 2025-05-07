@@ -16,8 +16,9 @@ import signal
 import importlib.metadata  # Added for dynamic versioning
 from .stats_manager import StatsManager
 
+# Constants
 MAX_EMBEDS_PER_MESSAGE = 5
-WEBAPP_ENDPOINT_URL = os.getenv("KEVVY_WEB_URL", "YOUR_WEBAPP_ENDPOINT_URL_HERE")
+WEBAPP_ENDPOINT_URL = os.getenv("KEVVY_WEB_URL", "")
 WEBAPP_API_KEY = os.getenv("KEVVY_WEB_API_KEY", None)
 
 logger = logging.getLogger(__name__)
@@ -277,7 +278,7 @@ class SecurityBot(commands.Bot):
             logger.debug("HTTP session not available, skipping web app stats send.")
             return
 
-        # Combined check for None or placeholder
+        # Skip if URL is not configured
         base_url = WEBAPP_ENDPOINT_URL
         if not base_url or base_url == "YOUR_WEBAPP_ENDPOINT_URL_HERE":
             logger.debug(
@@ -285,7 +286,7 @@ class SecurityBot(commands.Bot):
             )
             return
 
-        # Now it is safe to use rstrip since we checked for None and empty string
+        # Construct the full URL
         full_url = f"{base_url.rstrip('/')}/api/bot-status"
 
         headers = {
@@ -548,11 +549,17 @@ class SecurityBot(commands.Bot):
 
     async def on_message(self, message: discord.Message):
         """Process incoming messages for CVEs and respond with info embeds."""
-        # Handle commands as normal (don't block these)
+        # Handle commands first before any other processing
         await self.process_commands(message)
 
-        # Ignore bot messages to prevent loops and direct messages (DMs)
-        if message.author.bot or not isinstance(message.channel, discord.TextChannel):
+        # Skip processing if conditions not met
+        if (
+            message.author.bot
+            or not isinstance(message.channel, discord.TextChannel)
+            or not message.guild
+            or not self.cve_monitor
+            or not self.db
+        ):
             return
 
         # Read necessary info for processing
@@ -563,51 +570,39 @@ class SecurityBot(commands.Bot):
         # Count this message regardless of whether we find a CVE
         await self.stats_manager.increment_messages_processed()
 
-        # Find potential CVEs in the message
-        if not self.cve_monitor:
-            return  # CVE monitor not initialized - can't search
-
-        # Find all CVEs in the message
+        # Find CVEs in the message
         cve_matches = self.cve_monitor.find_cves(content)
         if not cve_matches:
-            return  # No CVEs found - exit early
+            return  # No CVEs found
 
-        # Check guild config first - if monitoring globally disabled, exit
+        # Check monitoring config
         try:
             guild_config = self.db.get_cve_guild_config(guild_id)
-            if not guild_config.get("enabled", True):
+            if not guild_config or not guild_config.get("enabled", True):
                 return  # Guild has monitoring disabled
 
-            # Check channel config - if disabled for this channel, exit
             channel_config = self.db.get_cve_channel_config(guild_id, channel_id)
-            if not channel_config.get("enabled", True):
+            if not channel_config or not channel_config.get("enabled", True):
                 return  # Channel has monitoring disabled
+
+            verbose = self.db.get_effective_verbosity(guild_id, channel_id)
+            guild_severity_threshold = guild_config.get("severity_threshold", "all")
         except Exception as e:
             logger.error(f"Error checking CVE monitoring config: {e}", exc_info=True)
-            return  # If we can't check config, better to be silent than spam
+            return
 
-        # Get verbosity setting
-        try:
-            verbose = self.db.get_effective_verbosity(guild_id, channel_id)
-        except Exception as e:
-            logger.error(f"Error checking CVE verbosity setting: {e}", exc_info=True)
-            verbose = False  # Default to non-verbose if error
-
-        # Apply severity threshold from config
-        guild_severity_threshold = guild_config.get("severity_threshold", "all")
-
-        # Track how many embeds we've sent to not exceed Discord's per-message limit
+        # Process unique CVEs
         embed_count = 0
-        processed_cves = set()  # Track which CVEs we've processed already
+        processed_cves = set()
 
-        # Process each unique CVE
         for cve_id in cve_matches:
-            # Skip if we've already processed this CVE in this message
-            if cve_id in processed_cves:
+            # Skip if already processed or hit embed limit
+            if cve_id in processed_cves or embed_count >= MAX_EMBEDS_PER_MESSAGE:
                 continue
+
             processed_cves.add(cve_id)
 
-            # Rate limit check - Skip if recently processed for this channel
+            # Skip if recently processed (rate limiting)
             cache_key = (channel_id, cve_id)
             now = datetime.datetime.now(datetime.timezone.utc)
 
@@ -619,81 +614,83 @@ class SecurityBot(commands.Bot):
                     )
                     continue
 
-            # Process CVE and check if we should respond
             try:
-                # Get CVE data
+                # Get and validate CVE data
                 cve_data = await self.cve_monitor.get_cve_data(cve_id)
                 if not cve_data:
-                    logger.debug(f"No data found for {cve_id}")
                     continue
 
-                # Check severity threshold
-                passes_threshold, severity = self.cve_monitor.check_severity_threshold(
-                    cve_data, threshold=guild_severity_threshold
-                )
+                # Check severity threshold with the correct parameter name (min_threshold_str)
+                try:
+                    passes_threshold, severity = (
+                        self.cve_monitor.check_severity_threshold(
+                            cve_data, min_threshold_str=guild_severity_threshold
+                        )
+                    )
+                except Exception as e:
+                    logger.warning(f"Error checking severity for {cve_id}: {str(e)}")
+                    # Default to passing threshold if we can't check
+                    passes_threshold, severity = True, "Unknown"
+
                 if not passes_threshold:
                     logger.debug(
-                        f"CVE {cve_id} with {severity} severity does not meet threshold {guild_severity_threshold}"
+                        f"CVE {cve_id} with {severity} severity below threshold {guild_severity_threshold}"
                     )
                     continue
 
-                # Check if in CISA KEV
+                # Check KEV status
                 kev_data = None
                 try:
                     kev_data = await self.cve_monitor.check_kev(cve_id)
                 except Exception as e:
-                    logger.error(
-                        f"Error checking KEV status for {cve_id}: {e}", exc_info=True
-                    )
+                    logger.warning(f"Error checking KEV status for {cve_id}: {str(e)}")
                     await self.stats_manager.record_api_error(service="kev")
 
-                # Create and send embed
-                embed = self.cve_monitor.create_cve_embed(
-                    cve_data, verbose=verbose, kev_data=kev_data
-                )
+                # Create embed - the correct signature only has cve_data and verbose parameters
+                embed = self.cve_monitor.create_cve_embed(cve_data, verbose=verbose)
 
-                # Add to cache now that we're preparing to respond
-                self.recently_processed_cves[cache_key] = now
-
-                # Send the embed
                 await message.channel.send(embed=embed)
+                self.recently_processed_cves[cache_key] = now
                 embed_count += 1
 
-                # Stop processing if we've hit the embed limit
-                if embed_count >= MAX_EMBEDS_PER_MESSAGE:
-                    logger.debug(
-                        f"Hit embed limit ({MAX_EMBEDS_PER_MESSAGE}) for message {message.id}"
-                    )
-                    break
+                # If we found KEV data, send a separate KEV embed if the method exists
+                if kev_data and hasattr(self.cve_monitor, "create_kev_status_embed"):
+                    try:
+                        kev_embed = self.cve_monitor.create_kev_status_embed(
+                            cve_id, kev_data, verbose=verbose
+                        )
+                        await message.channel.send(embed=kev_embed)
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to send KEV info for {cve_id}: {str(e)}"
+                        )
 
             except discord.Forbidden:
                 logger.error(
-                    f"Missing permissions to send message in channel {channel_id} (Guild: {guild_id})",
+                    f"Missing permissions in channel {channel_id} (Guild: {guild_id})"
                 )
-                break  # No point trying more CVEs if we don't have permissions
+                break  # Stop trying if we don't have permissions
+
             except discord.HTTPException as e:
-                logger.error(
-                    f"HTTP error sending CVE embed for {cve_id}: {e}", exc_info=True
-                )
+                logger.error(f"Discord HTTP error for {cve_id}: {str(e)}")
                 continue
+
             except NVDRateLimitError as e:
-                logger.error(f"NVD API rate limit hit processing {cve_id}: {e}")
+                logger.error(f"NVD API rate limit hit: {str(e)}")
                 await self.stats_manager.record_nvd_rate_limit_hit()
-                # Send a rate limit notification
-                warning_embed = discord.Embed(
-                    title="⚠️ NVD API Rate Limit Reached",
-                    description="The National Vulnerability Database (NVD) API rate limit has been reached. "
-                    "Please try again later.",
-                    color=discord.Color.gold(),
-                )
+
+                # Try to notify users about rate limit
                 try:
+                    warning_embed = discord.Embed(
+                        title="⚠️ NVD API Rate Limit Reached",
+                        description="The National Vulnerability Database (NVD) API rate limit has been reached. Please try again later.",
+                        color=discord.Color.gold(),
+                    )
                     await message.channel.send(embed=warning_embed)
-                except Exception:
-                    pass  # If we can't send the warning, just continue
-                break  # Stop processing more CVEs in this message
+                except Exception as e:
+                    logger.warning(f"Failed to send rate limit warning: {str(e)}")
+                break
+
             except Exception as e:
-                logger.error(
-                    f"Error processing {cve_id} from message {message.id}: {e}",
-                    exc_info=True,
-                )
+                logger.error(f"Error processing {cve_id}: {str(e)}", exc_info=True)
                 continue
