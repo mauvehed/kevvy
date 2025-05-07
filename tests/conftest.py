@@ -8,15 +8,19 @@ import aiohttp
 import sys
 from types import ModuleType
 
+# Import necessary modules before setting up the mock
+# These imports don't depend on vulncheck_sdk
+from kevvy.nvd_client import NVDClient, NVDRateLimitError  # noqa: E402
+
 # Mock the vulncheck_sdk module to avoid dependency issues in tests
 mock_vulncheck_sdk = ModuleType("vulncheck_sdk")
 sys.modules["vulncheck_sdk"] = mock_vulncheck_sdk
 
-from kevvy.nvd_client import NVDClient, NVDRateLimitError
-from kevvy.bot import SecurityBot
-from kevvy.db_utils import KEVConfigDB
-from kevvy.cve_monitor import CVEMonitor
-from kevvy.cisa_kev_client import CisaKevClient
+# These imports potentially depend on the mocked module
+from kevvy.bot import SecurityBot  # noqa: E402
+from kevvy.db_utils import KEVConfigDB  # noqa: E402
+from kevvy.cve_monitor import CVEMonitor  # noqa: E402
+from kevvy.cisa_kev_client import CisaKevClient  # noqa: E402
 
 # Sample NVD API response structure for a single CVE
 SAMPLE_NVD_RESPONSE_DATA = {

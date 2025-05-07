@@ -1,0 +1,7 @@
+[lint]
+# Ignore unused imports in __init__.py files (common for re-exports)
+ignore = ["F401"]
+
+[lint.per-file-ignores]
+# Ignore E402 (import not at top of file) in conftest.py due to the vulncheck_sdk mocking
+"tests/conftest.py" = ["E402"]
