@@ -180,6 +180,7 @@ class SecurityBot(commands.Bot):
         initial_extensions = [
             "kevvy.cogs.kev_commands",
             "kevvy.cogs.cve_lookup",
+            "kevvy.cogs.utility_cog",
             # 'kevvy.cogs.diagnostics' # Removed as requested
         ]
         self.loaded_cogs = []  # Reset on setup

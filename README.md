@@ -114,6 +114,8 @@ Key features:
     - `/cve threshold set <level>`: Sets the minimum CVSS severity (`critical`, `high`, `medium`, `low`, `all`) required for a CVE mentioned in a message to trigger an automatic alert (global server setting).
     - `/cve threshold view`: Shows the current global severity threshold.
     - `/cve threshold reset`: Resets the global severity threshold to `all`.
+8.  **Help Command:**
+    - `/kevvy help [command_name]`: Shows a general overview of all command groups, or detailed help for a specific command or command group (e.g., `/kevvy help cve` or `/kevvy help cve lookup`).
 
 ## Screenshots
 
