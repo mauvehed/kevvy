@@ -37,13 +37,14 @@ async def test_setup_hook_success(
     mocker.patch("kevvy.bot.SecurityBot.check_cisa_kev_feed")
     mocker.patch("kevvy.bot.SecurityBot.send_stats_to_webapp")
 
-    # Using all 5 extensions that get loaded
+    # Using all 6 extensions that get loaded
     expected_extensions = [
         "kevvy.cogs.kev_commands",
         "kevvy.cogs.cve_lookup",
         "kevvy.cogs.utility_cog",
         "kevvy.cogs.core_events_cog",
         "kevvy.cogs.tasks_cog",
+        "kevvy.cogs.diagnostics",  # Added diagnostics cog
     ]
 
     mock_sync = mocker.AsyncMock()
@@ -115,13 +116,14 @@ async def test_setup_hook_extension_load_error(
     mocker.patch("kevvy.bot.SecurityBot.check_cisa_kev_feed")
     mocker.patch("kevvy.bot.SecurityBot.send_stats_to_webapp")
 
-    # Use the full 5 extensions for testing
+    # Use the full 6 extensions for testing
     internal_initial_extensions = [
         "kevvy.cogs.kev_commands",
         "kevvy.cogs.cve_lookup",
         "kevvy.cogs.utility_cog",
         "kevvy.cogs.core_events_cog",
         "kevvy.cogs.tasks_cog",
+        "kevvy.cogs.diagnostics",  # Added diagnostics cog
     ]
 
     mock_sync = mocker.AsyncMock()
@@ -209,7 +211,7 @@ async def test_setup_hook_command_sync_error(
     mocker.patch("kevvy.bot.SecurityBot.send_stats_to_webapp")
 
     # Since our tests are failing anyway, let's simplify and directly modify the expectation
-    expected_extension_count = 5
+    expected_extension_count = 6  # Updated to 6 to account for diagnostics_cog
 
     bot = SecurityBot(nvd_api_key=None, vulncheck_api_token=None)
 
@@ -251,7 +253,7 @@ async def test_setup_hook_command_sync_error(
     # Verify all extensions were loaded before the sync error
     assert (
         len(actual_sync_error_load_calls) == expected_extension_count
-    )  # Expect 5 extensions to be loaded
+    )  # Expect 6 extensions to be loaded
 
     # Check that client initializations (done by setup_hook) were attempted/completed
     # These mocks are for the classes, not instances on bot yet.

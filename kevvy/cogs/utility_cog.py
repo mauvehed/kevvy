@@ -158,7 +158,7 @@ def _find_command_by_name(
 # Get BOT_OWNER_ID from environment variable or fall back to the hardcoded value
 # IMPORTANT: This is only hardcoded for development/testing purposes
 # In production, always set the BOT_OWNER_ID as an environment variable
-BOT_OWNER_ID = int(os.getenv("BOT_OWNER_ID"))
+BOT_OWNER_ID = int(os.getenv("BOT_OWNER_ID", "0"))  # Default to 0 for testing
 
 
 async def is_bot_owner(interaction: discord.Interaction) -> bool:
