@@ -32,6 +32,8 @@ class DiagnosticsCog(commands.Cog):
         self.api_endpoint = os.getenv("KEVVY_WEB_URL")
         self.api_secret = os.getenv("KEVVY_WEB_API_KEY")  # Use KEVVY_WEB_API_KEY
         self.start_time = time.time()
+        # Add a flag to track whether we've sent the cogs list
+        self.cogs_list_sent = False
 
         if not self.api_endpoint or not self.api_secret:
             # Use correct env var names in warning
@@ -79,7 +81,17 @@ class DiagnosticsCog(commands.Cog):
                 round(self.bot.latency * 1000, 2) if self.bot.latency else None
             )
             stats_data["guild_count"] = len(self.bot.guilds)
-            stats_data["loaded_cogs"] = list(self.bot.cogs.keys())
+
+            # Only send cog list on first update after startup
+            if not self.cogs_list_sent:
+                # Get cog names and log them for debugging
+                cog_names = list(self.bot.cogs.keys())
+                logger.info(
+                    f"First status update - sending {len(cog_names)} loaded cogs: {cog_names}"
+                )
+                stats_data["loaded_cogs"] = cog_names
+                self.cogs_list_sent = True
+            # Otherwise don't include the cogs list to save bandwidth and DB space
 
             # API/Task Status (Use getattr with default 0 for stats)
             stats_data["nvd_api_errors"] = getattr(self.bot, "stats_api_errors_nvd", 0)

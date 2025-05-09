@@ -25,6 +25,7 @@ Please note we have a [Code of Conduct](CODE_OF_CONDUCT.md), please follow it in
 - [Project Structure Overview](#project-structure-overview)
 - [Documentation](#documentation)
 - [Getting Help](#getting-help)
+- [Testing](#testing)
 
 ## Ways to Contribute
 
@@ -200,5 +201,13 @@ If you have questions about contributing or need help with your development setu
 
 - Open an issue on GitHub.
 - Reach out to the maintainer ([@mauvehed](https://github.com/mauvehed)).
+
+## Testing
+
+We use pytest for our test suite. To run tests:
+
+```bash
+poetry run pytest
+```
 
 Thank you for contributing to Kevvy!
