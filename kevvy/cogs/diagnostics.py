@@ -79,7 +79,11 @@ class DiagnosticsCog(commands.Cog):
                 round(self.bot.latency * 1000, 2) if self.bot.latency else None
             )
             stats_data["guild_count"] = len(self.bot.guilds)
-            stats_data["loaded_cogs"] = list(self.bot.cogs.keys())
+
+            # Get cog names and log them for debugging
+            cog_names = list(self.bot.cogs.keys())
+            logger.info(f"Found {len(cog_names)} loaded cogs: {cog_names}")
+            stats_data["loaded_cogs"] = cog_names
 
             # API/Task Status (Use getattr with default 0 for stats)
             stats_data["nvd_api_errors"] = getattr(self.bot, "stats_api_errors_nvd", 0)
