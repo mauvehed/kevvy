@@ -9,6 +9,7 @@ import traceback
 import importlib.metadata  # Import here to avoid issues
 import sys
 import logging
+import os
 
 # Assuming SecurityBot is in kevvy/bot.py, one level up from kevvy/cogs/
 from ..bot import SecurityBot
@@ -154,8 +155,10 @@ def _find_command_by_name(
         return None
 
 
-# --- Bot Owner Check ---
-BOT_OWNER_ID = 260818647344218112
+# Get BOT_OWNER_ID from environment variable or fall back to the hardcoded value
+# IMPORTANT: This is only hardcoded for development/testing purposes
+# In production, always set the BOT_OWNER_ID as an environment variable
+BOT_OWNER_ID = int(os.getenv("BOT_OWNER_ID"))
 
 
 async def is_bot_owner(interaction: discord.Interaction) -> bool:
@@ -166,9 +169,6 @@ async def is_bot_owner(interaction: discord.Interaction) -> bool:
             "Sorry, this command is restricted to the bot owner.", ephemeral=True
         )
     return is_owner
-
-
-# --- End Bot Owner Check ---
 
 
 class UtilityCog(commands.Cog, name="Utility"):
@@ -805,13 +805,11 @@ class UtilityCog(commands.Cog, name="Utility"):
             f"Bot uptime: {uptime_str}", ephemeral=True
         )
 
-    # --- End Uptime Functionality ---
-
-    @app_commands.command(
-        name="pingutility", description="A simple ping from UtilityCog."
-    )
+    @kevvy_group.command(name="ping", description="A simple ping from UtilityCog.")
     async def ping_utility_command(self, interaction: discord.Interaction):
         await interaction.response.send_message("Pong from UtilityCog!", ephemeral=True)
+
+    # --- End Uptime Functionality ---
 
 
 # Standard setup function (remains the same)

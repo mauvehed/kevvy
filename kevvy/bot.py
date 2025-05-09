@@ -15,6 +15,7 @@ import datetime
 import signal
 import importlib.metadata  # Added for dynamic versioning
 from .stats_manager import StatsManager
+from discord import app_commands
 
 # Constants
 MAX_EMBEDS_PER_MESSAGE = 5
@@ -129,13 +130,14 @@ class SecurityBot(commands.Bot):
                 "Could not initialize CVEMonitor because NVDClient failed to initialize."
             )
 
-        # MODIFIED: Restored the complete list of extensions
+        # Load all cogs
         initial_extensions = [
             "kevvy.cogs.kev_commands",
             "kevvy.cogs.cve_lookup",
             "kevvy.cogs.utility_cog",
             "kevvy.cogs.core_events_cog",
             "kevvy.cogs.tasks_cog",
+            "kevvy.cogs.diagnostics",
         ]
         self.loaded_cogs = []
         self.failed_cogs = []
@@ -168,12 +170,28 @@ class SecurityBot(commands.Bot):
         self._setup_signal_handlers()
         logger.info(f"--- Initializing Kevvy Bot Version: {self.version} ---")
 
-        test_guild_id = 211949296403087360
+        # Read test guild ID from environment variable or use default
+        test_guild_id_str = os.getenv("TEST_GUILD_ID", "")
+        test_guild_id = int(test_guild_id_str) if test_guild_id_str else None
+
         if test_guild_id:
             guild_obj = discord.Object(id=test_guild_id)
             logger.info(
                 f"Preparing to sync commands to specific guild: {test_guild_id}"
             )
+
+            # Log which commands are being synced
+            all_commands = self.tree.get_commands()
+            command_names = [cmd.name for cmd in all_commands]
+            logger.info(f"Commands being synced: {', '.join(command_names)}")
+
+            # Check for specifically problematic commands
+            for cmd in all_commands:
+                if isinstance(cmd, app_commands.Group):
+                    logger.info(
+                        f"Group '{cmd.name}' has subcommands: {[subcmd.name for subcmd in cmd.commands]}"
+                    )
+
             await self.tree.sync(guild=guild_obj)
             logger.info(f"Application commands synced to guild {test_guild_id}.")
         else:
@@ -298,14 +316,29 @@ class SecurityBot(commands.Bot):
         try:
             # Ensure we correctly await the async method
             current_stats = await self.stats_manager.get_stats_dict()
+            current_time = datetime.datetime.now(datetime.timezone.utc)
+            uptime_delta = current_time - self.start_time
+            uptime_seconds = int(uptime_delta.total_seconds())
 
             # Construct the payload
             payload = {
                 "bot_id": self.user.id if self.user else None,
+                "bot_name": str(self.user) if self.user else "Unknown",
                 "guild_count": len(self.guilds),
-                "latency": self.latency,
+                "latency_ms": round(self.latency * 1000, 2),
                 "uptime": self.get_uptime_string(),
-                "stats": current_stats,
+                "shard_id": self.shard_id if self.shard_id is not None else 0,
+                "shard_count": self.shard_count if self.shard_count is not None else 1,
+                "start_time": self.start_time.isoformat(),
+                "uptime_seconds": uptime_seconds,
+                "is_ready": self.is_ready(),
+                "timestamp": current_time.isoformat(),
+                "last_stats_sent_time": (
+                    self.last_stats_sent_time.isoformat()
+                    if self.last_stats_sent_time
+                    else None
+                ),
+                # Keep these at top level for backward compatibility
                 "loaded_cogs": self.loaded_cogs,
                 "failed_cogs": self.failed_cogs,
                 "timestamp_last_kev_check_success": (
@@ -319,6 +352,22 @@ class SecurityBot(commands.Bot):
                     else None
                 ),
                 "version": self.version,
+                # Also include stats in the nested structure like tasks_cog.py does
+                "stats": {
+                    **current_stats,
+                    "loaded_cogs": self.loaded_cogs,
+                    "failed_cogs": self.failed_cogs,
+                    "last_kev_check_success": (
+                        self.timestamp_last_kev_check_success.isoformat()
+                        if self.timestamp_last_kev_check_success
+                        else None
+                    ),
+                    "last_kev_alert_sent": (
+                        self.timestamp_last_kev_alert_sent.isoformat()
+                        if self.timestamp_last_kev_alert_sent
+                        else None
+                    ),
+                },
             }
 
             logger.info(f"Sending stats payload to {full_url}")

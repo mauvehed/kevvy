@@ -287,6 +287,19 @@ class TasksCog(commands.Cog, name="BackgroundTasks"):
                 if self.bot.last_stats_sent_time
                 else None
             ),
+            # Add at top level for backward compatibility
+            "loaded_cogs": self.bot.loaded_cogs,
+            "failed_cogs": self.bot.failed_cogs,
+            "timestamp_last_kev_check_success": (
+                self.bot.timestamp_last_kev_check_success.isoformat()
+                if self.bot.timestamp_last_kev_check_success
+                else None
+            ),
+            "timestamp_last_kev_alert_sent": (
+                self.bot.timestamp_last_kev_alert_sent.isoformat()
+                if self.bot.timestamp_last_kev_alert_sent
+                else None
+            ),
             # Embed the core stats dictionary under the 'stats' key
             "stats": {
                 **core_stats_dict,  # Unpack the dictionary from StatsManager
