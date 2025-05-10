@@ -331,6 +331,37 @@ class SecurityBot(commands.Bot):
                         exc_info=True,
                     )
 
+            # Map only the required stats fields to the exact names expected by the backend
+            mapped_stats = {}
+            if "cve_lookups" in current_stats:
+                mapped_stats["cve_lookups"] = current_stats["cve_lookups"]
+            if "kev_alerts_sent" in current_stats:
+                mapped_stats["kev_alerts_sent"] = current_stats["kev_alerts_sent"]
+            if "messages_processed" in current_stats:
+                mapped_stats["messages_processed"] = current_stats["messages_processed"]
+            if "vulncheck_success" in current_stats:
+                mapped_stats["vulncheck_success"] = current_stats["vulncheck_success"]
+            if "nvd_fallback_success" in current_stats:
+                mapped_stats["nvd_fallback_success"] = current_stats[
+                    "nvd_fallback_success"
+                ]
+            if "api_errors_vulncheck" in current_stats:
+                mapped_stats["api_errors_vulncheck"] = current_stats[
+                    "api_errors_vulncheck"
+                ]
+            if "api_errors_nvd" in current_stats:
+                mapped_stats["api_errors_nvd"] = current_stats["api_errors_nvd"]
+            if "api_errors_cisa" in current_stats:
+                mapped_stats["api_errors_cisa"] = current_stats["api_errors_cisa"]
+            if "api_errors_kev" in current_stats:
+                mapped_stats["api_errors_kev"] = current_stats["api_errors_kev"]
+            if "rate_limits_hit_nvd" in current_stats:
+                mapped_stats["rate_limits_hit_nvd"] = current_stats[
+                    "rate_limits_hit_nvd"
+                ]
+            if "app_command_errors" in current_stats:
+                mapped_stats["app_command_errors"] = current_stats["app_command_errors"]
+
             # Construct the payload
             payload = {
                 "bot_id": self.user.id if self.user else None,
@@ -349,7 +380,9 @@ class SecurityBot(commands.Bot):
                     if self.last_stats_sent_time
                     else None
                 ),
-                **current_stats,
+                # Only include mapped stats fields at the top level
+                **mapped_stats,
+                # Ensure these are always present at top level
                 "loaded_cogs": self.loaded_cogs,
                 "failed_cogs": self.failed_cogs,
                 "last_kev_check_success": (
@@ -364,6 +397,7 @@ class SecurityBot(commands.Bot):
                 ),
                 "kev_enabled_guilds": kev_enabled_count,
                 "version": self.version,
+                # Also include stats in the nested structure for backward compatibility
                 "stats": {
                     **current_stats,
                     "loaded_cogs": self.loaded_cogs,
