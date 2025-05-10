@@ -341,12 +341,12 @@ class SecurityBot(commands.Bot):
                 # Keep these at top level for backward compatibility
                 "loaded_cogs": self.loaded_cogs,
                 "failed_cogs": self.failed_cogs,
-                "timestamp_last_kev_check_success": (
+                "last_kev_check_success": (
                     self.timestamp_last_kev_check_success.isoformat()
                     if self.timestamp_last_kev_check_success
                     else None
                 ),
-                "timestamp_last_kev_alert_sent": (
+                "last_kev_alert_sent": (
                     self.timestamp_last_kev_alert_sent.isoformat()
                     if self.timestamp_last_kev_alert_sent
                     else None
