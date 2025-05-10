@@ -320,6 +320,17 @@ class SecurityBot(commands.Bot):
             uptime_delta = current_time - self.start_time
             uptime_seconds = int(uptime_delta.total_seconds())
 
+            # Ensure kev_enabled_count is defined before constructing the payload
+            kev_enabled_count = 0
+            if self.db:
+                try:
+                    kev_enabled_count = self.db.count_enabled_guilds()
+                except Exception as db_err:
+                    logger.error(
+                        f"Error fetching KEV enabled guild count: {db_err}",
+                        exc_info=True,
+                    )
+
             # Construct the payload
             payload = {
                 "bot_id": self.user.id if self.user else None,
@@ -338,7 +349,7 @@ class SecurityBot(commands.Bot):
                     if self.last_stats_sent_time
                     else None
                 ),
-                # Keep these at top level for backward compatibility
+                **current_stats,
                 "loaded_cogs": self.loaded_cogs,
                 "failed_cogs": self.failed_cogs,
                 "last_kev_check_success": (
@@ -351,8 +362,8 @@ class SecurityBot(commands.Bot):
                     if self.timestamp_last_kev_alert_sent
                     else None
                 ),
+                "kev_enabled_guilds": kev_enabled_count,
                 "version": self.version,
-                # Also include stats in the nested structure like tasks_cog.py does
                 "stats": {
                     **current_stats,
                     "loaded_cogs": self.loaded_cogs,
@@ -367,6 +378,7 @@ class SecurityBot(commands.Bot):
                         if self.timestamp_last_kev_alert_sent
                         else None
                     ),
+                    "kev_enabled_guilds": kev_enabled_count,
                 },
             }
 
