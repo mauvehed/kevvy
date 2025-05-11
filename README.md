@@ -125,6 +125,7 @@ Key features:
     - `/kevvy admin version`: Shows detailed version information for the bot
     - `/kevvy admin servers`: Lists all servers the bot is in
     - `/kevvy admin debug <code>`: Evaluates Python code for debugging
+    - `/kevvy admin announce <message>`: Sends an announcement message to all servers the bot is in
       > Note: These commands are restricted to the bot owner only (configured via `BOT_OWNER_ID`).
 
 ## Screenshots
