@@ -576,6 +576,79 @@ class UtilityCog(commands.Cog, name="Utility"):
                 ephemeral=True,
             )
 
+    @admin_group.command(
+        name="announce",
+        description="Sends an announcement message to all servers the bot is in.",
+    )
+    @app_commands.check(is_bot_owner)
+    @app_commands.describe(message="The message to send to all servers.")
+    async def admin_announce(self, interaction: discord.Interaction, message: str):
+        """Sends an announcement message to all servers the bot is in."""
+        await interaction.response.defer(ephemeral=True)
+
+        # Create an embed for the announcement
+        embed = discord.Embed(
+            title="📢 Kevvy Announcement",
+            description=message,
+            color=discord.Color.blue(),
+            timestamp=datetime.datetime.now(datetime.timezone.utc),
+        )
+        embed.set_footer(text=f"Announcement from {interaction.user.name}")
+
+        success_count = 0
+        failed_count = 0
+        failed_servers = []
+
+        # Send to all guilds
+        for guild in self.bot.guilds:
+            try:
+                channel = None
+
+                # Try to get a suitable channel in order of preference:
+                # 1. KEV feed channel (if configured)
+                # 2. Announcements channel or system channel
+                # 3. General channel or first text channel
+                if self.bot.db:
+                    kev_config = self.bot.db.get_kev_config(guild.id)
+                    if kev_config and kev_config.get("enabled"):
+                        channel = self.bot.get_channel(kev_config["channel_id"])
+
+                if not channel:
+                    channel = (
+                        discord.utils.get(guild.text_channels, name="announcements")
+                        or guild.system_channel
+                        or discord.utils.get(guild.text_channels, name="general")
+                        or (guild.text_channels[0] if guild.text_channels else None)
+                    )
+
+                if channel:
+                    perms = channel.permissions_for(guild.me)
+                    if perms.send_messages:
+                        await channel.send(embed=embed)
+                        success_count += 1
+                    else:
+                        failed_count += 1
+                        failed_servers.append(
+                            f"{guild.name} (Missing send_messages permission in {channel.name})"
+                        )
+                else:
+                    failed_count += 1
+                    failed_servers.append(f"{guild.name} (No suitable channel found)")
+            except Exception as e:
+                failed_count += 1
+                failed_servers.append(f"{guild.name} ({str(e)})")
+
+        # Send summary to the command user
+        summary = f"Announcement sent to {success_count} servers."
+        if failed_count > 0:
+            summary += f"\nFailed to send to {failed_count} servers:"
+            for server in failed_servers[:5]:  # Show first 5 failures
+                summary += f"\n- {server}"
+            if len(failed_servers) > 5:
+                summary += f"\n... and {len(failed_servers) - 5} more"
+
+        await interaction.followup.send(summary, ephemeral=True)
+
     @commands.Cog.listener()
     async def on_app_command_error(
         self,
@@ -754,7 +827,8 @@ class UtilityCog(commands.Cog, name="Utility"):
                     "• `/kevvy admin servers` - Lists all servers the bot is in\n"
                     "• `/kevvy admin reload` - Reloads bot extensions/cogs\n"
                     "• `/kevvy admin version` - Shows detailed version information\n"
-                    "• `/kevvy admin debug` - Evaluates Python code for debugging"
+                    "• `/kevvy admin debug` - Evaluates Python code for debugging\n"
+                    "• `/kevvy admin announce` - Sends an announcement message to all servers"
                 )
 
                 admin_embed.add_field(
