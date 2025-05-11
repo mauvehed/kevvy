@@ -576,6 +576,85 @@ class UtilityCog(commands.Cog, name="Utility"):
                 ephemeral=True,
             )
 
+    @admin_group.command(
+        name="announce",
+        description="Sends an announcement message to all servers the bot is in.",
+    )
+    @app_commands.check(is_bot_owner)
+    @app_commands.describe(
+        message="The message to send to all servers.",
+        channel_type="The type of channel to send the message to (system or announcements).",
+    )
+    async def admin_announce(
+        self,
+        interaction: discord.Interaction,
+        message: str,
+        channel_type: str = "system",
+    ):
+        """Sends an announcement message to all servers the bot is in."""
+        await interaction.response.defer(ephemeral=True)
+
+        # Create an embed for the announcement
+        embed = discord.Embed(
+            title="📢 Kevvy Announcement",
+            description=message,
+            color=discord.Color.blue(),
+            timestamp=datetime.datetime.now(datetime.timezone.utc),
+        )
+        embed.set_footer(text=f"Announcement from {interaction.user.name}")
+
+        success_count = 0
+        failed_count = 0
+        failed_servers = []
+
+        # Send to all guilds
+        for guild in self.bot.guilds:
+            try:
+                # Try to find the appropriate channel based on channel_type
+                channel = None
+                if channel_type.lower() == "system":
+                    # Look for system channel or first text channel
+                    channel = guild.system_channel
+                    if not channel:
+                        # If no system channel, try to find a general channel
+                        channel = discord.utils.get(guild.text_channels, name="general")
+                        if not channel:
+                            # If no general channel, use the first text channel
+                            channel = (
+                                guild.text_channels[0] if guild.text_channels else None
+                            )
+                elif channel_type.lower() == "announcements":
+                    # Look for announcements channel
+                    channel = discord.utils.get(
+                        guild.text_channels, name="announcements"
+                    )
+                    if not channel:
+                        channel = guild.system_channel
+                else:
+                    # Default to system channel
+                    channel = guild.system_channel
+
+                if channel:
+                    await channel.send(embed=embed)
+                    success_count += 1
+                else:
+                    failed_count += 1
+                    failed_servers.append(f"{guild.name} (No suitable channel found)")
+            except Exception as e:
+                failed_count += 1
+                failed_servers.append(f"{guild.name} ({str(e)})")
+
+        # Send summary to the command user
+        summary = f"Announcement sent to {success_count} servers."
+        if failed_count > 0:
+            summary += f"\nFailed to send to {failed_count} servers:"
+            for server in failed_servers[:5]:  # Show first 5 failures
+                summary += f"\n- {server}"
+            if len(failed_servers) > 5:
+                summary += f"\n... and {len(failed_servers) - 5} more"
+
+        await interaction.followup.send(summary, ephemeral=True)
+
     @commands.Cog.listener()
     async def on_app_command_error(
         self,
@@ -754,7 +833,8 @@ class UtilityCog(commands.Cog, name="Utility"):
                     "• `/kevvy admin servers` - Lists all servers the bot is in\n"
                     "• `/kevvy admin reload` - Reloads bot extensions/cogs\n"
                     "• `/kevvy admin version` - Shows detailed version information\n"
-                    "• `/kevvy admin debug` - Evaluates Python code for debugging"
+                    "• `/kevvy admin debug` - Evaluates Python code for debugging\n"
+                    "• `/kevvy admin announce` - Sends an announcement message to all servers"
                 )
 
                 admin_embed.add_field(
