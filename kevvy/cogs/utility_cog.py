@@ -602,34 +602,35 @@ class UtilityCog(commands.Cog, name="Utility"):
         # Send to all guilds
         for guild in self.bot.guilds:
             try:
-                # First try to get the KEV feed channel
-                kev_config = self.bot.db.get_kev_config(guild.id)
                 channel = None
 
-                if kev_config and kev_config.get("enabled"):
-                    # Try to send to KEV feed channel
-                    channel = self.bot.get_channel(kev_config["channel_id"])
+                # Try to get a suitable channel in order of preference:
+                # 1. KEV feed channel (if configured)
+                # 2. Announcements channel or system channel
+                # 3. General channel or first text channel
+                if self.bot.db:
+                    kev_config = self.bot.db.get_kev_config(guild.id)
+                    if kev_config and kev_config.get("enabled"):
+                        channel = self.bot.get_channel(kev_config["channel_id"])
 
                 if not channel:
-                    # If no KEV feed channel, try to find an announcements channel
-                    channel = discord.utils.get(
-                        guild.text_channels, name="announcements"
+                    channel = (
+                        discord.utils.get(guild.text_channels, name="announcements")
+                        or guild.system_channel
+                        or discord.utils.get(guild.text_channels, name="general")
+                        or (guild.text_channels[0] if guild.text_channels else None)
                     )
-                    if not channel:
-                        # If no announcements channel, try system channel
-                        channel = guild.system_channel
-                        if not channel:
-                            # If no system channel, try to find a general channel
-                            channel = discord.utils.get(
-                                guild.text_channels, name="general"
-                            )
-                            if not channel and guild.text_channels:
-                                # If no general channel, use the first text channel
-                                channel = guild.text_channels[0]
 
                 if channel:
-                    await channel.send(embed=embed)
-                    success_count += 1
+                    perms = channel.permissions_for(guild.me)
+                    if perms.send_messages:
+                        await channel.send(embed=embed)
+                        success_count += 1
+                    else:
+                        failed_count += 1
+                        failed_servers.append(
+                            f"{guild.name} (Missing send_messages permission in {channel.name})"
+                        )
                 else:
                     failed_count += 1
                     failed_servers.append(f"{guild.name} (No suitable channel found)")
