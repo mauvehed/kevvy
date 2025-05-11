@@ -159,6 +159,27 @@ New and enhanced tests should be added to cover the following functionalities:
 - Verify log message formatting.
 - Test handling when the target channel is not found or inaccessible.
 
+**6.7. Admin Commands (`cogs/utility_cog.py`)**
+
+- Test `/kevvy admin announce` command:
+  - Verify correct permission checks (bot owner only)
+  - Test message parameter validation
+  - Test embed creation with various message lengths
+  - Test channel selection logic:
+    - KEV feed channel priority
+    - Announcements/system channel fallback
+    - General/first available channel fallback
+  - Test delivery reporting:
+    - Successful deliveries
+    - Failed deliveries (up to 5 detailed errors)
+    - Summary statistics
+  - Test error handling:
+    - Invalid guilds/channels
+    - Discord API errors
+    - Permission errors
+  - Verify message formatting and embed structure
+  - Test with various message lengths and content types
+
 ## 7. Success Metrics
 
 - **Primary:** Overall code coverage reported by `pytest --cov=kevvy` increases from ~30% to **> 80%**.
