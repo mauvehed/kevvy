@@ -175,6 +175,37 @@ _(Details omitted as it's a future feature)_
 - Enhanced filtering (severity - requires mapping CVE severity to KEV entry, ransomware use).
 - Multiple feed channels.
 
+### 2.4 Admin Commands
+
+**Purpose:** Provide administrative functionality for the bot owner.
+**Permission:** Restricted to bot owner only (configured via `BOT_OWNER_ID`).
+
+#### 2.4.1 `/kevvy admin announce <message>`
+
+**Purpose:** Broadcast an announcement message to all servers the bot is in.
+
+**Parameters:**
+
+- `message` (Required): The announcement message to send.
+
+**Behavior:**
+
+- Creates an embed with the announcement message
+- Attempts to send to each server using the following channel priority:
+  1. KEV feed channel (if configured)
+  2. Announcements channel or system channel
+  3. General channel or first available text channel
+- Provides a summary of successful and failed deliveries
+- Shows detailed error information for failed deliveries (up to 5)
+
+**Example:**
+
+```
+/kevvy admin announce message:Important update: New features have been added to the bot!
+```
+
+#### 2.4.2 Other Admin Commands
+
 ## 3. Database Schema
 
 _(Current Schema Representation)_
