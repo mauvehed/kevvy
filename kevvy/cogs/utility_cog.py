@@ -581,16 +581,8 @@ class UtilityCog(commands.Cog, name="Utility"):
         description="Sends an announcement message to all servers the bot is in.",
     )
     @app_commands.check(is_bot_owner)
-    @app_commands.describe(
-        message="The message to send to all servers.",
-        channel_type="The type of channel to send the message to (system or announcements).",
-    )
-    async def admin_announce(
-        self,
-        interaction: discord.Interaction,
-        message: str,
-        channel_type: str = "system",
-    ):
+    @app_commands.describe(message="The message to send to all servers.")
+    async def admin_announce(self, interaction: discord.Interaction, message: str):
         """Sends an announcement message to all servers the bot is in."""
         await interaction.response.defer(ephemeral=True)
 
@@ -610,29 +602,30 @@ class UtilityCog(commands.Cog, name="Utility"):
         # Send to all guilds
         for guild in self.bot.guilds:
             try:
-                # Try to find the appropriate channel based on channel_type
+                # First try to get the KEV feed channel
+                kev_config = self.bot.db.get_kev_config(guild.id)
                 channel = None
-                if channel_type.lower() == "system":
-                    # Look for system channel or first text channel
-                    channel = guild.system_channel
-                    if not channel:
-                        # If no system channel, try to find a general channel
-                        channel = discord.utils.get(guild.text_channels, name="general")
-                        if not channel:
-                            # If no general channel, use the first text channel
-                            channel = (
-                                guild.text_channels[0] if guild.text_channels else None
-                            )
-                elif channel_type.lower() == "announcements":
-                    # Look for announcements channel
+
+                if kev_config and kev_config.get("enabled"):
+                    # Try to send to KEV feed channel
+                    channel = self.bot.get_channel(kev_config["channel_id"])
+
+                if not channel:
+                    # If no KEV feed channel, try to find an announcements channel
                     channel = discord.utils.get(
                         guild.text_channels, name="announcements"
                     )
                     if not channel:
+                        # If no announcements channel, try system channel
                         channel = guild.system_channel
-                else:
-                    # Default to system channel
-                    channel = guild.system_channel
+                        if not channel:
+                            # If no system channel, try to find a general channel
+                            channel = discord.utils.get(
+                                guild.text_channels, name="general"
+                            )
+                            if not channel and guild.text_channels:
+                                # If no general channel, use the first text channel
+                                channel = guild.text_channels[0]
 
                 if channel:
                     await channel.send(embed=embed)
