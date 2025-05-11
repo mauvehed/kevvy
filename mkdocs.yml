@@ -8,4 +8,5 @@ nav:
     - Overview: commands/index.md # Assumes you have a docs/commands/index.md
     - KEV Commands: commands/kev.md
     - CVE Commands: commands/cve.md
+    - KEVVY Commands: commands/kevvy.md
     - Verbosity Commands: commands/verbose.md
