@@ -69,6 +69,12 @@ class SecurityBot(commands.Bot):
         self.RECENT_CVE_CACHE_SECONDS = 20  # Cache duration in seconds
         self.discord_log_handler: Optional[DiscordLogHandler] = None
 
+        # Cache for KEVs recently alerted to a channel (either by on_message or check_cisa_kev_feed)
+        self.recently_alerted_kevs: Dict[Tuple[int, str], datetime.datetime] = {}
+        self.RECENT_KEV_ALERT_CACHE_HOURS = (
+            1  # Cache KEV alerts for 1 hour to avoid duplicates
+        )
+
     async def _handle_signal(self, sig: signal.Signals):
         """Handles received OS signals for graceful shutdown."""
         logger.warning(f"Received signal {sig.name}. Initiating graceful shutdown...")
@@ -120,10 +126,13 @@ class SecurityBot(commands.Bot):
 
         if self.nvd_client:
             self.cve_monitor = CVEMonitor(
-                self.nvd_client, kev_client=self.cisa_kev_client
+                self.nvd_client,
+                vulncheck_client=self.vulncheck_client,
+                kev_client=self.cisa_kev_client,
+                stats_manager=self.stats_manager,
             )
             logger.info(
-                f"Initialized CVEMonitor (KEV support: {'enabled' if self.cisa_kev_client else 'disabled'})."
+                f"Initialized CVEMonitor (KEV support: {'enabled' if self.cisa_kev_client else 'disabled'}, VulnCheck: {'enabled' if self.vulncheck_client else 'disabled'})."
             )
         else:
             logger.error(
@@ -289,7 +298,7 @@ class SecurityBot(commands.Bot):
             f"_setup_discord_logging finished. self.discord_log_handler is {log_status}."
         )
 
-    @tasks.loop(minutes=5)
+    # @tasks.loop(minutes=5) # Commented out to prevent duplicate status sending
     async def send_stats_to_webapp(self):
         """Periodically sends bot statistics to the web application dashboard."""
         if not self.http_session:
@@ -332,35 +341,19 @@ class SecurityBot(commands.Bot):
                     )
 
             # Map only the required stats fields to the exact names expected by the backend
-            mapped_stats = {}
-            if "cve_lookups" in current_stats:
-                mapped_stats["cve_lookups"] = current_stats["cve_lookups"]
-            if "kev_alerts_sent" in current_stats:
-                mapped_stats["kev_alerts_sent"] = current_stats["kev_alerts_sent"]
-            if "messages_processed" in current_stats:
-                mapped_stats["messages_processed"] = current_stats["messages_processed"]
-            if "vulncheck_success" in current_stats:
-                mapped_stats["vulncheck_success"] = current_stats["vulncheck_success"]
-            if "nvd_fallback_success" in current_stats:
-                mapped_stats["nvd_fallback_success"] = current_stats[
-                    "nvd_fallback_success"
-                ]
-            if "api_errors_vulncheck" in current_stats:
-                mapped_stats["api_errors_vulncheck"] = current_stats[
-                    "api_errors_vulncheck"
-                ]
-            if "api_errors_nvd" in current_stats:
-                mapped_stats["api_errors_nvd"] = current_stats["api_errors_nvd"]
-            if "api_errors_cisa" in current_stats:
-                mapped_stats["api_errors_cisa"] = current_stats["api_errors_cisa"]
-            if "api_errors_kev" in current_stats:
-                mapped_stats["api_errors_kev"] = current_stats["api_errors_kev"]
-            if "rate_limits_hit_nvd" in current_stats:
-                mapped_stats["rate_limits_hit_nvd"] = current_stats[
-                    "rate_limits_hit_nvd"
-                ]
-            if "app_command_errors" in current_stats:
-                mapped_stats["app_command_errors"] = current_stats["app_command_errors"]
+            mapped_stats = {
+                "cve_lookups": current_stats.get("cve_lookups", 0),
+                "kev_alerts": current_stats.get("kev_alerts_sent", 0),
+                "messages_processed": current_stats.get("messages_processed", 0),
+                "vulncheck_success": current_stats.get("vulncheck_success", 0),
+                "nvd_fallback_success": current_stats.get("nvd_fallback_success", 0),
+                "api_errors_vulncheck": current_stats.get("api_errors_vulncheck", 0),
+                "nvd_api_errors": current_stats.get("api_errors_nvd", 0),
+                "api_errors_cisa": current_stats.get("api_errors_cisa", 0),
+                "kev_api_errors": current_stats.get("api_errors_kev", 0),
+                "rate_limits_nvd": current_stats.get("rate_limits_hit_nvd", 0),
+                "app_command_errors": current_stats.get("app_command_errors", {}),
+            }
 
             # Construct the payload
             payload = {
@@ -490,6 +483,21 @@ class SecurityBot(commands.Bot):
                 guild_id = config["guild_id"]
                 channel_id = config["channel_id"]
 
+                # Check KEV alert cache before sending to this channel
+                cve_id_for_cache = entry.get("cveID")
+                if cve_id_for_cache:  # Ensure we have a CVE ID
+                    now_utc = datetime.datetime.now(datetime.timezone.utc)
+                    kev_alert_cache_key = (channel_id, cve_id_for_cache)
+                    if kev_alert_cache_key in self.recently_alerted_kevs:
+                        cache_time = self.recently_alerted_kevs[kev_alert_cache_key]
+                        if (now_utc - cache_time).total_seconds() < (
+                            self.RECENT_KEV_ALERT_CACHE_HOURS * 3600
+                        ):
+                            logger.info(
+                                f"Skipping KEV feed alert for {cve_id_for_cache} to channel {channel_id} - recently alerted."
+                            )
+                            continue  # Skip sending to this specific channel for this KEV entry
+
                 guild = self.get_guild(guild_id)
                 if not guild:
                     logger.warning(
@@ -528,6 +536,9 @@ class SecurityBot(commands.Bot):
                         # Increment alerts sent stat using StatsManager
                         await self.stats_manager.increment_kev_alerts_sent(count=1)
                         alerts_sent_count += 1
+                        # Add to KEV alert cache after sending
+                        if cve_id_for_cache:  # Ensure we have a CVE ID
+                            self.recently_alerted_kevs[kev_alert_cache_key] = now_utc
                     except discord.Forbidden:
                         logger.error(
                             f"Missing permissions to send message in CISA KEV channel {channel_id} (Guild: {guild_id})"
@@ -645,147 +656,47 @@ class SecurityBot(commands.Bot):
     async def on_message(self, message: discord.Message):
         """Process incoming messages for CVEs and respond with info embeds."""
         # Handle commands first before any other processing
+        # Check if the message invoked a command
+        ctx = await self.get_context(message)
+        if ctx.command:
+            # If a command was found, process it and then stop further on_message processing
+            # for this message to prevent duplicate responses or unintended CVE lookups on command text.
+            # In this specific method, returning here primarily prevents the redundant self.process_commands
+            # call below IF the CVE logic were still present in this on_message.
+            # Since CVE logic is being moved/confirmed to be in CoreEventsCog,
+            # this early return's main job is to ensure commands are processed once.
+            await self.process_commands(message)
+            return
+
+        # If no command was invoked by this message, then self.process_commands below won't do anything
+        # specific for commands (as there isn't one).
+        # We still call it as per discord.py best practices when overriding on_message,
+        # as it might handle other message-related tasks or ensure the event dispatch flow is complete.
+        # Cog-based on_message listeners will still fire independently.
         await self.process_commands(message)
 
-        # Skip processing if conditions not met
-        if (
-            message.author.bot
-            or not isinstance(message.channel, discord.TextChannel)
-            or not message.guild
-            or not self.cve_monitor
-            or not self.db
-        ):
-            return
+        # All CVE-specific processing, including incrementing messages_processed,
+        # fetching CVE data, checking KEV status, sending embeds, and caching,
+        # is now handled by the on_message listener in CoreEventsCog.
+        # This bot-level on_message is now solely for ensuring commands are processed
+        # when on_message is overridden at the bot level.
 
-        # Read necessary info for processing
-        guild_id = message.guild.id
-        channel_id = message.channel.id
-        content = message.content
+    async def on_connect(self):  # This is a new addition if not present
+        logger.info(f"Bot connected to Discord. Shard ID: {self.shard_id}")
 
-        # Count this message regardless of whether we find a CVE
-        await self.stats_manager.increment_messages_processed()
+    async def on_resumed(self):  # This is a new addition if not present
+        logger.info(f"Bot resumed connection. Shard ID: {self.shard_id}")
 
-        # Find CVEs in the message
-        cve_matches = self.cve_monitor.find_cves(content)
-        if not cve_matches:
-            return  # No CVEs found
+    async def on_disconnect(self):  # This is a new addition if not present
+        logger.warning(
+            f"Bot disconnected from Discord. Shard ID: {self.shard_id}. Attempting to reconnect."
+        )
 
-        # Check monitoring config
-        try:
-            guild_config = self.db.get_cve_guild_config(guild_id)
-            if not guild_config or not guild_config.get("enabled", True):
-                return  # Guild has monitoring disabled
 
-            channel_config = self.db.get_cve_channel_config(guild_id, channel_id)
-            if not channel_config or not channel_config.get("enabled", True):
-                return  # Channel has monitoring disabled
-
-            verbose = self.db.get_effective_verbosity(guild_id, channel_id)
-            guild_severity_threshold = guild_config.get("severity_threshold", "all")
-        except Exception as e:
-            logger.error(f"Error checking CVE monitoring config: {e}", exc_info=True)
-            return
-
-        # Process unique CVEs
-        embed_count = 0
-        processed_cves = set()
-
-        for cve_id in cve_matches:
-            # Skip if already processed or hit embed limit
-            if cve_id in processed_cves or embed_count >= MAX_EMBEDS_PER_MESSAGE:
-                continue
-
-            processed_cves.add(cve_id)
-
-            # Skip if recently processed (rate limiting)
-            cache_key = (channel_id, cve_id)
-            now = datetime.datetime.now(datetime.timezone.utc)
-
-            if cache_key in self.recently_processed_cves:
-                cache_time = self.recently_processed_cves[cache_key]
-                if (now - cache_time).total_seconds() < self.RECENT_CVE_CACHE_SECONDS:
-                    logger.debug(
-                        f"Skipping {cve_id} - processed recently in channel {channel_id}"
-                    )
-                    continue
-
-            try:
-                # Get and validate CVE data
-                cve_data = await self.cve_monitor.get_cve_data(cve_id)
-                if not cve_data:
-                    continue
-
-                # Check severity threshold with the correct parameter name (min_threshold_str)
-                try:
-                    passes_threshold, severity = (
-                        self.cve_monitor.check_severity_threshold(
-                            cve_data, min_threshold_str=guild_severity_threshold
-                        )
-                    )
-                except Exception as e:
-                    logger.warning(f"Error checking severity for {cve_id}: {str(e)}")
-                    # Default to passing threshold if we can't check
-                    passes_threshold, severity = True, "Unknown"
-
-                if not passes_threshold:
-                    logger.debug(
-                        f"CVE {cve_id} with {severity} severity below threshold {guild_severity_threshold}"
-                    )
-                    continue
-
-                # Check KEV status
-                kev_data = None
-                try:
-                    kev_data = await self.cve_monitor.check_kev(cve_id)
-                except Exception as e:
-                    logger.warning(f"Error checking KEV status for {cve_id}: {str(e)}")
-                    await self.stats_manager.record_api_error(service="kev")
-
-                # Create embed - the correct signature only has cve_data and verbose parameters
-                embed = self.cve_monitor.create_cve_embed(cve_data, verbose=verbose)
-
-                await message.channel.send(embed=embed)
-                self.recently_processed_cves[cache_key] = now
-                embed_count += 1
-
-                # If we found KEV data, send a separate KEV embed if the method exists
-                if kev_data and hasattr(self.cve_monitor, "create_kev_status_embed"):
-                    try:
-                        kev_embed = self.cve_monitor.create_kev_status_embed(
-                            cve_id, kev_data, verbose=verbose
-                        )
-                        await message.channel.send(embed=kev_embed)
-                    except Exception as e:
-                        logger.warning(
-                            f"Failed to send KEV info for {cve_id}: {str(e)}"
-                        )
-
-            except discord.Forbidden:
-                logger.error(
-                    f"Missing permissions in channel {channel_id} (Guild: {guild_id})"
-                )
-                break  # Stop trying if we don't have permissions
-
-            except discord.HTTPException as e:
-                logger.error(f"Discord HTTP error for {cve_id}: {str(e)}")
-                continue
-
-            except NVDRateLimitError as e:
-                logger.error(f"NVD API rate limit hit: {str(e)}")
-                await self.stats_manager.record_nvd_rate_limit_hit()
-
-                # Try to notify users about rate limit
-                try:
-                    warning_embed = discord.Embed(
-                        title="⚠️ NVD API Rate Limit Reached",
-                        description="The National Vulnerability Database (NVD) API rate limit has been reached. Please try again later.",
-                        color=discord.Color.gold(),
-                    )
-                    await message.channel.send(embed=warning_embed)
-                except Exception as e:
-                    logger.warning(f"Failed to send rate limit warning: {str(e)}")
-                break
-
-            except Exception as e:
-                logger.error(f"Error processing {cve_id}: {str(e)}", exc_info=True)
-                continue
+# If the main function or entry point is here, it would be at the end of the file.
+# Example:
+# async def main():
+#     # ... setup and run bot
+#
+# if __name__ == "__main__":
+#     asyncio.run(main())

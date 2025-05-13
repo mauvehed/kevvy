@@ -302,9 +302,6 @@ class CoreEventsCog(commands.Cog, name="CoreEvents"):
                         f"No data found for {cve_id} mentioned in message {message.id}."
                     )
                     continue
-                else:
-                    # Increment NVD success using StatsManager
-                    await self.bot.stats_manager.increment_nvd_fallback_success()
 
                 min_severity_str = guild_config.get("severity_threshold", "all")
                 passes_threshold, cve_severity_str = (

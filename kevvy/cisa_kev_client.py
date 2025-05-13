@@ -80,17 +80,15 @@ class CisaKevClient:
         fetched_vulns = data.get("vulnerabilities", [])
         self._cache = fetched_vulns
         self._cache_time = now
-        # Check before len call
-        cache_len = len(
-            self._cache
-        )  # self._cache assigned above, should not be None here, but check anyway for safety?
-        # Let's be explicit:
+
+        # Explicitly check if cache is not None before logging its length
         if self._cache is not None:
             cache_len = len(self._cache)
             logger.info(f"Fetched and cached {cache_len} KEV entries.")
         else:
-            logger.warning("Fetched KEV data but cache ended up None unexpectedly.")
-            # This case should ideally not happen if data.get worked
+            logger.warning(
+                "Fetched KEV data but cache (self._cache) was None or empty after assignment."
+            )
 
         return self._cache
 
