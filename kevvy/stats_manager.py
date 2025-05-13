@@ -42,6 +42,10 @@ class StatsManager:
         async with self.lock:
             self.nvd_fallback_success += count
 
+    async def increment_vulncheck_success(self, count: int = 1):
+        async with self.lock:
+            self.vulncheck_success += count
+
     async def record_api_error(self, service: str, count: int = 1):
         """Records an API error for a specific service (e.g., 'nvd', 'cisa', 'kev')."""
         async with self.lock:
@@ -52,8 +56,8 @@ class StatsManager:
             elif service == "kev":  # Used by on_message for kev check errors
                 self.api_errors_kev += count
             # Add other services like vulncheck if needed
-            # elif service == 'vulncheck':
-            #     self.api_errors_vulncheck += count
+            elif service == "vulncheck":
+                self.api_errors_vulncheck += count
 
     async def record_nvd_rate_limit_hit(self, count: int = 1):
         async with self.lock:

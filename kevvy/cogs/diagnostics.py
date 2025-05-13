@@ -82,22 +82,27 @@ class DiagnosticsCog(commands.Cog):
             )
             stats_data["guild_count"] = len(self.bot.guilds)
 
+            # Get stats from StatsManager
+            current_bot_stats: Dict[str, Any] = {}
+            if self.bot.stats_manager:
+                current_bot_stats = await self.bot.stats_manager.get_stats_dict()
+            else:
+                logger.error(
+                    "StatsManager not found on bot in DiagnosticsCog. Detailed stats will be zero."
+                )
+
             # Only send cog list on first update after startup
             if not self.cogs_list_sent:
-                # Get cog names and log them for debugging
                 cog_names = list(self.bot.cogs.keys())
                 logger.info(
                     f"First status update - sending {len(cog_names)} loaded cogs: {cog_names}"
                 )
                 stats_data["loaded_cogs"] = cog_names
                 self.cogs_list_sent = True
-            # Otherwise don't include the cogs list to save bandwidth and DB space
 
-            # API/Task Status (Use getattr with default 0 for stats)
-            stats_data["nvd_api_errors"] = getattr(self.bot, "stats_api_errors_nvd", 0)
-            stats_data["kev_api_errors"] = getattr(
-                self.bot, "stats_api_errors_kev", 0
-            )  # From KEV cog error
+            # API/Task Status - Mapped keys
+            stats_data["nvd_api_errors"] = current_bot_stats.get("api_errors_nvd", 0)
+            stats_data["kev_api_errors"] = current_bot_stats.get("api_errors_kev", 0)
             stats_data["last_kev_check_success_ts"] = (
                 self.bot.timestamp_last_kev_check_success.isoformat()
                 if self.bot.timestamp_last_kev_check_success
@@ -108,30 +113,25 @@ class DiagnosticsCog(commands.Cog):
                 if self.bot.timestamp_last_kev_alert_sent
                 else None
             )
-            # Include other API errors
-            stats_data["api_errors_vulncheck"] = getattr(
-                self.bot, "stats_api_errors_vulncheck", 0
+            stats_data["api_errors_vulncheck"] = current_bot_stats.get(
+                "api_errors_vulncheck", 0
             )
-            stats_data["api_errors_cisa"] = getattr(
-                self.bot, "stats_api_errors_cisa", 0
-            )  # From KEV feed check task
-            stats_data["rate_limits_nvd"] = getattr(
-                self.bot, "stats_rate_limits_hit_nvd", 0
+            stats_data["api_errors_cisa"] = current_bot_stats.get("api_errors_cisa", 0)
+            stats_data["rate_limits_nvd"] = current_bot_stats.get(
+                "rate_limits_hit_nvd", 0
             )
 
-            # Feature Usage/Config - Align keys with server.js /api/bot-status expectations
-            stats_data["cve_lookups"] = getattr(self.bot, "stats_cve_lookups", 0)
-            stats_data["kev_alerts"] = getattr(
-                self.bot, "stats_kev_alerts_sent", 0
-            )  # Renamed key for server.js
-            stats_data["messages_processed"] = getattr(
-                self.bot, "stats_messages_processed", 0
-            )  # Added key for server.js
-            stats_data["vulncheck_success"] = getattr(
-                self.bot, "stats_vulncheck_success", 0
+            # Feature Usage/Config - Mapped keys
+            stats_data["cve_lookups"] = current_bot_stats.get("cve_lookups", 0)
+            stats_data["kev_alerts"] = current_bot_stats.get("kev_alerts_sent", 0)
+            stats_data["messages_processed"] = current_bot_stats.get(
+                "messages_processed", 0
             )
-            stats_data["nvd_fallback_success"] = getattr(
-                self.bot, "stats_nvd_fallback_success", 0
+            stats_data["vulncheck_success"] = current_bot_stats.get(
+                "vulncheck_success", 0
+            )
+            stats_data["nvd_fallback_success"] = current_bot_stats.get(
+                "nvd_fallback_success", 0
             )
 
             # Database dependent stats
