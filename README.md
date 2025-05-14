@@ -63,7 +63,7 @@
 
 **kevvy** is a Discord bot with the following main functions:
 
-1.  **Automatic CVE Detection:** It automatically monitors chat messages for CVE (Common Vulnerabilities and Exposures) identifiers (e.g., `CVE-2023-12345`). When a CVE is detected, the bot fetches detailed information primarily from the [NIST National Vulnerability Database (NVD) API v2.0](https://nvd.nist.gov/developers/vulnerabilities). (_Note: Integration with VulnCheck as a primary source is planned for future enhancement._)
+1.  **Automatic CVE Detection:** It automatically monitors chat messages for CVE (Common Vulnerabilities and Exposures) identifiers (e.g., `CVE-2023-12345`). When a CVE is detected, the bot fetches detailed information using VulnCheck as the primary source if a `VULNCHECK_API_TOKEN` is provided, falling back to the NIST National Vulnerability Database (NVD) API v2.0 otherwise.
 2.  **Direct CVE Lookup:** Users can explicitly request details for a specific CVE using the `/cve lookup` command.
 3.  **CISA KEV Monitoring:** Optionally monitors the [CISA Known Exploited Vulnerabilities (KEV) catalog](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) and sends alerts for new entries to configured channels.
 
@@ -71,7 +71,7 @@ Key features:
 
 - Automatic detection of CVE IDs in messages.
 - Direct lookup of specific CVEs via `/cve lookup`.
-- Fetches details primarily from NVD (_VulnCheck planned for future_).
+- Fetches details using VulnCheck first (if `VULNCHECK_API_TOKEN` is configured), then NVD.
 - Displays CVSS score (v3.1/v3.0/v2.0), vector string, description, publication dates, CWEs, and reference links.
 - Consolidates responses for messages containing multiple CVEs (max 5 embeds per message by default, with delays between sends) to prevent spam.
 - Optionally checks the CISA KEV catalog periodically and posts alerts for new entries to a designated channel (configurable per server).
@@ -163,8 +163,9 @@ cp .env.example .env
 Then, edit the `.env` file:
 
 - `DISCORD_TOKEN` (Required): Your Discord bot token.
-- `NVD_API_KEY` (Optional): Your NVD API key. Request one [here](https://nvd.nist.gov/developers/request-an-api-key) for significantly higher request rate limits. Used as the primary data source for CVE details.
-- `VULNCHECK_API_TOKEN` (Optional): Your VulnCheck API key. _(Note: This is planned for future integration as a potential primary data source but is not currently used by the core CVE lookup commands)._ Get one from [VulnCheck](https://vulncheck.com/).
+- `NVD_API_KEY` (Optional): Your NVD API key. Request one [here](https://nvd.nist.gov/developers/request-an-api-key) for significantly higher request rate limits. Used as a fallback data source if VulnCheck is not configured or fails.
+- `VULNCHECK_API_TOKEN` (Optional): Your VulnCheck API key. If provided, Kevvy will use VulnCheck as the primary source for CVE details, offering richer information. Get one from [VulnCheck](https://vulncheck.com/).
+<!-- KEVVY_WEB_URL and KEVVY_WEB_API_KEY removed as they are for a private feature -->
 - `DISCORD_COMMAND_PREFIX` (Optional): The prefix for traditional commands (if any are added later). Defaults to `!`. The primary interaction is automatic detection and slash commands.
 - `LOGGING_CHANNEL_ID` (Optional): The ID of the Discord channel to which log messages should be sent.
 - `DISABLE_DISCORD_LOGGING` (Optional): Set to `true` to disable sending logs to the Discord channel specified by `LOGGING_CHANNEL_ID`. Defaults to `false`.
@@ -239,7 +240,6 @@ See [LICENSE](LICENSE) for more information.
 
 ## Acknowledgements
 
-- Data sourced primarily from [NVD](https://nvd.nist.gov).
-- [VulnCheck](https://vulncheck.com/) integration planned for future enhancement.
+- Data sourced primarily from [VulnCheck](https://vulncheck.com/) (if configured) and [NVD](https://nvd.nist.gov).
 - Known Exploited Vulnerabilities feed monitored via [CISA](https://www.cisa.gov/known-exploited-vulnerabilities-catalog).
 - Thanks to all contributors and users who have helped make this project better!
