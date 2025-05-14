@@ -4,12 +4,16 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock
 from datetime import datetime, timedelta, timezone
 import logging
 import aiohttp
+import os
+import asyncio
 
 # Import the bot class and other necessary components
 from kevvy.bot import SecurityBot
 from kevvy.db_utils import KEVConfigDB
 from kevvy.cve_monitor import CVEMonitor
 from kevvy.cisa_kev_client import CisaKevClient
+from kevvy.cogs.diagnostics import DiagnosticsCog
+from kevvy.stats_manager import StatsManager
 
 # --- Fixtures (Duplicated for simplicity, consider conftest.py later) ---
 
@@ -308,131 +312,328 @@ async def test_check_cisa_kev_feed_missing_guild_channel(
 
 
 @pytest.mark.asyncio
-async def test_send_stats_to_webapp_success(mocker, mock_bot_with_tasks, caplog):
-    """Test successful sending of stats to the web app."""
-    # --- Mock Setup ---
-    test_url = "http://test-webapp.com/base"
-    mocker.patch("kevvy.bot.WEBAPP_ENDPOINT_URL", test_url)
-    mocker.patch("kevvy.bot.WEBAPP_API_KEY", "test-api-key")
+async def test_diagnostics_cog_update_web_status_success(mocker, caplog):
+    """Test successful sending of stats by DiagnosticsCog.update_web_status."""
+    # --- Mock Environment ---
+    test_url_base = "http://test-webapp.com"
+    test_api_endpoint = f"{test_url_base}/api/bot-status"
 
-    mock_stats_dict = {"cve_lookups": 10}
-    mocker.patch.object(
-        mock_bot_with_tasks.stats_manager,
-        "get_stats_dict",
-        return_value=mock_stats_dict,
-        new_callable=AsyncMock,
+    # Mock os.getenv calls made by DiagnosticsCog.__init__
+    # This mock needs to be active when DiagnosticsCog is instantiated.
+    mocker.patch(
+        "os.getenv",
+        side_effect=lambda key, default=None: {
+            "KEVVY_WEB_URL": test_url_base,
+            "KEVVY_WEB_API_KEY": "test-api-key",
+        }.get(key, default),
     )
 
-    mock_bot_with_tasks._post_stats = AsyncMock(return_value=(200, "OK"))
+    # --- Mock Bot and Cog ---
+    mock_bot = MagicMock(spec=SecurityBot)
+    mock_bot.http_session = AsyncMock(spec=aiohttp.ClientSession)
+    mock_bot.stats_manager = AsyncMock(spec=StatsManager)
+    mock_bot.latency = 0.05
+    mock_bot.guilds = [MagicMock(), MagicMock()]
+    mock_bot.cogs = {"CoreEventsCog": MagicMock(), "DiagnosticsCog": MagicMock()}
+    mock_bot.timestamp_last_kev_check_success = None
+    mock_bot.timestamp_last_kev_alert_sent = None
+    mock_bot.db = MagicMock()
+    mock_bot.user = MagicMock()
+    mock_bot.user.id = 12345
+    mock_bot.user.name = "TestBot"
+    # Add any other attributes DiagnosticsCog might access on self.bot
+    # For example, BOT_VERSION might be on self.bot.version if not using the module-level one in the cog
+    mock_bot.version = "test-version"  # Assuming DiagnosticsCog might use self.bot.version if BOT_VERSION from __init__ fails
 
-    initial_sent_time = datetime.now(timezone.utc) - timedelta(hours=1)
-    mock_bot_with_tasks.last_stats_sent_time = initial_sent_time
+    mock_stats_dict = {
+        "cve_lookups": 10,
+        "kev_alerts_sent": 2,
+        "messages_processed": 100,
+        "vulncheck_success": 5,
+        "nvd_fallback_success": 1,
+        "api_errors_nvd": 0,
+        "api_errors_kev": 0,
+        "api_errors_vulncheck": 0,
+        "api_errors_cisa": 0,
+        "rate_limits_hit_nvd": 0,
+        # Ensure all keys accessed by current_bot_stats.get() in DiagnosticsCog are here
+    }
+    mock_bot.stats_manager.get_stats_dict = AsyncMock(return_value=mock_stats_dict)
+
+    # Instantiate DiagnosticsCog
+    # It will try to start its loop; for testing one execution of .coro, this is usually fine.
+    # The mock_os_getenv must be active here.
+    diagnostics_cog = DiagnosticsCog(bot=mock_bot)
+    # Ensure the cog's session is the one we can mock `post` on
+    # DiagnosticsCog init assigns self.session = bot.http_session, so this should be covered by mock_bot
+
+    # Mock the actual post call on the session object used by the cog
+    mock_api_response = AsyncMock(spec=aiohttp.ClientResponse)
+    mock_api_response.status = 200
+    mock_api_response.reason = "OK"
+    mock_api_response.text = AsyncMock(return_value="OK")
+
+    # This is the object returned by session.post(), which needs to be an async context manager
+    mock_request_context_manager = AsyncMock()
+    mock_request_context_manager.__aenter__ = AsyncMock(return_value=mock_api_response)
+    # __aexit__ needs to be an awaitable, even if it does nothing or returns None/False
+    mock_request_context_manager.__aexit__ = AsyncMock(return_value=False)
+
+    # mock_bot.http_session.post is the function that returns the context manager
+    # It should be a MagicMock because aiohttp.ClientSession.post is a regular method
+    mock_bot.http_session.post = MagicMock(return_value=mock_request_context_manager)
 
     # --- Run Task ---
+    # The DiagnosticsCog task starts itself if URL and Key are present.
+    # We need to ensure it's not actually looping during the test of a single call.
+    # A common way is to cancel it after the test or mock the tasks.loop decorator itself.
+    # For now, we call .coro() which should bypass the loop's scheduling for one execution.
+
+    # If the task is already running due to init, store it and cancel later
+    task_to_cancel = None
+    if diagnostics_cog.update_web_status.is_running():
+        task_to_cancel = diagnostics_cog.update_web_status
+        task_to_cancel.cancel()  # Cancel to prevent interference
+        # Wait for cancellation to complete if necessary, or hope .coro call is sufficient
+        try:
+            await asyncio.sleep(0)  # Allow cancellation to process
+        except asyncio.CancelledError:
+            pass
+
     with caplog.at_level(logging.INFO):
-        await mock_bot_with_tasks.send_stats_to_webapp.coro(mock_bot_with_tasks)
+        # Call the update_web_status's underlying coroutine
+        await diagnostics_cog.update_web_status.coro(diagnostics_cog)
 
     # --- Assertions ---
-    # SKIP: Verifying StatsManager method calls due to mocking difficulties
-    # mock_get_stats.assert_awaited_once()
+    mock_bot.stats_manager.get_stats_dict.assert_called_once()
+    mock_bot.http_session.post.assert_called_once()  # Changed from assert_awaited_once
 
-    # Check the webhook was called and status updated
-    mock_bot_with_tasks._post_stats.assert_awaited_once()
-    assert "Successfully sent stats to web app" in caplog.text
-    assert mock_bot_with_tasks.last_stats_sent_time is not None
-    assert mock_bot_with_tasks.last_stats_sent_time > initial_sent_time
+    args, kwargs = mock_bot.http_session.post.call_args
+    assert args[0] == test_api_endpoint
+    assert kwargs["json"]["cve_lookups"] == 10
+    assert kwargs["json"]["kev_alerts"] == 2
+    assert kwargs["headers"]["Authorization"] == "Bearer test-api-key"
+
+    assert (
+        f"Successfully sent bot status to web API ({test_api_endpoint})" in caplog.text
+    )
+    # This log might not happen if cogs_list_sent becomes true too quickly or if test setup changes order
+    # For more robust test, explicitly set diagnostics_cog.cogs_list_sent = False before calling .coro
+    # diagnostics_cog.cogs_list_sent = False # <-- Add this before the 'with caplog' block
+    # assert "First status update - sending" in caplog.text
+
+    # Clean up: if we didn't cancel it above, or if we want to ensure it's stopped
+    if task_to_cancel and task_to_cancel.is_running():
+        task_to_cancel.cancel()
+    elif not task_to_cancel and diagnostics_cog.update_web_status.is_running():
+        diagnostics_cog.update_web_status.cancel()
 
 
 @pytest.mark.asyncio
-async def test_send_stats_to_webapp_no_url(mocker, mock_bot_with_tasks, caplog):
-    """Test that stats are not sent if KEVVY_WEB_URL is not configured."""
-    # Use the placeholder URL instead of None to avoid NoneType errors
-    mocker.patch("kevvy.bot.WEBAPP_ENDPOINT_URL", "YOUR_WEBAPP_ENDPOINT_URL_HERE")
-
-    # Keep the mock ready but it shouldn't be called
-    mock_get_stats = mocker.patch.object(
-        mock_bot_with_tasks.stats_manager, "get_stats_dict", new_callable=AsyncMock
+async def test_diagnostics_cog_update_web_status_no_config(mocker, caplog):
+    """Test DiagnosticsCog when KEVVY_WEB_URL or KEVVY_WEB_API_KEY is not configured."""
+    # --- Mock Environment ---
+    # Simulate os.getenv returning None for the web URL
+    mock_os_getenv = mocker.patch(
+        "os.getenv",
+        side_effect=lambda key, default=None: {
+            "KEVVY_WEB_API_KEY": "test-api-key"  # Provide key, but no URL
+        }.get(key, default)
+        if key == "KEVVY_WEB_API_KEY"
+        else None,
     )
-    mock_post_stats = mocker.patch.object(
-        mock_bot_with_tasks, "_post_stats", new_callable=AsyncMock
+
+    # --- Mock Bot ---
+    mock_bot = MagicMock(spec=SecurityBot)
+    mock_bot.http_session = AsyncMock(
+        spec=aiohttp.ClientSession
+    )  # Session still needs to be there
+    # Add other attributes DiagnosticsCog might access on self.bot during __init__ or early in update_web_status
+    mock_bot.stats_manager = AsyncMock(spec=StatsManager)
+    mock_bot.latency = 0.05
+    mock_bot.guilds = []
+    mock_bot.cogs = {}
+    mock_bot.timestamp_last_kev_check_success = None
+    mock_bot.timestamp_last_kev_alert_sent = None
+    mock_bot.db = MagicMock()
+    mock_bot.user = MagicMock()  # Basic user mock
+    mock_bot.version = "test-version"
+
+    # --- Instantiate Cog ---
+    with caplog.at_level(logging.WARNING):
+        diagnostics_cog = DiagnosticsCog(bot=mock_bot)
+
+    # --- Assertions for __init__ ---
+    mock_os_getenv.assert_any_call("KEVVY_WEB_URL")
+    assert (
+        "KEVVY_WEB_URL or KEVVY_WEB_API_KEY not set. Web status updates disabled."
+        in caplog.text
     )
+    assert (
+        not diagnostics_cog.update_web_status.is_running()
+    )  # Task should not have been started
 
-    # Run test - directly invoke the coro property to get the unwrapped function
-    with caplog.at_level(logging.DEBUG):
-        # Access the underlying method that the task.loop is wrapping
-        await mock_bot_with_tasks.send_stats_to_webapp.coro(mock_bot_with_tasks)
+    # --- Test .coro() behavior ---
+    # Clear previous logs if any, or use a new caplog context
+    caplog.clear()
+    with caplog.at_level(logging.DEBUG):  # Use DEBUG to catch the "Skipping update" log
+        await diagnostics_cog.update_web_status.coro(diagnostics_cog)
 
-    # Verify nothing was called since URL is placeholder
-    mock_get_stats.assert_not_called()
-    mock_post_stats.assert_not_called()
-
-    # Verify proper log message
-    assert "Web app endpoint URL not properly configured" in caplog.text
+    # Assert that no HTTP POST was attempted
+    mock_bot.http_session.post.assert_not_called()
+    # Assert that the method logged its intention to skip
+    assert (
+        "Diagnostics task running without endpoint, secret, or session. Skipping update."
+        in caplog.text
+    )
 
 
 @pytest.mark.asyncio
-async def test_send_stats_to_webapp_http_error(mocker, mock_bot_with_tasks, caplog):
-    """Test error handling when the web app POST returns an error status."""
-    test_url = "http://test-webapp.com"
-    mocker.patch("kevvy.bot.WEBAPP_ENDPOINT_URL", test_url)
-    mocker.patch("kevvy.bot.WEBAPP_API_KEY", "test-api-key")
-
-    mock_stats_dict = {"cve_lookups": 5}
-    mocker.patch.object(
-        mock_bot_with_tasks.stats_manager,
-        "get_stats_dict",
-        return_value=mock_stats_dict,
-        new_callable=AsyncMock,
+async def test_diagnostics_cog_update_web_status_http_error(mocker, caplog):
+    """Test DiagnosticsCog.update_web_status when the web API POST returns an error status."""
+    # --- Mock Environment ---
+    test_url_base = "http://test-webapp.com"
+    test_api_key = "test-api-key"
+    mocker.patch(
+        "os.getenv",
+        side_effect=lambda key, default=None: {
+            "KEVVY_WEB_URL": test_url_base,
+            "KEVVY_WEB_API_KEY": test_api_key,
+        }.get(key, default),
     )
 
-    mock_bot_with_tasks._post_stats = AsyncMock(
-        return_value=(500, "Internal Server Error")
+    # --- Mock Bot & Cog ---
+    mock_bot = MagicMock(spec=SecurityBot)
+    mock_bot.http_session = AsyncMock(spec=aiohttp.ClientSession)
+    mock_bot.stats_manager = AsyncMock(spec=StatsManager)
+    mock_bot.stats_manager.get_stats_dict = AsyncMock(return_value={"cve_lookups": 5})
+    mock_bot.latency = 0.05
+    mock_bot.guilds = [MagicMock(), MagicMock()]
+    mock_bot.cogs = {
+        "DiagnosticsCog": MagicMock()
+    }  # So it doesn't try to log itself as new
+    mock_bot.timestamp_last_kev_check_success = None
+    mock_bot.timestamp_last_kev_alert_sent = None
+    mock_bot.db = MagicMock()
+    mock_bot.db.count_enabled_guilds = MagicMock(return_value=1)
+    mock_bot.db.count_globally_enabled_cve_guilds = MagicMock(return_value=1)
+    mock_bot.db.count_active_cve_channels = MagicMock(return_value=1)
+    mock_bot.user = MagicMock()
+    mock_bot.version = "test-version"
+
+    diagnostics_cog = DiagnosticsCog(bot=mock_bot)
+    # Ensure the task doesn't run on its own during the test of .coro()
+    if diagnostics_cog.update_web_status.is_running():
+        diagnostics_cog.update_web_status.cancel()
+        try:  # Allow cancellation to process
+            await asyncio.sleep(0)
+        except asyncio.CancelledError:
+            pass
+    diagnostics_cog.cogs_list_sent = (
+        True  # Prevent cog list logging for this test focus
     )
 
-    initial_sent_time = mock_bot_with_tasks.last_stats_sent_time
+    # Mock the aiohttp.ClientSession.post response for HTTP error
+    # This is the final response object
+    mock_api_response = AsyncMock(spec=aiohttp.ClientResponse)
+    mock_api_response.status = 500
+    mock_api_response.reason = "Internal Server Error"
+    mock_api_response.text = AsyncMock(return_value="Server Error Details")
 
+    # This is the async context manager returned by session.post()
+    mock_request_context_manager = AsyncMock()
+    mock_request_context_manager.__aenter__ = AsyncMock(return_value=mock_api_response)
+    # __aexit__ still needs to be a valid awaitable mock, though it might not be reached if __aenter__ fails
+    mock_request_context_manager.__aexit__ = AsyncMock(return_value=False)
+
+    # mock_bot.http_session.post is the function that returns the context manager
+    # It should be a MagicMock because aiohttp.ClientSession.post is a regular method
+    mock_bot.http_session.post = MagicMock(return_value=mock_request_context_manager)
+
+    # --- Run Task ---
+    with caplog.at_level(logging.WARNING):
+        await diagnostics_cog.update_web_status.coro(diagnostics_cog)
+
+    # --- Assertions ---
+    mock_bot.http_session.post.assert_called_once()  # Changed from assert_awaited_once
+    args, kwargs = mock_bot.http_session.post.call_args
+    assert args[0] == f"{test_url_base}/api/bot-status"
+    assert kwargs["json"]["cve_lookups"] == 5
+    assert kwargs["headers"]["Authorization"] == f"Bearer {test_api_key}"
+
+    assert (
+        "Failed to send bot status to web API. Status: 500, Reason: Internal Server Error"
+        in caplog.text
+    )
+    assert "Web API Response Body (Truncated): Server Error Details" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_cog_update_web_status_connection_error(mocker, caplog):
+    """Test DiagnosticsCog.update_web_status for connection errors during stats send."""
+    # --- Mock Environment ---
+    test_url_base = "http://unreachable-host.local"
+    test_api_key = "test-api-key"
+    mocker.patch(
+        "os.getenv",
+        side_effect=lambda key, default=None: {
+            "KEVVY_WEB_URL": test_url_base,
+            "KEVVY_WEB_API_KEY": test_api_key,
+        }.get(key, default),
+    )
+
+    # --- Mock Bot & Cog ---
+    mock_bot = MagicMock(spec=SecurityBot)
+    mock_bot.http_session = AsyncMock(spec=aiohttp.ClientSession)
+    mock_bot.stats_manager = AsyncMock(spec=StatsManager)
+    mock_bot.stats_manager.get_stats_dict = AsyncMock(return_value={"cve_lookups": 3})
+    # Fill in other necessary bot attributes similar to the HTTP error test
+    mock_bot.latency = 0.05
+    mock_bot.guilds = [MagicMock()]
+    mock_bot.cogs = {"DiagnosticsCog": MagicMock()}
+    mock_bot.timestamp_last_kev_check_success = None
+    mock_bot.timestamp_last_kev_alert_sent = None
+    mock_bot.db = MagicMock()
+    mock_bot.db.count_enabled_guilds = MagicMock(return_value=1)
+    mock_bot.db.count_globally_enabled_cve_guilds = MagicMock(return_value=1)
+    mock_bot.db.count_active_cve_channels = MagicMock(return_value=1)
+    mock_bot.user = MagicMock()
+    mock_bot.version = "test-version"
+
+    diagnostics_cog = DiagnosticsCog(bot=mock_bot)
+    if diagnostics_cog.update_web_status.is_running():
+        diagnostics_cog.update_web_status.cancel()
+        try:
+            await asyncio.sleep(0)
+        except asyncio.CancelledError:
+            pass
+    diagnostics_cog.cogs_list_sent = True
+
+    # Mock the aiohttp.ClientSession.post to raise a ClientError from __aenter__
+    # This simulates an error during the establishment of the request context
+    mock_request_context_manager_raising_error = AsyncMock()
+    mock_request_context_manager_raising_error.__aenter__ = AsyncMock(
+        side_effect=aiohttp.ClientError("Connection failed miserably in __aenter__")
+    )
+    # __aexit__ still needs to be a valid awaitable mock, though it might not be reached if __aenter__ fails
+    mock_request_context_manager_raising_error.__aexit__ = AsyncMock(return_value=False)
+
+    # mock_bot.http_session.post should be a MagicMock
+    mock_bot.http_session.post = MagicMock(
+        return_value=mock_request_context_manager_raising_error
+    )
+
+    # --- Run Task ---
     with caplog.at_level(logging.ERROR):
-        await mock_bot_with_tasks.send_stats_to_webapp.coro(mock_bot_with_tasks)
+        await diagnostics_cog.update_web_status.coro(diagnostics_cog)
 
-    # SKIP: Verifying StatsManager method calls due to mocking difficulties
-    # mock_get_stats.assert_awaited_once()
-    mock_bot_with_tasks._post_stats.assert_awaited_once()
-    assert "Failed to send stats to web app" in caplog.text
-    assert mock_bot_with_tasks.last_stats_sent_time == initial_sent_time
+    # --- Assertions ---
+    mock_bot.http_session.post.assert_called_once()  # Changed from assert_awaited_once
+    args, kwargs = mock_bot.http_session.post.call_args
+    assert args[0] == f"{test_url_base}/api/bot-status"  # Check URL construction
 
-
-@pytest.mark.asyncio
-async def test_send_stats_to_webapp_connection_error(
-    mocker, mock_bot_with_tasks, caplog
-):
-    """Test error handling for connection errors during stats send."""
-    web_url = "http://invalid-host.local"
-    mocker.patch("kevvy.bot.WEBAPP_ENDPOINT_URL", web_url)
-    mocker.patch("kevvy.bot.WEBAPP_API_KEY", "test-api-key")
-
-    mock_stats_dict = {"cve_lookups": 3}
-    mocker.patch.object(
-        mock_bot_with_tasks.stats_manager,
-        "get_stats_dict",
-        return_value=mock_stats_dict,
-        new_callable=AsyncMock,
+    # Check for the correct error message for aiohttp.ClientError
+    assert (
+        f"HTTP Error sending status to web API ({test_url_base}/api/bot-status): Connection failed miserably in __aenter__"
+        in caplog.text
     )
-
-    mock_bot_with_tasks._post_stats = AsyncMock(
-        side_effect=aiohttp.ClientError("Connection failed")
-    )
-
-    initial_sent_time = mock_bot_with_tasks.last_stats_sent_time
-
-    with caplog.at_level(logging.ERROR):
-        await mock_bot_with_tasks.send_stats_to_webapp.coro(mock_bot_with_tasks)
-
-    # SKIP: Verifying StatsManager method calls due to mocking difficulties
-    # mock_get_stats.assert_awaited_once()
-    mock_bot_with_tasks._post_stats.assert_awaited_once()
-
-    # Check for the correct error message
-    assert "Connection error while sending stats to web app" in caplog.text
-
-    # Verify the timestamp wasn't updated
-    assert mock_bot_with_tasks.last_stats_sent_time == initial_sent_time
