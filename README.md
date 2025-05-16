@@ -46,7 +46,7 @@
   - [Prerequisites](#prerequisites)
   - [Configuration](#configuration)
   - [Running with Docker (Recommended)](#running-with-docker-recommended)
-  - [Running Locally with Poetry](#running-locally-with-poetry)
+  - [Running Locally with uv](#running-locally-with-uv)
 - [Roadmap](#roadmap)
 - [Support](#support)
 - [Contributing](#contributing)
@@ -80,7 +80,7 @@ Key features:
 
 - <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" />
 - <img src="https://img.shields.io/badge/discord.py-2.x-5865F2?style=for-the-badge&logo=discord&logoColor=white" />
-- <img src="https://img.shields.io/badge/Poetry-1.8+-60A5FA?style=for-the-badge&logo=poetry&logoColor=white" />
+- <img src="https://img.shields.io/badge/uv-0.1+-00A98F?style=for-the-badge&logo=python&logoColor=white" />
 - <img src="https://img.shields.io/badge/Docker-26.1+-0db7ed?style=for-the-badge&logo=docker&logoColor=white" />
 - <img src="https://img.shields.io/badge/aiohttp-library-blueviolet?style=for-the-badge&logo=python&logoColor=white" />
 - <img src="https://img.shields.io/badge/NVD API v2.0-darkgreen?style=for-the-badge&logo=python&logoColor=white" />
@@ -149,7 +149,7 @@ Here's the bot in action:
 ### Prerequisites
 
 - **Docker** and **Docker Compose** (Recommended for running)
-- OR **Python 3.10+** and **Poetry** (For local development/running)
+- OR **Python 3.10+** and **uv** (the `uv` Python project manager, for local development/running)
 - A **Discord Bot Token**. You can create a bot and get a token from the [Discord Developer Portal](https://discord.com/developers/applications).
 
 ### Configuration
@@ -188,13 +188,24 @@ Then, edit the `.env` file:
     docker-compose down
     ```
 
-### Running Locally with Poetry
+### Running Locally with uv
 
-1.  Ensure Python 3.10+ and Poetry are installed.
+1.  Ensure Python 3.10+ and [uv](https://github.com/astral-sh/uv) are installed.
 2.  Clone the repository: `git clone https://github.com/mauvehed/kevvy.git && cd kevvy`
-3.  Install bot dependencies: `poetry install`
-4.  Configure your `.env` file.
-5.  Run the bot: `poetry run python main.py`
+3.  Create and activate a virtual environment:
+    ```bash
+    uv venv
+    source .venv/bin/activate  # On Windows, use .venv\Scripts\activate
+    ```
+4.  Install bot dependencies (including development dependencies):
+    ```bash
+    uv pip install -e ".[dev]"
+    ```
+5.  Configure your `.env` file.
+6.  Run the bot:
+    ```bash
+    python main.py
+    ```
 
 ## Roadmap
 

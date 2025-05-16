@@ -16,7 +16,7 @@ Please note we have a [Code of Conduct](CODE_OF_CONDUCT.md), please follow it in
   - [Installation](#installation)
   - [Configuration](#configuration)
   - [Running with Docker/Podman for Development (Using dev.sh)](#running-with-dockerpodman-for-development-using-devsh)
-  - [Running Locally with Poetry](#running-locally-with-poetry)
+  - [Running Locally with uv](#running-locally-with-uv)
 - [Development Workflow](#development-workflow)
   - [Branching](#branching)
   - [Running Tests](#running-tests)
@@ -63,7 +63,7 @@ We welcome suggestions for new features and improvements! Please open an issue t
 
 - **Git:** For version control.
 - **Python:** Version 3.10 or higher.
-- **Poetry:** For dependency management and packaging. Install it following the [official Poetry documentation](https://python-poetry.org/docs/#installation).
+- **uv:** The `uv` Python project manager. Install it following the [official uv documentation](https://github.com/astral-sh/uv#installation).
 - **(Optional) Docker & Docker Compose:** If you plan to build or run the Docker image locally.
   - Note: A development image tagged as `:dev` may be available (e.g., `ghcr.io/mauvehed/kevvy:dev`). Check the project's container registry or `docker-compose.yml` for details on using development-specific images.
 
@@ -75,11 +75,13 @@ We welcome suggestions for new features and improvements! Please open an issue t
     git clone https://github.com/YOUR_USERNAME/kevvy.git
     cd kevvy
     ```
-3.  **Install Dependencies:** Use Poetry to install project dependencies, including development dependencies.
+3.  **Create Virtual Environment and Install Dependencies:** Use `uv` to create a virtual environment and install project dependencies, including development dependencies.
     ```bash
-    poetry install
+    uv venv  # Create virtual environment
+    source .venv/bin/activate  # On Windows, use .venv\Scripts\activate
+    uv pip install -e ".[dev]" # Install dependencies including dev extras
     ```
-    This command creates a virtual environment specific to this project and installs all required packages listed in `pyproject.toml`.
+    This command creates a virtual environment in `.venv` and installs all required packages based on `pyproject.toml`.
 
 ### Configuration
 
@@ -99,12 +101,12 @@ If you have Docker or Podman installed along with `docker-compose` or `podman-co
 
 This script typically uses a development-specific compose file (like `docker-compose.dev.yml`) which might mount your local code into the container for live updates. It handles stopping old containers, building the new image (often tagged `:dev`), running the new container in the background, and then attaching to the logs (`logs -f`).
 
-### Running Locally with Poetry
+### Running Locally with uv
 
-If you prefer not to use containers, you can run the bot directly using Poetry after completing the Installation and Configuration steps:
+If you prefer not to use containers, you can run the bot directly using `uv` after completing the Installation and Configuration steps and activating your virtual environment (`source .venv/bin/activate`):
 
 ```bash
-poetry run python main.py
+python main.py
 ```
 
 ## Development Workflow
@@ -130,9 +132,13 @@ git checkout -b your-branch-name
 
 We use `pytest` for testing. Tests are located in the `tests/` directory. Ensure all existing tests pass and add new tests for your changes.
 
-- **Run all tests:**
+- **Run all tests:** (Ensure your virtual environment is activated: `source .venv/bin/activate`)
   ```bash
-  poetry run pytest
+  pytest
+  ```
+  or
+  ```bash
+  uv run pytest
   ```
 
 ### Writing Commit Messages
@@ -187,10 +193,17 @@ Documentation is important! If your changes affect user-facing features, command
 - `docs/`: For the `mkdocs` generated documentation site (especially files in `docs/commands/`).
 
 To build and preview the documentation locally:
+(Ensure your virtual environment is activated: `source .venv/bin/activate`)
 
 ```bash
 # Assuming mkdocs is installed via development dependencies
-poetry run mkdocs serve
+mkdocs serve
+```
+
+or
+
+```bash
+uv run mkdocs serve
 ```
 
 Then open `http://127.0.0.1:8000` in your browser.
@@ -205,9 +218,16 @@ If you have questions about contributing or need help with your development setu
 ## Testing
 
 We use pytest for our test suite. To run tests:
+(Ensure your virtual environment is activated: `source .venv/bin/activate`)
 
 ```bash
-poetry run pytest
+pytest
+```
+
+or
+
+```bash
+uv run pytest
 ```
 
 Thank you for contributing to Kevvy!

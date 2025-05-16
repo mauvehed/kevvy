@@ -22,7 +22,7 @@ The easiest way to get started with the bot is to simply invite it to your Disco
 ### Prerequisites
 
 - **Docker** and **Docker Compose** (Recommended for running)
-- OR **Python 3.10+** and **Poetry** (For local development/running)
+- OR **Python 3.10+** and **uv** (the `uv` Python project manager, for local development/running)
 - A **Discord Bot Token**. You can create a bot and get a token from the [Discord Developer Portal](https://discord.com/developers/applications).
 
 ### Configuration
@@ -60,13 +60,24 @@ Then, edit the `.env` file:
     docker-compose down
     ```
 
-### Running Locally with Poetry
+### Running Locally with uv
 
-1.  Ensure Python 3.10+ and Poetry are installed.
+1.  Ensure Python 3.10+ and [uv](https://github.com/astral-sh/uv) are installed.
 2.  Clone the repository: `git clone https://github.com/mauvehed/kevvy.git && cd kevvy`
-3.  Install bot dependencies: `poetry install`
-4.  Configure your `.env` file.
-5.  Run the bot: `poetry run python main.py`
+3.  Create and activate a virtual environment:
+    ```bash
+    uv venv
+    source .venv/bin/activate  # On Windows, use .venv\Scripts\activate
+    ```
+4.  Install bot dependencies (including development dependencies):
+    ```bash
+    uv pip install -e ".[dev]"
+    ```
+5.  Configure your `.env` file.
+6.  Run the bot:
+    ```bash
+    python main.py
+    ```
 
 ## Commands
 
