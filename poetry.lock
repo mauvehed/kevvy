@@ -1457,14 +1457,14 @@ zstd = ["zstandard (>=0.18.0)"]
 
 [[package]]
 name = "vulncheck-sdk"
-version = "0.0.12"
+version = "0.0.13"
 description = "VulnCheck API"
 optional = false
 python-versions = "<4.0,>=3.8"
 groups = ["main"]
 files = [
-    {file = "vulncheck_sdk-0.0.12-py3-none-any.whl", hash = "sha256:b9499b662670fa1280e40bdff40cfe23e53d0eba8c85a2e557557f782e34f12a"},
-    {file = "vulncheck_sdk-0.0.12.tar.gz", hash = "sha256:a445ebc843ba0118e80e28d5028fc10dcb12334c8d41484fb288809b85e837b4"},
+    {file = "vulncheck_sdk-0.0.13-py3-none-any.whl", hash = "sha256:a65df668e0106278c6da2460e9448eeeb18602a178b3c7cdf67ecc9e999fa115"},
+    {file = "vulncheck_sdk-0.0.13.tar.gz", hash = "sha256:48024227ed118a10a7cab1acef06197b2129ed35be1425ab5617bc1e00f0b97e"},
 ]
 
 [package.dependencies]
@@ -1638,4 +1638,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.10"
-content-hash = "bd7706c34b4990997471874ecb87e0dedbb6a2f32d2de0e6503c9f2c360decb9"
+content-hash = "8a07d0cec85c995ee1638fe11ffd649e2127c4d46857ba13d17ec4226d3e9b5e"
