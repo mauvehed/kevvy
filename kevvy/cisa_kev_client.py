@@ -62,32 +62,56 @@ class CisaKevClient:
             return None
 
     async def get_full_kev_catalog(self) -> Optional[List[Dict[str, Any]]]:
-        """Fetches the full KEV catalog, using a time-based cache."""
+        """Fetches the full KEV catalog, using a time-based cache.
+        If a fresh fetch fails, it will not return stale cached data beyond its expiry.
+        """
         now = time.monotonic()
+        # Check if a valid, non-expired cache exists
         if self._cache is not None and (
             now - self._cache_time < self.CACHE_DURATION_SECONDS
         ):
-            logger.debug("Returning cached KEV catalog.")
+            logger.debug(
+                f"Returning KEV catalog from active cache (cached at {self._cache_time:.2f}, current time: {now:.2f}, expires ~{self._cache_time + self.CACHE_DURATION_SECONDS:.2f})."
+            )
             return self._cache
 
-        logger.debug("Fetching fresh KEV catalog data.")
-        data = await self._fetch_kev_data()
-        if not data or "vulnerabilities" not in data:
-            logger.warning("Could not fetch or parse CISA KEV data for full catalog.")
-            # Return old cache if fetch fails but cache exists
-            return self._cache if self._cache is not None else None
+        # Cache is expired or not populated; attempt a fresh fetch
+        logger.info(
+            "KEV cache expired or not populated. Attempting to fetch fresh catalog data."
+        )
+        fresh_data_payload = (
+            await self._fetch_kev_data()
+        )  # This is the dict like {"vulnerabilities": [...]} or None
 
-        fetched_vulns = data.get("vulnerabilities", [])
-        self._cache = fetched_vulns
-        self._cache_time = now
+        if not fresh_data_payload or "vulnerabilities" not in fresh_data_payload:
+            logger.warning(
+                "Failed to fetch or parse fresh CISA KEV data. Catalog will not be updated from this attempt."
+            )
+            # If the fetch fails, we do not serve any data that would be considered "current".
+            # If an old cache exists but is expired (which it would be to reach here), don't return it.
+            # Effectively, no current data is available.
+            return None
+
+        # Fetch was successful, update the cache
+        newly_fetched_vulnerabilities = fresh_data_payload.get("vulnerabilities", [])
+        self._cache = newly_fetched_vulnerabilities
+        self._cache_time = (
+            now  # Update cache timestamp only on successful fetch & update
+        )
 
         # Explicitly check if cache is not None before logging its length
-        if self._cache is not None:
+        if (
+            self._cache is not None
+        ):  # Should be true if "vulnerabilities" was present or default to []
             cache_len = len(self._cache)
-            logger.info(f"Fetched and cached {cache_len} KEV entries.")
+            logger.info(
+                f"Successfully fetched and cached {cache_len} KEV entries. Cache timestamp updated to {self._cache_time:.2f}."
+            )
         else:
+            # This case should ideally not be hit if fresh_data_payload had "vulnerabilities"
+            # or if .get("vulnerabilities", []) worked as expected.
             logger.warning(
-                "Fetched KEV data but cache (self._cache) was None or empty after assignment."
+                "KEV data fetched, but self._cache is None after assignment. This is unexpected."
             )
 
         return self._cache
