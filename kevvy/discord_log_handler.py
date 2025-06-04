@@ -67,50 +67,81 @@ class DiscordLogHandler(logging.Handler):
     async def _send_log_embed(
         self, channel: discord.TextChannel, message: str, level: int
     ):
-        """Asynchronously sends the log message as an embed, handling potential Discord errors."""
-        try:
-            # Determine color based on log level
-            embed_color = LOG_LEVEL_COLORS.get(level, DEFAULT_LOG_COLOR)
+        """Asynchronously sends the log message as an embed, handling potential Discord errors
+        and implementing a custom retry mechanism for rate limits."""
+        embed_color = LOG_LEVEL_COLORS.get(level, DEFAULT_LOG_COLOR)
+        embed = discord.Embed(
+            description=f"```log\n{message}```",
+            color=embed_color,
+            timestamp=discord.utils.utcnow(),
+        )
 
-            embed = discord.Embed(
-                description=f"```log\n{message}```",  # Keep the code block for formatting
-                color=embed_color,
-                timestamp=discord.utils.utcnow(),  # Add timestamp
-            )
-            # Optional: Add level name to footer or title if desired
-            # embed.set_footer(text=f"Level: {logging.getLevelName(level)}")
+        max_retries = 3
+        # Minimum time to wait before retrying, even if Discord suggests shorter.
+        MINIMUM_RETRY_DELAY_SECONDS = 30.0
 
-            await channel.send(embed=embed)
+        for attempt in range(max_retries):
+            try:
+                await channel.send(embed=embed)
 
-            # Reset error flags on successful send
-            if hasattr(self, "_permission_error_logged"):
-                delattr(self, "_permission_error_logged")
-            if hasattr(self, "_http_error_logged"):
-                delattr(self, "_http_error_logged")
-            if hasattr(self, "_send_error_logged"):
-                delattr(self, "_send_error_logged")
-            if hasattr(self, "_channel_fetch_error_logged"):
-                delattr(self, "_channel_fetch_error_logged")
+                # Reset error flags on successful send
+                if hasattr(self, "_permission_error_logged"):
+                    delattr(self, "_permission_error_logged")
+                if hasattr(self, "_http_error_logged"):
+                    delattr(self, "_http_error_logged")
+                if hasattr(self, "_send_error_logged"):
+                    delattr(self, "_send_error_logged")
+                if hasattr(self, "_channel_fetch_error_logged"):
+                    delattr(self, "_channel_fetch_error_logged")
+                return  # Success, exit the method
 
-        except discord.Forbidden:
-            if not hasattr(self, "_permission_error_logged"):
-                logger.error(
-                    f"DiscordLogHandler: Bot lacks permissions to send messages/embeds in channel #{channel.name} (ID: {self.channel_id}, Guild: {channel.guild.id}). Check bot roles."
-                )
-                self._permission_error_logged = True
-            self._channel = None  # Reset channel cache to force refetch
-        except discord.HTTPException as e:
-            if not hasattr(self, "_http_error_logged"):
-                logger.error(
-                    f"DiscordLogHandler: Failed to send log embed to #{channel.name} (ID: {self.channel_id}, Guild: {channel.guild.id}): {e.status} {e.text}"
-                )
-                self._http_error_logged = True
-            self._channel = None  # Reset channel cache to force refetch
-        except Exception as e:
-            if not hasattr(self, "_send_error_logged"):
-                logger.error(
-                    f"DiscordLogHandler: Unexpected error sending log embed to #{channel.name} (ID: {self.channel_id}, Guild: {channel.guild.id}): {e}",
-                    exc_info=True,
-                )
-                self._send_error_logged = True
-            self._channel = None  # Reset channel cache to force refetch
+            except discord.Forbidden:
+                if not hasattr(self, "_permission_error_logged"):
+                    logger.error(
+                        f"DiscordLogHandler: Bot lacks permissions to send messages/embeds in channel #{channel.name} (ID: {self.channel_id}, Guild: {channel.guild.id}). Check bot roles."
+                    )
+                    self._permission_error_logged = True
+                self._channel = None  # Reset channel cache to force refetch
+                return  # Don't retry on permission errors
+            except discord.HTTPException as e:
+                if e.status == 429:  # Rate limited
+                    discord_suggested_retry_after = getattr(e, "retry_after", None)
+
+                    wait_duration = MINIMUM_RETRY_DELAY_SECONDS
+                    if discord_suggested_retry_after is not None:
+                        wait_duration = max(
+                            discord_suggested_retry_after, MINIMUM_RETRY_DELAY_SECONDS
+                        )
+
+                    logger.warning(
+                        f"DiscordLogHandler: Rate limited sending log to #{channel.name} (ID: {self.channel_id}). "
+                        f"Attempt {attempt + 1}/{max_retries}. Waiting {wait_duration:.2f} seconds before retrying. "
+                        f"(Discord suggested: {discord_suggested_retry_after if discord_suggested_retry_after is not None else 'N/A'}s, Using: {wait_duration:.2f}s)"
+                    )
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(wait_duration)
+                        continue  # Go to next attempt
+                    else:
+                        logger.error(
+                            f"DiscordLogHandler: Failed to send log to #{channel.name} (ID: {self.channel_id}) after {max_retries} rate limit retries."
+                        )
+                        # Store the fact that we are still rate limited for this type of error
+                        if not hasattr(self, "_http_error_logged"):
+                            self._http_error_logged = True  # So we don't spam further http errors if other sends also fail
+                else:  # Other HTTP error
+                    if not hasattr(self, "_http_error_logged"):
+                        logger.error(
+                            f"DiscordLogHandler: Failed to send log embed to #{channel.name} (ID: {self.channel_id}, Guild: {channel.guild.id}): {e.status} {e.text}"
+                        )
+                        self._http_error_logged = True
+                self._channel = None  # Reset channel cache to force refetch
+                return  # Don't retry on other HTTP errors for now, or after max retries for 429
+            except Exception as e:
+                if not hasattr(self, "_send_error_logged"):
+                    logger.error(
+                        f"DiscordLogHandler: Unexpected error sending log embed to #{channel.name} (ID: {self.channel_id}, Guild: {channel.guild.id}): {e}",
+                        exc_info=True,
+                    )
+                    self._send_error_logged = True
+                self._channel = None  # Reset channel cache to force refetch
+                return  # Don't retry on unknown errors
