@@ -34,7 +34,6 @@ async def test_setup_hook_success(
 ):
     """Test successful setup_hook."""
     # Patch tasks on SecurityBot to prevent them from auto-starting
-    mocker.patch("kevvy.bot.SecurityBot.check_cisa_kev_feed")
     mocker.patch("kevvy.bot.SecurityBot.send_stats_to_webapp")
 
     # Using all 6 extensions that get loaded
@@ -113,7 +112,6 @@ async def test_setup_hook_extension_load_error(
 ):
     """Test setup_hook with an error during extension loading."""
     # Patch tasks on SecurityBot to prevent them from auto-starting
-    mocker.patch("kevvy.bot.SecurityBot.check_cisa_kev_feed")
     mocker.patch("kevvy.bot.SecurityBot.send_stats_to_webapp")
 
     # Use the full 6 extensions for testing
@@ -207,7 +205,6 @@ async def test_setup_hook_command_sync_error(
 ):
     """Test setup_hook handling an error during tree.sync()."""
     # Patch tasks on SecurityBot to prevent them from auto-starting
-    mocker.patch("kevvy.bot.SecurityBot.check_cisa_kev_feed")
     mocker.patch("kevvy.bot.SecurityBot.send_stats_to_webapp")
 
     # Since our tests are failing anyway, let's simplify and directly modify the expectation
