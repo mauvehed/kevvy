@@ -13,6 +13,7 @@ from kevvy.db_utils import KEVConfigDB
 from kevvy.cve_monitor import CVEMonitor
 from kevvy.cisa_kev_client import CisaKevClient
 from kevvy.cogs.diagnostics import DiagnosticsCog
+from kevvy.cogs.tasks_cog import TasksCog
 from kevvy.stats_manager import StatsManager
 
 # --- Fixtures (Duplicated for simplicity, consider conftest.py later) ---
@@ -421,3 +422,295 @@ async def test_diagnostics_cog_update_web_status_connection_error(mocker, caplog
         f"HTTP Error sending status to web API ({test_url_base}/api/bot-status): Connection failed miserably in __aenter__"
         in caplog.text
     )
+
+
+# --- Tests for check_cisa_kev_feed Task (via TasksCog) ---
+
+
+@pytest.fixture
+def tasks_cog_with_mocked_bot(mocker, mock_db, mock_cisa_kev_client):
+    """Fixture for TasksCog that prevents task auto-start."""
+    # Patch the task start methods BEFORE creating the cog
+    mocker.patch("kevvy.cogs.tasks_cog.TasksCog.check_cisa_kev_feed")
+    mocker.patch("kevvy.cogs.tasks_cog.TasksCog.send_stats_to_webapp")
+
+    mock_bot = MagicMock(spec=SecurityBot)
+    mock_bot.db = mock_db
+    mock_bot.cisa_kev_client = mock_cisa_kev_client
+    mock_bot.http_session = AsyncMock()
+    mock_bot.start_time = datetime.now(timezone.utc)
+    mock_bot.timestamp_last_kev_check_success = None
+    mock_bot.timestamp_last_kev_alert_sent = None
+
+    mock_stats_manager = MagicMock()
+    mock_stats_manager.get_stats_dict = AsyncMock(return_value={})
+    mock_stats_manager.increment_kev_alerts_sent = AsyncMock()
+    mock_stats_manager.record_api_error = AsyncMock()
+    mock_bot.stats_manager = mock_stats_manager
+
+    mock_bot.get_guild = MagicMock()
+    mock_bot.get_channel = MagicMock()
+
+    # Create the cog - tasks are patched so they won't start
+    TasksCog(bot=mock_bot)
+
+    # Stop all patches so we can access the real task methods
+    mocker.stopall()
+
+    # Create a fresh cog instance that has the real task definitions
+    # but patch start to be a no-op
+    from unittest.mock import patch
+
+    with patch.object(TasksCog, "__init__", lambda self, bot: None):
+        real_cog = TasksCog.__new__(TasksCog)
+
+    # Copy attributes from the properly initialized cog
+    real_cog.bot = mock_bot
+    real_cog.kev_check_first_run = True
+
+    return real_cog
+
+
+@pytest.mark.asyncio
+async def test_check_cisa_kev_feed_no_new_entries(
+    tasks_cog_with_mocked_bot, mock_cisa_kev_client, mock_db
+):
+    """Test the KEV check task with no new entries."""
+    cog = tasks_cog_with_mocked_bot
+    mock_cisa_kev_client.get_new_kev_entries.return_value = []
+    mock_db.get_enabled_kev_configs.return_value = []
+
+    initial_timestamp = datetime.now(timezone.utc) - timedelta(days=1)
+    cog.bot.timestamp_last_kev_check_success = initial_timestamp
+
+    # Run the task's coroutine
+    await cog.check_cisa_kev_feed.coro(cog)
+
+    # Assertions
+    mock_cisa_kev_client.get_new_kev_entries.assert_awaited_once()
+    mock_db.get_enabled_kev_configs.assert_not_called()
+
+    assert cog.bot.timestamp_last_kev_check_success is not None
+    assert cog.bot.timestamp_last_kev_check_success > initial_timestamp
+
+    cog.bot.stats_manager.record_api_error.assert_not_called()
+    cog.bot.stats_manager.increment_kev_alerts_sent.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_check_cisa_kev_feed_new_entries_success(
+    tasks_cog_with_mocked_bot, mock_cisa_kev_client, mock_db
+):
+    """Test the KEV check task with new entries and successful sending."""
+    cog = tasks_cog_with_mocked_bot
+
+    new_entry1 = {"cveID": "CVE-2023-1111", "shortDescription": "Test 1"}
+    new_entry2 = {"cveID": "CVE-2023-2222", "shortDescription": "Test 2"}
+    mock_cisa_kev_client.get_new_kev_entries.return_value = [new_entry1, new_entry2]
+
+    guild_id1 = 1001
+    channel_id1 = 2001
+    mock_db.get_enabled_kev_configs.return_value = [
+        {"guild_id": guild_id1, "channel_id": channel_id1},
+    ]
+
+    mock_guild1 = MagicMock(spec=discord.Guild, name="TestGuild")
+    mock_channel1 = AsyncMock(spec=discord.TextChannel)
+    mock_channel1.name = "test-channel"
+    cog.bot.get_guild.return_value = mock_guild1
+    cog.bot.get_channel.return_value = mock_channel1
+
+    initial_check_timestamp = datetime.now(timezone.utc) - timedelta(days=1)
+    initial_alert_timestamp = datetime.now(timezone.utc) - timedelta(days=1)
+    cog.bot.timestamp_last_kev_check_success = initial_check_timestamp
+    cog.bot.timestamp_last_kev_alert_sent = initial_alert_timestamp
+
+    # Reset first run flag for proper testing
+    cog.kev_check_first_run = False
+
+    # Run the task's coroutine
+    await cog.check_cisa_kev_feed.coro(cog)
+
+    # Assertions
+    mock_cisa_kev_client.get_new_kev_entries.assert_awaited_once()
+    mock_db.get_enabled_kev_configs.assert_called_once()
+
+    # Verify channel sends - 2 entries to 1 channel
+    assert mock_channel1.send.await_count == 2
+
+    assert cog.bot.timestamp_last_kev_check_success is not None
+    assert cog.bot.timestamp_last_kev_check_success > initial_check_timestamp
+    assert cog.bot.timestamp_last_kev_alert_sent is not None
+    assert cog.bot.timestamp_last_kev_alert_sent > initial_alert_timestamp
+
+
+@pytest.mark.asyncio
+async def test_check_cisa_kev_feed_client_error(
+    tasks_cog_with_mocked_bot, mock_cisa_kev_client, mock_db
+):
+    """Test the KEV check task when the CISA client fetch fails."""
+    cog = tasks_cog_with_mocked_bot
+    mock_cisa_kev_client.get_new_kev_entries.side_effect = Exception("CISA API Down")
+    initial_timestamp = datetime.now(timezone.utc) - timedelta(days=1)
+    cog.bot.timestamp_last_kev_check_success = initial_timestamp
+
+    # Run the task's coroutine
+    await cog.check_cisa_kev_feed.coro(cog)
+
+    # Assertions
+    mock_cisa_kev_client.get_new_kev_entries.assert_awaited_once()
+    mock_db.get_enabled_kev_configs.assert_not_called()
+
+    # Timestamp should not be updated on failure
+    assert cog.bot.timestamp_last_kev_check_success == initial_timestamp
+
+    # Error should be recorded
+    cog.bot.stats_manager.record_api_error.assert_awaited_once_with("cisa")
+
+
+@pytest.mark.asyncio
+async def test_check_cisa_kev_feed_discord_forbidden(
+    tasks_cog_with_mocked_bot, mock_cisa_kev_client, mock_db
+):
+    """Test KEV check when a guild has permissions issues."""
+    cog = tasks_cog_with_mocked_bot
+
+    new_entry1 = {"cveID": "CVE-2023-1111"}
+    mock_cisa_kev_client.get_new_kev_entries.return_value = [new_entry1]
+
+    guild_id1 = 1001
+    channel_id1 = 2001
+    mock_db.get_enabled_kev_configs.return_value = [
+        {"guild_id": guild_id1, "channel_id": channel_id1}
+    ]
+
+    mock_guild1 = MagicMock(spec=discord.Guild, name="TestGuild")
+    mock_channel1 = AsyncMock(spec=discord.TextChannel)
+    mock_channel1.name = "test-channel"
+    cog.bot.get_guild.return_value = mock_guild1
+    cog.bot.get_channel.return_value = mock_channel1
+
+    # Make the send call fail with Forbidden
+    mock_channel1.send.side_effect = discord.Forbidden(MagicMock(), "No Send Perms")
+
+    initial_timestamp = datetime.now(timezone.utc) - timedelta(days=1)
+    cog.bot.timestamp_last_kev_check_success = initial_timestamp
+    cog.kev_check_first_run = False
+
+    # Run the task's coroutine
+    await cog.check_cisa_kev_feed.coro(cog)
+
+    # Assertions
+    mock_cisa_kev_client.get_new_kev_entries.assert_awaited_once()
+    mock_db.get_enabled_kev_configs.assert_called_once()
+    mock_channel1.send.assert_awaited_once()  # Send was attempted
+
+    # Check succeeded even though sending failed
+    assert cog.bot.timestamp_last_kev_check_success is not None
+    assert cog.bot.timestamp_last_kev_check_success > initial_timestamp
+
+
+@pytest.mark.asyncio
+async def test_check_cisa_kev_feed_missing_guild(
+    tasks_cog_with_mocked_bot, mock_cisa_kev_client, mock_db, caplog
+):
+    """Test KEV check when configured guild is missing."""
+    cog = tasks_cog_with_mocked_bot
+
+    new_entry1 = {"cveID": "CVE-2023-1111"}
+    mock_cisa_kev_client.get_new_kev_entries.return_value = [new_entry1]
+
+    missing_guild_id = 1002
+    mock_db.get_enabled_kev_configs.return_value = [
+        {"guild_id": missing_guild_id, "channel_id": 3001},
+    ]
+
+    # Return None for guild lookup
+    cog.bot.get_guild.return_value = None
+    cog.kev_check_first_run = False
+
+    # Run the task's coroutine
+    with caplog.at_level(logging.WARNING):
+        await cog.check_cisa_kev_feed.coro(cog)
+
+    # Assertions
+    mock_cisa_kev_client.get_new_kev_entries.assert_awaited_once()
+    mock_db.get_enabled_kev_configs.assert_called_once()
+
+    # Verify warning was logged
+    assert "Could not find guild 1002 from KEV config" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_check_cisa_kev_feed_first_run_limit(
+    tasks_cog_with_mocked_bot, mock_cisa_kev_client, mock_db, caplog
+):
+    """Test KEV check first run limits entries to 3."""
+    cog = tasks_cog_with_mocked_bot
+
+    # Create 5 new entries
+    new_entries = [
+        {"cveID": f"CVE-2023-{i:04d}", "shortDescription": f"Test {i}"}
+        for i in range(1, 6)
+    ]
+    mock_cisa_kev_client.get_new_kev_entries.return_value = new_entries
+
+    guild_id1 = 1001
+    channel_id1 = 2001
+    mock_db.get_enabled_kev_configs.return_value = [
+        {"guild_id": guild_id1, "channel_id": channel_id1},
+    ]
+
+    mock_guild1 = MagicMock(spec=discord.Guild, name="TestGuild")
+    mock_channel1 = AsyncMock(spec=discord.TextChannel)
+    mock_channel1.name = "test-channel"
+    cog.bot.get_guild.return_value = mock_guild1
+    cog.bot.get_channel.return_value = mock_channel1
+
+    # Ensure first run flag is True
+    cog.kev_check_first_run = True
+
+    # Run the task's coroutine
+    with caplog.at_level(logging.WARNING):
+        await cog.check_cisa_kev_feed.coro(cog)
+
+    # Assertions
+    mock_cisa_kev_client.get_new_kev_entries.assert_awaited_once()
+
+    # Should only send 3 entries on first run
+    assert mock_channel1.send.await_count == 3
+
+    # Verify warning was logged
+    assert "First KEV check run" in caplog.text
+    assert "Processing only the first 3" in caplog.text
+
+    # First run flag should be reset
+    assert cog.kev_check_first_run is False
+
+
+@pytest.mark.asyncio
+async def test_check_cisa_kev_feed_no_enabled_configs(
+    tasks_cog_with_mocked_bot, mock_cisa_kev_client, mock_db, caplog
+):
+    """Test KEV check when no guilds have KEV monitoring enabled."""
+    cog = tasks_cog_with_mocked_bot
+
+    new_entry1 = {"cveID": "CVE-2023-1111"}
+    mock_cisa_kev_client.get_new_kev_entries.return_value = [new_entry1]
+    mock_db.get_enabled_kev_configs.return_value = []  # No enabled configs
+
+    cog.kev_check_first_run = False
+
+    # Run the task's coroutine
+    with caplog.at_level(logging.INFO):
+        await cog.check_cisa_kev_feed.coro(cog)
+
+    # Assertions
+    mock_cisa_kev_client.get_new_kev_entries.assert_awaited_once()
+    mock_db.get_enabled_kev_configs.assert_called_once()
+
+    # Verify info was logged
+    assert "No guilds have KEV monitoring enabled" in caplog.text
+
+    # No alerts should be sent
+    cog.bot.stats_manager.increment_kev_alerts_sent.assert_not_called()

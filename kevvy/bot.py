@@ -75,6 +75,29 @@ class SecurityBot(commands.Bot):
             1  # Cache KEV alerts for 1 hour to avoid duplicates
         )
 
+    def get_uptime_string(self) -> str:
+        """Returns a human-readable uptime string."""
+        if not self.start_time:
+            return "Unknown"
+
+        now = datetime.datetime.now(datetime.timezone.utc)
+        diff = now - self.start_time
+
+        days = diff.days
+        hours, remainder = divmod(diff.seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+
+        parts = []
+        if days > 0:
+            parts.append(f"{days}d")
+        if hours > 0 or days > 0:
+            parts.append(f"{hours}h")
+        if minutes > 0 or hours > 0 or days > 0:
+            parts.append(f"{minutes}m")
+        parts.append(f"{seconds}s")
+
+        return " ".join(parts)
+
     async def _handle_signal(self, sig: signal.Signals):
         """Handles received OS signals for graceful shutdown."""
         logger.warning(f"Received signal {sig.name}. Initiating graceful shutdown...")

@@ -24,9 +24,14 @@ class TasksCog(commands.Cog, name="BackgroundTasks"):
     def __init__(self, bot: SecurityBot):
         self.bot = bot
         self.kev_check_first_run = True  # Flag for KEV check initial run for this cog
+        # Start background tasks
+        self.check_cisa_kev_feed.start()
+        self.send_stats_to_webapp.start()
 
     def cog_unload(self):
         """Called when the cog is unloaded. Ensures tasks are cancelled."""
+        self.check_cisa_kev_feed.cancel()
+        self.send_stats_to_webapp.cancel()
         logger.info("Cancelled background tasks due to cog unload.")
 
     def _create_kev_embed(self, kev_data: Dict[str, Any]) -> discord.Embed:
