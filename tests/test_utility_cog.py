@@ -109,9 +109,10 @@ async def test_help_display_for_owner(mock_interaction, utility_cog):
     )
 
     # Setup required mocks
-    with patch("kevvy.cogs.utility_cog.BOT_OWNER_ID", BOT_OWNER_ID), patch(
-        "kevvy.cogs.utility_cog.discord.Embed"
-    ) as embed_mock:
+    with (
+        patch("kevvy.cogs.utility_cog.BOT_OWNER_ID", BOT_OWNER_ID),
+        patch("kevvy.cogs.utility_cog.discord.Embed") as embed_mock,
+    ):
         # Setup embed mock to return our test embeds
         embed_mock.side_effect = [help_embed, admin_embed]
 
@@ -143,9 +144,10 @@ async def test_help_hides_admin_from_non_owner(mock_interaction, utility_cog):
     )
 
     # Setup required mocks
-    with patch("kevvy.cogs.utility_cog.BOT_OWNER_ID", BOT_OWNER_ID), patch(
-        "kevvy.cogs.utility_cog.discord.Embed"
-    ) as embed_mock:
+    with (
+        patch("kevvy.cogs.utility_cog.BOT_OWNER_ID", BOT_OWNER_ID),
+        patch("kevvy.cogs.utility_cog.discord.Embed") as embed_mock,
+    ):
         # Setup embed mock to return our test embed
         embed_mock.return_value = help_embed
 

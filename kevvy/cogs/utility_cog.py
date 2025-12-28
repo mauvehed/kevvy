@@ -486,7 +486,7 @@ class UtilityCog(commands.Cog, name="Utility"):
             ):  # Leave buffer for embed title/footer
                 # Add the current chunk to embeds and start a new one
                 embed = discord.Embed(
-                    title=f"Kevvy Server List ({len(embeds)+1})",
+                    title=f"Kevvy Server List ({len(embeds) + 1})",
                     description="\n".join(current_chunk),
                     color=discord.Color.blue(),
                     timestamp=datetime.datetime.now(datetime.timezone.utc),
@@ -501,7 +501,7 @@ class UtilityCog(commands.Cog, name="Utility"):
         # Add the last chunk if not empty
         if current_chunk:
             embed = discord.Embed(
-                title=f"Kevvy Server List ({len(embeds)+1})",
+                title=f"Kevvy Server List ({len(embeds) + 1})",
                 description="\n".join(current_chunk),
                 color=discord.Color.blue(),
                 timestamp=datetime.datetime.now(datetime.timezone.utc),
@@ -511,7 +511,7 @@ class UtilityCog(commands.Cog, name="Utility"):
         # Send all embeds
         for i, embed in enumerate(embeds):
             embed.set_footer(
-                text=f"Page {i+1}/{len(embeds)} • Requested by {interaction.user.display_name}"
+                text=f"Page {i + 1}/{len(embeds)} • Requested by {interaction.user.display_name}"
             )
             if i == 0:
                 await interaction.followup.send(embed=embed, ephemeral=True)
@@ -547,7 +547,7 @@ class UtilityCog(commands.Cog, name="Utility"):
             code = code[3:]
 
         # Create the function to execute code
-        func_str = f'async def _debug_func():\n{textwrap.indent(code, "    ")}'
+        func_str = f"async def _debug_func():\n{textwrap.indent(code, '    ')}"
 
         try:
             # Execute the code
