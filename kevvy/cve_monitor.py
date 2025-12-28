@@ -170,7 +170,7 @@ class CVEMonitor:
             # Set description only in verbose mode
             description = cve_data.get("description", "No description available.")
             if len(description) > MAX_DESCRIPTION_LENGTH:
-                description = f"{description[:MAX_DESCRIPTION_LENGTH - 3]}..."
+                description = f"{description[: MAX_DESCRIPTION_LENGTH - 3]}..."
             embed.description = description
 
             embed.add_field(
@@ -191,7 +191,7 @@ class CVEMonitor:
 
             if cvss_vector := cve_data.get("cvss_vector"):
                 if len(cvss_vector) > MAX_FIELD_LENGTH:
-                    cvss_vector = f"{cvss_vector[:MAX_FIELD_LENGTH - 3]}..."
+                    cvss_vector = f"{cvss_vector[: MAX_FIELD_LENGTH - 3]}..."
                 embed.add_field(
                     name="CVSS Vector", value=f"`{cvss_vector}`", inline=False
                 )
@@ -199,7 +199,7 @@ class CVEMonitor:
             if cwe_ids := cve_data.get("cwe_ids"):
                 cwe_display = ", ".join(cwe_ids)
                 if len(cwe_display) > MAX_FIELD_LENGTH:
-                    cwe_display = f"{cwe_display[:MAX_FIELD_LENGTH - 3]}..."
+                    cwe_display = f"{cwe_display[: MAX_FIELD_LENGTH - 3]}..."
                 embed.add_field(
                     name="Weaknesses (CWE)", value=cwe_display, inline=False
                 )
@@ -238,7 +238,7 @@ class CVEMonitor:
                         ref_display += f"\n*({len(references) - MAX_REFERENCE_LINKS} more references not shown)*"
 
                     if len(ref_display) > MAX_FIELD_LENGTH:
-                        ref_display = f"{ref_display[:MAX_FIELD_LENGTH - 3]}..."
+                        ref_display = f"{ref_display[: MAX_FIELD_LENGTH - 3]}..."
                     embed.add_field(name="References", value=ref_display, inline=False)
         else:
             # Non-verbose mode: No description needed, title/URL is primary info.

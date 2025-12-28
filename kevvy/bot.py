@@ -174,7 +174,7 @@ class SecurityBot(commands.Bot):
         self.loaded_cogs = []
         self.failed_cogs = []
         for i, extension in enumerate(initial_extensions):
-            logger.debug(f"Attempting to load extension {i+1}: {extension}")
+            logger.debug(f"Attempting to load extension {i + 1}: {extension}")
             try:
                 await self.load_extension(extension)
                 logger.info(f"Successfully loaded extension: {extension}")
@@ -197,7 +197,7 @@ class SecurityBot(commands.Bot):
                     exc_info=True,
                 )
                 self.failed_cogs.append(f"{extension} (Exception)")
-            logger.debug(f"Finished processing extension {i+1}: {extension}")
+            logger.debug(f"Finished processing extension {i + 1}: {extension}")
 
         self._setup_signal_handlers()
         logger.info(f"--- Initializing Kevvy Bot Version: {self.version} ---")

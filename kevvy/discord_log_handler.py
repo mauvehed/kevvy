@@ -48,7 +48,7 @@ class DiscordLogHandler(logging.Handler):
             if channel := self._channel:
                 max_len = 4096
                 if len(log_entry) > max_len:
-                    log_entry = f"{log_entry[:max_len - 4]}..."
+                    log_entry = f"{log_entry[: max_len - 4]}..."
 
                 # Create task to send message without blocking handler
                 asyncio.create_task(self._send_log_embed(channel, log_entry, log_level))
