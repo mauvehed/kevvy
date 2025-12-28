@@ -214,16 +214,17 @@ class CVEMonitor:
                         if source_name:
                             source_name = source_name[0]  # Take the first tag
                         else:
-                            # Simple domain extraction as fallback source name
+                            # Extract domain from URL as fallback source name
                             try:
-                                if domain_match := re.match(
+                                domain_match = re.match(
                                     r"https?://(?:www\.)?([^/]+)", ref["url"]
-                                ):
-                                    source_name = domain_match[1]
-                                else:
-                                    source_name = "Link"
-                            except Exception:
-                                source_name = "Link"  # Ultimate fallback
+                                )
+                                source_name = (
+                                    domain_match[1] if domain_match else "Link"
+                                )
+                            except (TypeError, re.error) as e:
+                                logger.debug(f"Failed to extract domain from URL: {e}")
+                                source_name = "Link"
 
                         link_text = f"- [{source_name}]({ref['url']})"
                         ref_links.append(link_text)
