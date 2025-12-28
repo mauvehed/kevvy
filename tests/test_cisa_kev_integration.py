@@ -2,10 +2,11 @@
 Integration tests for CISA KEV API connectivity and response parsing.
 
 These tests make real HTTP requests to the CISA KEV API.
-Run with: poetry run pytest tests/test_cisa_kev_integration.py -v
+Run with: CISA_KEV_LIVE_TESTS=1 poetry run pytest tests/test_cisa_kev_integration.py -v
 Skip with: poetry run pytest -m "not integration"
 """
 
+import os
 import pytest
 import pytest_asyncio
 import aiohttp
@@ -14,6 +15,15 @@ from unittest.mock import MagicMock
 
 # Mark all tests in this module as integration tests
 pytestmark = pytest.mark.integration
+
+
+@pytest.fixture(autouse=True)
+def skip_unless_live_tests_enabled():
+    """Skip all tests in this module unless CISA_KEV_LIVE_TESTS=1 is set."""
+    if os.getenv("CISA_KEV_LIVE_TESTS") != "1":
+        pytest.skip(
+            "CISA_KEV_LIVE_TESTS not set to '1'; skipping live CISA KEV API tests"
+        )
 
 
 @pytest_asyncio.fixture

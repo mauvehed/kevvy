@@ -424,6 +424,48 @@ async def test_diagnostics_cog_update_web_status_connection_error(mocker, caplog
     )
 
 
+# --- Tests for SecurityBot.get_uptime_string() ---
+
+
+def test_get_uptime_string_none_start_time():
+    """If start_time is None, get_uptime_string() should return 'Unknown'."""
+    bot = SecurityBot(nvd_api_key=None, vulncheck_api_token=None)
+    bot.start_time = None
+
+    assert bot.get_uptime_string() == "Unknown"
+
+
+def test_get_uptime_string_seconds_only():
+    """Short uptime (seconds only) should render as 'Xs'."""
+    bot = SecurityBot(nvd_api_key=None, vulncheck_api_token=None)
+    # Set start_time to 42 seconds ago
+    bot.start_time = datetime.now(timezone.utc) - timedelta(seconds=42)
+
+    result = bot.get_uptime_string()
+    # Should be around "42s" (might be 41s or 43s due to timing)
+    assert result.endswith("s")
+    assert "d" not in result
+    assert "h" not in result
+    assert "m" not in result
+
+
+def test_get_uptime_string_mixed_duration():
+    """Mixed duration should render as 'Xd Xh Xm Xs' format."""
+    bot = SecurityBot(nvd_api_key=None, vulncheck_api_token=None)
+    # Set start_time to 1 day, 2 hours, 3 minutes, 4 seconds ago
+    bot.start_time = datetime.now(timezone.utc) - timedelta(
+        days=1, hours=2, minutes=3, seconds=4
+    )
+
+    result = bot.get_uptime_string()
+    # Should contain all components
+    assert "1d" in result
+    assert "2h" in result
+    assert "3m" in result
+    # Seconds will vary slightly due to execution time
+    assert "s" in result
+
+
 # --- Tests for check_cisa_kev_feed Task (via TasksCog) ---
 
 
@@ -542,6 +584,9 @@ async def test_check_cisa_kev_feed_new_entries_success(
     assert cog.bot.timestamp_last_kev_check_success > initial_check_timestamp
     assert cog.bot.timestamp_last_kev_alert_sent is not None
     assert cog.bot.timestamp_last_kev_alert_sent > initial_alert_timestamp
+
+    # Verify stats were incremented correctly (2 alerts sent)
+    cog.bot.stats_manager.increment_kev_alerts_sent.assert_awaited_once_with(2)
 
 
 @pytest.mark.asyncio
