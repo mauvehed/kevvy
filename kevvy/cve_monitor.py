@@ -216,15 +216,12 @@ class CVEMonitor:
                         else:
                             # Simple domain extraction as fallback source name
                             try:
-                                domain_match = re.match(
+                                if domain_match := re.match(
                                     r"https?://(?:www\.)?([^/]+)", ref["url"]
-                                )
-                                if domain_match:  # Check if match is not None
-                                    source_name = domain_match.group(1)
+                                ):
+                                    source_name = domain_match[1]
                                 else:
-                                    source_name = (
-                                        "Link"  # Fallback if regex doesn't match
-                                    )
+                                    source_name = "Link"
                             except Exception:
                                 source_name = "Link"  # Ultimate fallback
 
@@ -240,9 +237,6 @@ class CVEMonitor:
                     if len(ref_display) > MAX_FIELD_LENGTH:
                         ref_display = f"{ref_display[: MAX_FIELD_LENGTH - 3]}..."
                     embed.add_field(name="References", value=ref_display, inline=False)
-        else:
-            # Non-verbose mode: No description needed, title/URL is primary info.
-            pass  # Explicitly do nothing for description
 
         return embed
 

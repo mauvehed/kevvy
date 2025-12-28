@@ -513,10 +513,7 @@ class UtilityCog(commands.Cog, name="Utility"):
             embed.set_footer(
                 text=f"Page {i + 1}/{len(embeds)} • Requested by {interaction.user.display_name}"
             )
-            if i == 0:
-                await interaction.followup.send(embed=embed, ephemeral=True)
-            else:
-                await interaction.followup.send(embed=embed, ephemeral=True)
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
     @admin_group.command(
         name="debug", description="Evaluates Python code for debugging."
