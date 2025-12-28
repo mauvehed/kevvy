@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "kevvy"
-version = "0.2.7"
+version = "0.2.8"
 description = "A Discord bot for searching the Common Vulnerabilities and Exposures (CVE) list and providing Known Exploitable Vulnerabilities (KEV) updates."
 authors = ["mauvehed <mh@mvh.dev>"]
 license = "MIT"
