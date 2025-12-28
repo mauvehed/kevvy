@@ -2,6 +2,12 @@ FROM python:3.13.3-slim
 
 WORKDIR /app
 
+# Apply security patches to base image
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
 # Copy only dependency files first
 COPY pyproject.toml poetry.lock ./
 
