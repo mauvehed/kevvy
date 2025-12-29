@@ -10,7 +10,7 @@ packages = [{ include = "kevvy" }]
 [tool.poetry.dependencies]
 python = "^3.10"
 discord-py = "^2.5.2"
-python-dotenv = "^1.1.0"
+python-dotenv = "^1.2.1"
 vulncheck-sdk = "^0.0.13"
 aiohttp = "^3.13.2"
 
