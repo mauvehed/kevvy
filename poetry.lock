@@ -1559,21 +1559,21 @@ zstd = ["backports-zstd (>=1.0.0) ; python_version < \"3.14\""]
 
 [[package]]
 name = "vulncheck-sdk"
-version = "0.0.13"
+version = "0.0.36"
 description = "VulnCheck API"
 optional = false
-python-versions = "<4.0,>=3.8"
+python-versions = ">=3.9"
 groups = ["main"]
 files = [
-    {file = "vulncheck_sdk-0.0.13-py3-none-any.whl", hash = "sha256:a65df668e0106278c6da2460e9448eeeb18602a178b3c7cdf67ecc9e999fa115"},
-    {file = "vulncheck_sdk-0.0.13.tar.gz", hash = "sha256:48024227ed118a10a7cab1acef06197b2129ed35be1425ab5617bc1e00f0b97e"},
+    {file = "vulncheck_sdk-0.0.36-py3-none-any.whl", hash = "sha256:a451431236ccfb5d4a0656a51123ade70e564c2ba7ac94253106f9fe7f02cade"},
+    {file = "vulncheck_sdk-0.0.36.tar.gz", hash = "sha256:5f5dac58242970637a053dbe2702b1416771e42c3f2df6a35e274c884db68c5f"},
 ]
 
 [package.dependencies]
 pydantic = ">=2"
 python-dateutil = ">=2.8.2"
 typing-extensions = ">=4.7.1"
-urllib3 = ">=1.25.3,<3.0.0"
+urllib3 = ">=2.1.0,<3.0.0"
 
 [[package]]
 name = "watchdog"
@@ -1740,4 +1740,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.10"
-content-hash = "f580d108c619d1fd9eaef56f1026e01b6b17dff127bac4ca21875c2c43ff5810"
+content-hash = "0877ee6e88a52f0951c03aaa4823bfea7ace897e2f255ff382b353f0ba6918a8"
